@@ -103,10 +103,10 @@ pub const CORE_SOFTWARE: &[Credit] = &[
         PresentationRuntime,
         "@open-slide/core",
     ),
-    licensed(
-        of(credit("tldraw", "https://tldraw.dev"), Npm, "tldraw"),
-        "tldraw license",
-    ),
+    Credit {
+        attribution: Some("Native whiteboard ported from quiet.md by s1dashu"),
+        ..licensed(credit("Excalidraw", "https://excalidraw.com"), "MIT")
+    },
     Credit {
         attribution: Some("Uses Trellis by DanFessler - github.com/DanFessler/trellis"),
         ..licensed(
