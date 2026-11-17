@@ -39,10 +39,10 @@ use crate::text_field::{TextField, TextFieldEvent};
 use std::rc::Rc;
 
 /// `.App-menu__left`: padding 0.75rem, max-width 12.5rem.
-const PAD: f32 = 12.;
-const MAX_W: f32 = 200.;
+pub(super) const PAD: f32 = 12.;
+pub(super) const MAX_W: f32 = 200.;
 /// Below the main menu: its top, the 36px button, `menuTopGap` 6 × 4.
-const TOP: f32 = style::TOP_PADDING + style::LG_BUTTON + 24.;
+pub(super) const TOP: f32 = style::TOP_PADDING + style::LG_BUTTON + 24.;
 
 fn tool_type(t: Tool) -> Option<ElementType> {
     Some(match t {
@@ -1256,11 +1256,11 @@ fn cached_model(me: &BoardView, board: EntityId) -> Option<Rc<Model>> {
     })
 }
 
-pub(crate) fn render(
+pub(crate) fn sections(
     me: &BoardView,
     window: &mut Window,
     cx: &mut Context<BoardView>,
-) -> Option<AnyElement> {
+) -> Option<Div> {
     let model = cached_model(me, cx.entity_id())?;
     let a = me.app_state();
     let Model {
@@ -1885,28 +1885,5 @@ pub(crate) fn render(
         );
     }
 
-    // `appState.height - 166`
-    let max_h = (me.bounds.get().size.height - px(166.)).max(px(120.));
-    Some(
-        div()
-            .absolute()
-            .left(px(style::PADDING))
-            .top(px(TOP))
-            .child(
-                island("board-props", 0.)
-                    .max_w(px(MAX_W))
-                    .max_h(max_h)
-                    .flex()
-                    .flex_col()
-                    .child(
-                        div()
-                            .id("board-props-scroll")
-                            .max_h(max_h)
-                            .overflow_y_scroll()
-                            .p(px(PAD))
-                            .child(body.w(px(cw))),
-                    ),
-            )
-            .into_any_element(),
-    )
+    Some(body.w(px(cw)))
 }

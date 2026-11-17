@@ -20,7 +20,7 @@ use crate::board::action::{BoardAction, Tool};
 use crate::settings::tr;
 
 /// The main row, in upstream order.
-const MAIN: [Tool; 10] = [
+pub(super) const MAIN: [Tool; 10] = [
     Tool::Hand,
     Tool::Selection,
     Tool::Rectangle,
@@ -111,7 +111,13 @@ pub(crate) fn tool_shortcut(t: Tool) -> Option<String> {
     })
 }
 
-fn tool_button(me: &BoardView, t: Tool, cx: &mut Context<BoardView>) -> Stateful<Div> {
+/// `keys`: show its letter (`.App-toolbar--mobile` hides them).
+pub(super) fn tool_button(
+    me: &BoardView,
+    t: Tool,
+    keys: bool,
+    cx: &mut Context<BoardView>,
+) -> Stateful<Div> {
     let on = me.tool() == t;
     let name = if on && fillable(t) {
         format!("{}-filled", tool_icon_name(t))
@@ -125,20 +131,21 @@ fn tool_button(me: &BoardView, t: Tool, cx: &mut Context<BoardView>) -> Stateful
     )
     .child(icon(&name, style::ICON, tool_icon_color(on)))
     // the hand hides its key (`hideKeyBinding`)
-    .when_some(tool_letter(t).filter(|_| t != Tool::Hand), |d, k| {
-        d.child(keybinding(k, on))
-    })
+    .when_some(
+        tool_letter(t).filter(|_| keys && t != Tool::Hand),
+        |d, k| d.child(keybinding(k, on)),
+    )
     .ex_tip(tool_label(t), tool_shortcut(t).as_deref())
     .on_click(cx.listener(move |me, _, window, cx| me.set_tool(t, window, cx)))
 }
 
 /// `.App-toolbar__divider`: 1 × 24, `--default-border-color`.
-fn divider() -> Div {
+pub(super) fn divider() -> Div {
     div().flex_none().w(px(1.)).h(px(24.)).bg(style::border())
 }
 
 /// `ExtraToolsDropdown`: the trigger shows the chosen extra tool, else the dots.
-fn extra_tools(me: &BoardView, cx: &mut Context<BoardView>) -> Stateful<Div> {
+pub(super) fn extra_tools(me: &BoardView, cx: &mut Context<BoardView>) -> Stateful<Div> {
     let tool = me.tool();
     let selected = EXTRA.contains(&tool);
     let open = pop(cx) == Some(Pop::ExtraTools);
@@ -249,7 +256,7 @@ pub(crate) fn render(me: &BoardView, cx: &mut Context<BoardView>) -> impl IntoEl
         .child(lock)
         .child(divider().mr(px(4.)));
     for t in MAIN {
-        row = row.child(tool_button(me, t, cx));
+        row = row.child(tool_button(me, t, true, cx));
     }
     row = row.child(divider().ml(px(4.))).child(extra_tools(me, cx));
     let bar = island("board-toolbar", 1.)

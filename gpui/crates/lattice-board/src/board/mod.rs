@@ -464,6 +464,13 @@ impl BoardView {
         self.app.viewport()
     }
 
+    /// Excalidraw's `isMobileBreakpoint`: narrower than 730px the chrome takes
+    /// upstream's mobile layout, as the web board does in the editor pane.
+    pub(crate) fn compact(&self) -> bool {
+        let w = f32::from(self.bounds.get().size.width);
+        w > 0. && w < 730.
+    }
+
     pub(crate) fn canvas(&self) -> Canvas {
         let b = self.bounds.get();
         Canvas {

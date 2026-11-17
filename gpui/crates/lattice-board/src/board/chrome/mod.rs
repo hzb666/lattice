@@ -12,7 +12,8 @@
 //! it shows and how it looks: the looks are upstream's CSS (`style.rs`) and
 //! icons (`assets/icons/excalidraw/`), light and dark, not our `Theme`.
 //! Differs: no collaboration, library, sidebars, AI, socials, stats, zen /
-//! view mode, compact or mobile layouts; the main menu adds 退出, and the top
+//! view mode; below 730px wide it takes upstream's mobile layout instead
+//! (`mobile.rs`); the main menu adds 退出, and the top
 //! left keeps room for the window's traffic lights. Everything here only
 //! reads `BoardView` and dispatches `BoardAction`s / `set_tool`.
 
@@ -24,6 +25,7 @@ pub(crate) mod export;
 mod help;
 mod hints;
 mod menu;
+mod mobile;
 mod properties;
 pub(crate) mod search;
 pub mod style;
@@ -130,8 +132,11 @@ pub fn render(
     let export = export::render(me, window, cx);
     let search = search::render(me, cx);
     let me = &*me;
-    let panel = properties::render(me, window, cx);
-    if panel.is_none()
+    let compact = me.compact();
+    let sections = properties::sections(me, window, cx);
+    let can_edit = sections.is_some();
+    let sections = sections.filter(|_| !compact || mobile::edit_menu(cx));
+    if sections.is_none()
         && matches!(
             pop(cx),
             Some(
@@ -148,10 +153,17 @@ pub fn render(
         .size_full()
         .font_family(style::ui_font())
         .text_color(style::text())
-        .child(menu::main_menu(cx))
-        .child(toolbar::render(me, cx))
-        .when_some(panel, |d, p| d.child(p))
-        .child(controls::footer(me, cx))
+        .map(|d| {
+            if compact {
+                d.child(mobile::top_bar(me, cx))
+                    .child(mobile::bottom_bar(me, can_edit, sections, cx))
+            } else {
+                d.child(menu::main_menu(cx))
+                    .child(toolbar::render(me, cx))
+                    .when_some(sections, |d, s| d.child(panel(me, s)))
+                    .child(controls::footer(me, cx))
+            }
+        })
         .when_some(context_menu::render(me, window, cx), |d, m| d.child(m))
         .when_some(search, |d, s| d.child(s))
         .when_some(export, |d, e| d.child(e))
@@ -159,6 +171,32 @@ pub fn render(
         .when(pop(cx) == Some(Pop::ClearCanvas), |d| {
             d.child(help::clear_canvas(window, cx))
         })
+}
+
+/// The styles panel (`.App-menu__left`): left, under the top row.
+pub(crate) fn panel(me: &BoardView, sections: Div) -> AnyElement {
+    // `appState.height - 166`
+    let max_h = (me.bounds.get().size.height - px(166.)).max(px(120.));
+    div()
+        .absolute()
+        .left(px(style::PADDING))
+        .top(px(properties::TOP))
+        .child(
+            island("board-props", 0.)
+                .max_w(px(properties::MAX_W))
+                .max_h(max_h)
+                .flex()
+                .flex_col()
+                .child(
+                    div()
+                        .id("board-props-scroll")
+                        .max_h(max_h)
+                        .overflow_y_scroll()
+                        .p(px(properties::PAD))
+                        .child(sections),
+                ),
+        )
+        .into_any_element()
 }
 
 // ---------------------------------------------------------------------------

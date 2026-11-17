@@ -448,6 +448,47 @@ impl Run {
             json!({ "clean_first": clean, "before": before, "after": after, "removed": removed.map(|element| element["id"].clone()) }),
         );
 
+        // Pen strokes in quick succession, as a writer sketches: each a
+        // native press, 40 drags 16 ms apart and a release, 120 ms between
+        // strokes, eight rows so later strokes start on earlier ones. Every
+        // stroke is an element of its own.
+        let bounds = cx.update(|cx| board.read(cx).bounds());
+        let native = self.native(cx)?;
+        let center = bounds.center();
+        native::send_click(native, point(center.x, center.y + px(120.)))?;
+        self.pause(cx, Duration::from_millis(300)).await;
+        native::send_key(native, 'p', false)?;
+        self.pause(cx, Duration::from_millis(300)).await;
+        let before_strokes = shapes_on_board(cx);
+        let strokes = 24;
+        for stroke in 0..strokes {
+            let from = point(
+                center.x - px(200.),
+                center.y - px(160.) + px((stroke % 8) as f32 * 40.),
+            );
+            native::send_mouse(native, native::Mouse::Down, from)?;
+            for step in 1..=40 {
+                let wobble = ((step as f32) * 0.5).sin() * 14.;
+                native::send_mouse(
+                    native,
+                    native::Mouse::Dragged,
+                    point(from.x + px(step as f32 * 10.), from.y + px(wobble)),
+                )?;
+                self.pause(cx, Duration::from_millis(16)).await;
+            }
+            native::send_mouse(native, native::Mouse::Up, point(from.x + px(400.), from.y))?;
+            self.pause(cx, Duration::from_millis(120)).await;
+        }
+        self.pause(cx, Duration::from_millis(300)).await;
+        let drawn = shapes_on_board(cx) - before_strokes;
+        steps.check(
+            "pen strokes drawn in quick succession with native input are an element each",
+            drawn == strokes,
+            json!({ "strokes": strokes, "elements_added": drawn }),
+        );
+        native::send_key(native, 'v', false)?;
+        self.pause(cx, Duration::from_millis(200)).await;
+
         // A rectangle drawn with native input; the tab closed at once.
         let on_disk = shape_count(&std::fs::read_to_string(&path)?);
         let bounds = cx.update(|cx| board.read(cx).bounds());

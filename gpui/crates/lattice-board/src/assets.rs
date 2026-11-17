@@ -155,6 +155,10 @@ const ICONS: &[(&str, &[u8])] = &[
         include_bytes!("../assets/icons/excalidraw/distribute-vertically.svg"),
     ),
     (
+        "icons/excalidraw/done.svg",
+        include_bytes!("../assets/icons/excalidraw/done.svg"),
+    ),
+    (
         "icons/excalidraw/dots.svg",
         include_bytes!("../assets/icons/excalidraw/dots.svg"),
     ),
@@ -273,6 +277,10 @@ const ICONS: &[(&str, &[u8])] = &[
     (
         "icons/excalidraw/locked.svg",
         include_bytes!("../assets/icons/excalidraw/locked.svg"),
+    ),
+    (
+        "icons/excalidraw/palette.svg",
+        include_bytes!("../assets/icons/excalidraw/palette.svg"),
     ),
     (
         "icons/excalidraw/rectangle-filled.svg",

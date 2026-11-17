@@ -89,78 +89,39 @@ pub(crate) fn dropdown_item(
         })
 }
 
-/// Top left (`.excalidraw-ui-top-left`): the hamburger and its menu.
-pub(crate) fn main_menu(cx: &mut Context<BoardView>) -> impl IntoElement {
-    let open = matches!(pop(cx), Some(Pop::MainMenu | Pop::CanvasBackground));
-    let trigger = filled_button("board-main-menu", open)
+/// `MainMenu.Trigger` (`.main-menu-trigger`): the hamburger.
+pub(crate) fn trigger(open: bool, cx: &mut Context<BoardView>) -> Stateful<Div> {
+    filled_button("board-main-menu", open)
         .w(px(style::LG_BUTTON))
         .child(icon("hamburger", style::ICON, style::text()))
         .on_click(cx.listener(|_, _, _, cx| {
-            let open = matches!(pop(cx), Some(Pop::MainMenu | Pop::CanvasBackground));
+            let open = main_menu_open(cx);
             set_pop(if open { None } else { Some(Pop::MainMenu) }, cx)
-        }));
+        }))
+}
+
+pub(crate) fn main_menu_open(cx: &Context<BoardView>) -> bool {
+    matches!(pop(cx), Some(Pop::MainMenu | Pop::CanvasBackground))
+}
+
+/// Top left (`.excalidraw-ui-top-left`): the hamburger and its menu.
+pub(crate) fn main_menu(cx: &mut Context<BoardView>) -> impl IntoElement {
+    let open = main_menu_open(cx);
     // the board sits in the note pane, under the app's header (which names it)
     let mut col = div()
         .absolute()
         .top(px(style::TOP_PADDING))
         .left(px(style::PADDING))
-        .child(trigger);
+        .child(trigger(open, cx));
     if open {
-        let run = |a: BoardAction| {
-            cx.listener(move |me: &mut BoardView, _: &ClickEvent, window, cx| {
-                set_pop(None, cx);
-                me.run(a.clone(), window, cx)
-            })
-        };
-        let menu = dropdown("board-main-menu-list")
+        let menu = list(cx)
             .min_w(px(232.))
             .max_w(px(320.))
             .on_mouse_down_out(cx.listener(|_, _, _, cx| {
                 if pop(cx) == Some(Pop::MainMenu) {
                     set_pop(None, cx)
                 }
-            }))
-            .child(
-                dropdown_item(
-                    "board-mm-search",
-                    Some("search"),
-                    tr("在画布上查找", "Find on canvas"),
-                    Some(shortcut("CtrlOrCmd+F")),
-                    false,
-                )
-                .on_click(run(BoardAction::FindOnCanvas)),
-            )
-            .child(
-                dropdown_item(
-                    "board-mm-export",
-                    Some("image"),
-                    tr("导出图片...", "Export image..."),
-                    Some(shortcut("CtrlOrCmd+Shift+E")),
-                    false,
-                )
-                .on_click(run(BoardAction::ExportImage)),
-            )
-            .child(
-                dropdown_item(
-                    "board-mm-help",
-                    Some("help"),
-                    tr("帮助", "Help"),
-                    Some("?".into()),
-                    false,
-                )
-                .on_click(run(BoardAction::ShowHelp)),
-            )
-            // (upstream shows it on an empty canvas too)
-            .child(
-                dropdown_item(
-                    "board-mm-clear",
-                    Some("trash"),
-                    tr("重置画布", "Reset the canvas"),
-                    None,
-                    false,
-                )
-                .on_click(cx.listener(|_, _, _, cx| set_pop(Some(Pop::ClearCanvas), cx))),
-            );
+            }));
         // below the trigger, left edges aligned (`sideOffset` 8)
         col = col.child(
             div()
@@ -174,4 +135,56 @@ pub(crate) fn main_menu(cx: &mut Context<BoardView>) -> impl IntoElement {
         );
     }
     col
+}
+
+/// The menu's items (`DefaultItems`).
+pub(crate) fn list(cx: &mut Context<BoardView>) -> Stateful<Div> {
+    let run = |a: BoardAction| {
+        cx.listener(move |me: &mut BoardView, _: &ClickEvent, window, cx| {
+            set_pop(None, cx);
+            me.run(a.clone(), window, cx)
+        })
+    };
+    dropdown("board-main-menu-list")
+        .child(
+            dropdown_item(
+                "board-mm-search",
+                Some("search"),
+                tr("在画布上查找", "Find on canvas"),
+                Some(shortcut("CtrlOrCmd+F")),
+                false,
+            )
+            .on_click(run(BoardAction::FindOnCanvas)),
+        )
+        .child(
+            dropdown_item(
+                "board-mm-export",
+                Some("image"),
+                tr("导出图片...", "Export image..."),
+                Some(shortcut("CtrlOrCmd+Shift+E")),
+                false,
+            )
+            .on_click(run(BoardAction::ExportImage)),
+        )
+        .child(
+            dropdown_item(
+                "board-mm-help",
+                Some("help"),
+                tr("帮助", "Help"),
+                Some("?".into()),
+                false,
+            )
+            .on_click(run(BoardAction::ShowHelp)),
+        )
+        // (upstream shows it on an empty canvas too)
+        .child(
+            dropdown_item(
+                "board-mm-clear",
+                Some("trash"),
+                tr("重置画布", "Reset the canvas"),
+                None,
+                false,
+            )
+            .on_click(cx.listener(|_, _, _, cx| set_pop(Some(Pop::ClearCanvas), cx))),
+        )
 }
