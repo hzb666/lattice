@@ -38,16 +38,26 @@ pub mod theme {
     }
 
     /// The board is drawn in the dark theme (Excalidraw's `theme === "dark"`).
-    pub fn dark() -> bool { DARK.with(Cell::get) }
+    pub fn dark() -> bool {
+        DARK.with(Cell::get)
+    }
 
-    pub(crate) fn set_dark(dark: bool) { DARK.with(|d| d.set(dark)); }
+    pub(crate) fn set_dark(dark: bool) {
+        DARK.with(|d| d.set(dark));
+    }
 
     /// The interface's family (the chrome's labels).
-    pub fn ui_family() -> SharedString { UI.with(|u| u.borrow().clone()) }
+    pub fn ui_family() -> SharedString {
+        UI.with(|u| u.borrow().clone())
+    }
 
-    pub(crate) fn set_ui_family(family: SharedString) { UI.with(|u| *u.borrow_mut() = family); }
+    pub(crate) fn set_ui_family(family: SharedString) {
+        UI.with(|u| *u.borrow_mut() = family);
+    }
 
-    pub fn ui_font() -> Font { font(ui_family()) }
+    pub fn ui_font() -> Font {
+        font(ui_family())
+    }
 
     /// The chrome's monospace family (key hints, the hex field).
     pub const MONO_FONT: &str = "Ioskeley Mono";
@@ -57,6 +67,10 @@ pub mod theme {
 pub mod settings {
     /// `zh` in Chinese, `en` otherwise.
     pub fn tr(zh: &'static str, en: &'static str) -> &'static str {
-        if lattice_i18n::locale().is_chinese() { zh } else { en }
+        if lattice_i18n::locale().is_chinese() {
+            zh
+        } else {
+            en
+        }
     }
 }

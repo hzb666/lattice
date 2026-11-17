@@ -17,7 +17,8 @@ use std::cell::RefCell;
 use std::hash::{BuildHasher, Hasher};
 
 /// nanoid's url-safe alphabet.
-const NANOID_ALPHABET: &[u8; 64] = b"useandom-26T198340PX75pxJACKVERYMINDBUSHWOLF_GQZbfghjklqvwyzrict";
+const NANOID_ALPHABET: &[u8; 64] =
+    b"useandom-26T198340PX75pxJACKVERYMINDBUSHWOLF_GQZbfghjklqvwyzrict";
 const NANOID_SIZE: usize = 21;
 
 struct State {
@@ -31,7 +32,12 @@ struct State {
 
 fn entropy_seed() -> u64 {
     let mut h = std::collections::hash_map::RandomState::new().build_hasher();
-    h.write_u128(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0));
+    h.write_u128(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0),
+    );
     h.finish() | 1
 }
 
@@ -63,7 +69,9 @@ fn next(s: &mut State) -> f64 {
 }
 
 /// `randomInteger`: in [0, 2^31).
-pub fn random_integer() -> i64 { STATE.with(|s| (next(&mut s.borrow_mut()) * 2f64.powi(31)).floor() as i64) }
+pub fn random_integer() -> i64 {
+    STATE.with(|s| (next(&mut s.borrow_mut()) * 2f64.powi(31)).floor() as i64)
+}
 
 /// `reseed`: deterministic seeds from `seed`, and `id0`, `id1`… ids from
 /// here on (upstream's test mode), on this thread.
@@ -98,7 +106,10 @@ pub fn random_id() -> String {
         let mut bits = 0u64;
         let mut left = 0;
         for _ in 0..NANOID_SIZE {
-            if left < 6 { bits = next_entropy(&mut s); left = 64; }
+            if left < 6 {
+                bits = next_entropy(&mut s);
+                left = 64;
+            }
             out.push(NANOID_ALPHABET[(bits & 63) as usize] as char);
             bits >>= 6;
             left -= 6;

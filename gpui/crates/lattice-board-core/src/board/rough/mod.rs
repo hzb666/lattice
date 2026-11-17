@@ -28,48 +28,99 @@ pub mod path_data;
 pub mod renderer;
 
 pub use generator::*;
-pub use renderer::{ellipse as ellipse_ops, generate_ellipse_params, EllipseParams};
+pub use renderer::{EllipseParams, ellipse as ellipse_ops, generate_ellipse_params};
 
 use super::math::Point;
 
 /// A rough.js op (`move`, `lineTo`, `bcurveTo`).
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Op { Move(Point), LineTo(Point), BCurveTo(Point, Point, Point) }
+pub enum Op {
+    Move(Point),
+    LineTo(Point),
+    BCurveTo(Point, Point, Point),
+}
 
 impl Op {
-    pub fn end(&self) -> Point { match *self { Op::Move(p) | Op::LineTo(p) | Op::BCurveTo(_, _, p) => p } }
+    pub fn end(&self) -> Point {
+        match *self {
+            Op::Move(p) | Op::LineTo(p) | Op::BCurveTo(_, _, p) => p,
+        }
+    }
     pub fn map(&self, f: impl Fn(Point) -> Point) -> Op {
-        match *self { Op::Move(p) => Op::Move(f(p)), Op::LineTo(p) => Op::LineTo(f(p)), Op::BCurveTo(a, b, c) => Op::BCurveTo(f(a), f(b), f(c)) }
+        match *self {
+            Op::Move(p) => Op::Move(f(p)),
+            Op::LineTo(p) => Op::LineTo(f(p)),
+            Op::BCurveTo(a, b, c) => Op::BCurveTo(f(a), f(b), f(c)),
+        }
     }
 }
 
 /// `OpSetType`: an outline stroked with `stroke`, an area filled with
 /// `fill`, or fill lines stroked with `fill` at `fillWeight`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum OpSetType { Path, FillPath, FillSketch }
+pub enum OpSetType {
+    Path,
+    FillPath,
+    FillSketch,
+}
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct OpSet { pub ty: OpSetType, pub ops: Vec<Op> }
+pub struct OpSet {
+    pub ty: OpSetType,
+    pub ops: Vec<Op>,
+}
 
 impl OpSet {
-    pub fn path(ops: Vec<Op>) -> OpSet { OpSet { ty: OpSetType::Path, ops } }
+    pub fn path(ops: Vec<Op>) -> OpSet {
+        OpSet {
+            ty: OpSetType::Path,
+            ops,
+        }
+    }
 }
 
 /// `Drawable.shape`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ShapeKind { Line, Rectangle, Ellipse, Circle, LinearPath, Arc, Curve, Polygon, Path }
+pub enum ShapeKind {
+    Line,
+    Rectangle,
+    Ellipse,
+    Circle,
+    LinearPath,
+    Arc,
+    Curve,
+    Polygon,
+    Path,
+}
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct Drawable { pub shape: ShapeKind, pub sets: Vec<OpSet>, pub options: Options }
+pub struct Drawable {
+    pub shape: ShapeKind,
+    pub sets: Vec<OpSet>,
+    pub options: Options,
+}
 
 impl Drawable {
     /// The fill rule the canvas renderer fills `fillPath` sets with.
-    pub fn even_odd(&self) -> bool { matches!(self.shape, ShapeKind::Curve | ShapeKind::Polygon | ShapeKind::Path) }
+    pub fn even_odd(&self) -> bool {
+        matches!(
+            self.shape,
+            ShapeKind::Curve | ShapeKind::Polygon | ShapeKind::Path
+        )
+    }
 }
 
 /// `fillStyle`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum FillStyle { Hachure, Solid, Zigzag, CrossHatch, Dots, Dashed, ZigzagLine }
+pub enum FillStyle {
+    Hachure,
+    Solid,
+    Zigzag,
+    CrossHatch,
+    Dots,
+    Dashed,
+    ZigzagLine,
+}
 
 /// rough.js `Options` with the generator's defaults. `stroke` None is
 /// `"none"`; `fill` None is unset.
@@ -106,28 +157,68 @@ pub struct Options {
 impl Default for Options {
     fn default() -> Self {
         Options {
-            max_randomness_offset: 2., roughness: 1., bowing: 1., stroke: Some("#000".into()), stroke_width: 1., curve_tightness: 0., curve_fitting: 0.95,
-            curve_step_count: 9., fill_style: FillStyle::Hachure, fill_weight: -1., hachure_angle: -41., hachure_gap: -1., dash_offset: -1., dash_gap: -1.,
-            zigzag_offset: -1., seed: 0, disable_multi_stroke: false, disable_multi_stroke_fill: false, preserve_vertices: false, fill_shape_roughness_gain: 0.8,
-            fill: None, simplification: None, stroke_line_dash: None, stroke_line_dash_offset: None, fill_line_dash: None, fill_line_dash_offset: None,
+            max_randomness_offset: 2.,
+            roughness: 1.,
+            bowing: 1.,
+            stroke: Some("#000".into()),
+            stroke_width: 1.,
+            curve_tightness: 0.,
+            curve_fitting: 0.95,
+            curve_step_count: 9.,
+            fill_style: FillStyle::Hachure,
+            fill_weight: -1.,
+            hachure_angle: -41.,
+            hachure_gap: -1.,
+            dash_offset: -1.,
+            dash_gap: -1.,
+            zigzag_offset: -1.,
+            seed: 0,
+            disable_multi_stroke: false,
+            disable_multi_stroke_fill: false,
+            preserve_vertices: false,
+            fill_shape_roughness_gain: 0.8,
+            fill: None,
+            simplification: None,
+            stroke_line_dash: None,
+            stroke_line_dash_offset: None,
+            fill_line_dash: None,
+            fill_line_dash_offset: None,
         }
     }
 }
 
 impl Options {
     /// `fillSketch`'s line width.
-    pub fn fill_weight_or_default(&self) -> f64 { if self.fill_weight < 0. { self.stroke_width / 2. } else { self.fill_weight } }
+    pub fn fill_weight_or_default(&self) -> f64 {
+        if self.fill_weight < 0. {
+            self.stroke_width / 2.
+        } else {
+            self.fill_weight
+        }
+    }
 }
 
 /// `math.js` `Random` (Park–Miller with `Math.imul`), created lazily as
 /// rough.js does on the first draw from an options object.
 #[derive(Clone, Debug)]
-pub struct Random { seed: i64, state: Option<i32>, math: u32 }
+pub struct Random {
+    seed: i64,
+    state: Option<i32>,
+    math: u32,
+}
 
 impl Random {
-    pub fn new(seed: i64) -> Random { Random { seed, state: None, math: seed as u32 } }
+    pub fn new(seed: i64) -> Random {
+        Random {
+            seed,
+            state: None,
+            math: seed as u32,
+        }
+    }
     /// Whether `o.randomizer` exists yet.
-    pub fn started(&self) -> bool { self.state.is_some() }
+    pub fn started(&self) -> bool {
+        self.state.is_some()
+    }
     /// `Random.next()`: in [0, 1).
     #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> f64 {
@@ -136,7 +227,9 @@ impl Random {
             let n = s.wrapping_mul(48271);
             self.state = Some(n);
             (n & 0x7fff_ffff) as f64 / 2f64.powi(31)
-        } else { self.math_random() }
+        } else {
+            self.math_random()
+        }
     }
     /// The `Math.random()` stand-in: mulberry32.
     pub fn math_random(&mut self) -> f64 {

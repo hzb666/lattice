@@ -35,13 +35,18 @@ thread_local! {
 
 /// Test hook: makes `get_updated_timestamp` return `t` on this thread
 /// (upstream returns 1 in its test environment). `None` goes back to the clock.
-pub fn fix_timestamp(t: Option<i64>) { FIXED_TIME.with(|c| c.set(t)) }
+pub fn fix_timestamp(t: Option<i64>) {
+    FIXED_TIME.with(|c| c.set(t))
+}
 
 /// Runs `f` with `get_updated_timestamp` read once (moving thousands of
 /// elements in one step would otherwise read the clock for each).
 pub fn with_one_timestamp<R>(f: impl FnOnce() -> R) -> R {
     let prev = FIXED_TIME.with(|c| c.get());
-    if prev.is_none() { let now = get_updated_timestamp(); FIXED_TIME.with(|c| c.set(Some(now))); }
+    if prev.is_none() {
+        let now = get_updated_timestamp();
+        FIXED_TIME.with(|c| c.set(Some(now)));
+    }
     let r = f();
     FIXED_TIME.with(|c| c.set(prev));
     r
@@ -50,7 +55,10 @@ pub fn with_one_timestamp<R>(f: impl FnOnce() -> R) -> R {
 /// `getUpdatedTimestamp`: epoch milliseconds.
 pub fn get_updated_timestamp() -> i64 {
     FIXED_TIME.with(|c| c.get()).unwrap_or_else(|| {
-        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0)
     })
 }
 
@@ -68,15 +76,27 @@ fn differs(a: &mut Element, b: &Element) -> bool {
 /// `created` are not part of an update.
 fn apply(el: &mut Element, before: &Element, f: impl FnOnce(&mut Element)) -> bool {
     f(el);
-    debug_assert!(el.id == before.id && el.created == before.created, "id and created are not updatable");
+    debug_assert!(
+        el.id == before.id && el.created == before.created,
+        "id and created are not updatable"
+    );
     if let (Some(a), Some(b)) = (before.points(), el.points())
-        && a != b && el.width == before.width && el.height == before.height && !el.is_elbow_arrow()
+        && a != b
+        && el.width == before.width
+        && el.height == before.height
+        && !el.is_elbow_arrow()
     {
         (el.width, el.height) = get_size_from_points(b);
     }
-    if !differs(el, before) { return false; }
-    if el.version == before.version { el.version = before.version + 1; }
-    if el.version_nonce == before.version_nonce { el.version_nonce = random_integer(); }
+    if !differs(el, before) {
+        return false;
+    }
+    if el.version == before.version {
+        el.version = before.version + 1;
+    }
+    if el.version_nonce == before.version_nonce {
+        el.version_nonce = random_integer();
+    }
     el.updated = get_updated_timestamp();
     true
 }
@@ -92,7 +112,9 @@ pub fn mutate_element(el: &mut Element, f: impl FnOnce(&mut Element)) -> bool {
 /// changed or `force` is set; otherwise an unchanged copy.
 pub fn new_element_with(el: &Element, f: impl FnOnce(&mut Element), force: bool) -> Element {
     let mut next = el.clone();
-    if !apply(&mut next, el, f) && force { bump_version(&mut next, None); }
+    if !apply(&mut next, el, f) && force {
+        bump_version(&mut next, None);
+    }
     next
 }
 

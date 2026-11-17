@@ -69,8 +69,16 @@ str_enum!(ArrowType { Sharp = "sharp", Round = "round", Elbow = "elbow" });
 impl StrokeWidthKey {
     /// `getStrokeWidthByKey`: freedraw strokes are drawn at half width.
     pub fn stroke_width(self, freedraw: bool) -> f64 {
-        let i = match self { StrokeWidthKey::Thin => 0, StrokeWidthKey::Medium => 1, StrokeWidthKey::Bold => 2 };
-        if freedraw { FREEDRAW_STROKE_WIDTH[i] } else { STROKE_WIDTH[i] }
+        let i = match self {
+            StrokeWidthKey::Thin => 0,
+            StrokeWidthKey::Medium => 1,
+            StrokeWidthKey::Bold => 2,
+        };
+        if freedraw {
+            FREEDRAW_STROKE_WIDTH[i]
+        } else {
+            STROKE_WIDTH[i]
+        }
     }
 }
 
@@ -88,16 +96,27 @@ pub struct ActiveTool {
 
 /// `AppState["preferredSelectionTool"]`: selection or lasso.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct PreferredSelectionTool { pub ty: ToolType, pub initialized: bool }
+pub struct PreferredSelectionTool {
+    pub ty: ToolType,
+    pub initialized: bool,
+}
 
 /// `AppState["frameRendering"]`.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct FrameRendering { pub enabled: bool, pub name: bool, pub outline: bool, pub clip: bool }
+pub struct FrameRendering {
+    pub enabled: bool,
+    pub name: bool,
+    pub outline: bool,
+    pub clip: bool,
+}
 
 /// The part of `LinearElementEditor` the store observes: which linear
 /// element is selected for point editing, and whether its editor is open.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SelectedLinearElement { pub element_id: String, pub is_editing: bool }
+pub struct SelectedLinearElement {
+    pub element_id: String,
+    pub is_editing: bool,
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct AppState {
@@ -171,8 +190,16 @@ impl Default for AppState {
     /// test environment uses "sharp").
     fn default() -> Self {
         AppState {
-            active_tool: ActiveTool { ty: ToolType::Selection, locked: false, from_selection: false, last_active_tool: None },
-            preferred_selection_tool: PreferredSelectionTool { ty: ToolType::Selection, initialized: false },
+            active_tool: ActiveTool {
+                ty: ToolType::Selection,
+                locked: false,
+                from_selection: false,
+                last_active_tool: None,
+            },
+            preferred_selection_tool: PreferredSelectionTool {
+                ty: ToolType::Selection,
+                initialized: false,
+            },
             current_item_stroke_color: DEFAULT_STROKE_COLOR.into(),
             current_item_background_color: DEFAULT_BACKGROUND_COLOR.into(),
             current_item_stickynote_stroke_color: DEFAULT_STROKE_COLOR.into(),
@@ -200,7 +227,12 @@ impl Default for AppState {
             cropping_element_id: None,
             active_locked_id: None,
             locked_multi_selections: BTreeSet::new(),
-            frame_rendering: FrameRendering { enabled: true, name: true, outline: true, clip: true },
+            frame_rendering: FrameRendering {
+                enabled: true,
+                name: true,
+                outline: true,
+                clip: true,
+            },
             editing_frame: None,
             frame_to_highlight: None,
             scroll_x: 0.,
@@ -235,21 +267,40 @@ pub struct StorageConf {
     pub history: bool,
 }
 
-const fn conf(browser: bool, export: bool, server: bool, history: bool) -> StorageConf { StorageConf { browser, export, server, history } }
+const fn conf(browser: bool, export: bool, server: bool, history: bool) -> StorageConf {
+    StorageConf {
+        browser,
+        export,
+        server,
+        history,
+    }
+}
 
 /// `APP_STATE_STORAGE_CONF` for the fields kept here, by upstream key.
 pub const APP_STATE_STORAGE_CONF: &[(&str, StorageConf)] = &[
     ("activeTool", conf(true, false, false, false)),
     ("preferredSelectionTool", conf(true, false, false, false)),
     ("currentItemStrokeColor", conf(true, false, false, false)),
-    ("currentItemBackgroundColor", conf(true, false, false, false)),
-    ("currentItemStickynoteStrokeColor", conf(true, false, false, false)),
-    ("currentItemStickynoteBackgroundColor", conf(true, false, false, false)),
+    (
+        "currentItemBackgroundColor",
+        conf(true, false, false, false),
+    ),
+    (
+        "currentItemStickynoteStrokeColor",
+        conf(true, false, false, false),
+    ),
+    (
+        "currentItemStickynoteBackgroundColor",
+        conf(true, false, false, false),
+    ),
     ("currentItemFillStyle", conf(true, false, false, false)),
     ("currentItemStrokeWidthKey", conf(true, false, false, false)),
     ("currentItemStrokeStyle", conf(true, false, false, false)),
     ("currentItemRoughness", conf(true, false, false, false)),
-    ("currentItemStrokeVariability", conf(true, false, false, false)),
+    (
+        "currentItemStrokeVariability",
+        conf(true, false, false, false),
+    ),
     ("currentItemOpacity", conf(true, false, false, false)),
     ("currentItemFontFamily", conf(true, false, false, false)),
     ("currentItemFontSize", conf(true, false, false, false)),
@@ -259,7 +310,10 @@ pub const APP_STATE_STORAGE_CONF: &[(&str, StorageConf)] = &[
     ("currentItemRoundness", conf(true, false, false, false)),
     ("currentItemArrowType", conf(true, false, false, false)),
     ("selectedElementIds", conf(true, false, false, true)),
-    ("previousSelectedElementIds", conf(true, false, false, false)),
+    (
+        "previousSelectedElementIds",
+        conf(true, false, false, false),
+    ),
     ("selectedGroupIds", conf(true, false, false, true)),
     ("editingGroupId", conf(true, false, false, true)),
     ("selectedLinearElement", conf(true, false, false, true)),
@@ -286,7 +340,12 @@ pub const APP_STATE_STORAGE_CONF: &[(&str, StorageConf)] = &[
     ("name", conf(true, false, false, true)),
 ];
 
-pub fn storage_conf(key: &str) -> Option<StorageConf> { APP_STATE_STORAGE_CONF.iter().find(|(k, _)| *k == key).map(|(_, c)| *c) }
+pub fn storage_conf(key: &str) -> Option<StorageConf> {
+    APP_STATE_STORAGE_CONF
+        .iter()
+        .find(|(k, _)| *k == key)
+        .map(|(_, c)| *c)
+}
 
 impl AppState {
     /// `cleanAppStateForExport`, as far as our files carry it (see
@@ -294,18 +353,27 @@ impl AppState {
     pub fn for_export(&self) -> super::restore::ExportedAppState {
         super::restore::ExportedAppState {
             view_background_color: self.view_background_color.clone(),
-            grid_size: self.grid_size, grid_step: self.grid_step, grid_mode_enabled: self.grid_mode_enabled,
+            grid_size: self.grid_size,
+            grid_step: self.grid_step,
+            grid_mode_enabled: self.grid_mode_enabled,
         }
     }
     /// Takes over the fields a file carries.
     pub fn apply_exported(&mut self, e: &super::restore::ExportedAppState) {
         self.view_background_color = e.view_background_color.clone();
-        (self.grid_size, self.grid_step, self.grid_mode_enabled) = (e.grid_size, e.grid_step, e.grid_mode_enabled);
+        (self.grid_size, self.grid_step, self.grid_mode_enabled) =
+            (e.grid_size, e.grid_step, e.grid_mode_enabled);
     }
     /// `isEraserActive`.
-    pub fn is_eraser_active(&self) -> bool { self.active_tool.ty == ToolType::Eraser }
+    pub fn is_eraser_active(&self) -> bool {
+        self.active_tool.ty == ToolType::Eraser
+    }
     /// `isHandToolActive`.
-    pub fn is_hand_tool_active(&self) -> bool { self.active_tool.ty == ToolType::Hand }
+    pub fn is_hand_tool_active(&self) -> bool {
+        self.active_tool.ty == ToolType::Hand
+    }
     /// The stroke width new elements of this kind get.
-    pub fn current_item_stroke_width(&self, freedraw: bool) -> f64 { self.current_item_stroke_width_key.stroke_width(freedraw) }
+    pub fn current_item_stroke_width(&self, freedraw: bool) -> f64 {
+        self.current_item_stroke_width_key.stroke_width(freedraw)
+    }
 }

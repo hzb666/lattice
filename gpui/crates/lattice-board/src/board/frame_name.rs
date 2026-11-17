@@ -28,13 +28,25 @@ pub struct FrameNameEditing {
 }
 
 fn set_name(me: &mut BoardView, id: &str, name: Option<String>) {
-    me.scene.mutate_element(id, true, |e| if let Kind::Frame { name: n } | Kind::MagicFrame { name: n } = &mut e.kind { *n = name.clone(); });
+    me.scene.mutate_element(id, true, |e| {
+        if let Kind::Frame { name: n } | Kind::MagicFrame { name: n } = &mut e.kind {
+            *n = name.clone();
+        }
+    });
 }
 
 /// `editingFrame: id`: the field over the name, the name selected (`onFocus`).
 pub fn begin(me: &mut BoardView, id: &str, window: &mut Window, cx: &mut Context<BoardView>) {
-    let Some(f) = me.scene.get_non_deleted_element(id).filter(|e| e.is_frame_like()) else { return };
-    if !me.app.frame_rendering.enabled || !me.app.frame_rendering.name { return; }
+    let Some(f) = me
+        .scene
+        .get_non_deleted_element(id)
+        .filter(|e| e.is_frame_like())
+    else {
+        return;
+    };
+    if !me.app.frame_rendering.enabled || !me.app.frame_rendering.name {
+        return;
+    }
     let title = get_frame_like_title(f).to_string();
     me.app.editing_frame = Some(id.to_string());
     let field = cx.new(|cx| {
@@ -43,27 +55,55 @@ pub fn begin(me: &mut BoardView, id: &str, window: &mut Window, cx: &mut Context
         t.select_all_text(cx);
         t
     });
-    let sub = cx.subscribe_in(&field, window, |me, field, ev: &TextFieldEvent, window, cx| match ev {
-        TextFieldEvent::Changed => {
-            let v = field.read(cx).text.clone();
-            if let Some(id) = me.frame_name.as_ref().map(|f| f.id.clone()) { set_name(me, &id, Some(v)); me.commit(None, cx); }
-        }
-        TextFieldEvent::Submit | TextFieldEvent::Cancel => { end(me, cx); me.focus(window, cx); }
-        _ => {}
-    });
+    let sub = cx.subscribe_in(
+        &field,
+        window,
+        |me, field, ev: &TextFieldEvent, window, cx| match ev {
+            TextFieldEvent::Changed => {
+                let v = field.read(cx).text.clone();
+                if let Some(id) = me.frame_name.as_ref().map(|f| f.id.clone()) {
+                    set_name(me, &id, Some(v));
+                    me.commit(None, cx);
+                }
+            }
+            TextFieldEvent::Submit | TextFieldEvent::Cancel => {
+                end(me, cx);
+                me.focus(window, cx);
+            }
+            _ => {}
+        },
+    );
     let fh = field.read(cx).focus_handle(cx);
     window.focus(&fh, cx);
     window.defer(cx, move |window, cx| window.focus(&fh, cx));
-    me.frame_name = Some(FrameNameEditing { id: id.to_string(), field, _sub: sub });
+    me.frame_name = Some(FrameNameEditing {
+        id: id.to_string(),
+        field,
+        _sub: sub,
+    });
     cx.notify();
 }
 
 /// `resetEditingFrame`: the name trimmed, empty back to none.
 pub fn end(me: &mut BoardView, cx: &mut Context<BoardView>) {
-    let Some(f) = me.frame_name.take() else { return };
+    let Some(f) = me.frame_name.take() else {
+        return;
+    };
     me.app.editing_frame = None;
-    let name = me.scene.get_element(&f.id).and_then(|e| e.frame_name()).map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned);
-    if me.scene.get_element(&f.id).is_some_and(|e| e.frame_name() != name.as_deref()) { set_name(me, &f.id, name); }
+    let name = me
+        .scene
+        .get_element(&f.id)
+        .and_then(|e| e.frame_name())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned);
+    if me
+        .scene
+        .get_element(&f.id)
+        .is_some_and(|e| e.frame_name() != name.as_deref())
+    {
+        set_name(me, &f.id, name);
+    }
     me.commit(Some(CaptureUpdateAction::Immediately), cx);
 }
 
@@ -73,15 +113,26 @@ pub fn end(me: &mut BoardView, cx: &mut Context<BoardView>) {
 const NAME_LINE: f32 = FrameStyle::NAME_FONT_SIZE as f32 * FrameStyle::NAME_LINE_HEIGHT as f32;
 
 fn name_color() -> Hsla {
-    let c = super::color::color_or_black(if crate::theme::dark() { FrameStyle::NAME_COLOR_DARK } else { FrameStyle::NAME_COLOR_LIGHT });
-    Hsla::from(gpui::Rgba { r: c.r as f32 / 255., g: c.g as f32 / 255., b: c.b as f32 / 255., a: 1. })
+    let c = super::color::color_or_black(if crate::theme::dark() {
+        FrameStyle::NAME_COLOR_DARK
+    } else {
+        FrameStyle::NAME_COLOR_LIGHT
+    });
+    Hsla::from(gpui::Rgba {
+        r: c.r as f32 / 255.,
+        g: c.g as f32 / 255.,
+        b: c.b as f32 / 255.,
+        a: 1.,
+    })
 }
 
 /// The frame names (`renderFrameNames`): one label per frame in view, but
 /// not the one being renamed. Remembers where they are for the double-click.
 pub fn labels(me: &mut BoardView, window: &mut Window) -> Vec<AnyElement> {
     me.frame_labels.clear();
-    if !me.app.frame_rendering.enabled || !me.app.frame_rendering.name { return vec![]; }
+    if !me.app.frame_rendering.enabled || !me.app.frame_rendering.name {
+        return vec![];
+    }
     let v = me.view();
     // labels sit in the board view, which the canvas fills; `frame_labels`
     // keeps window rects (the pointer's coordinates)
@@ -94,22 +145,68 @@ pub fn labels(me: &mut BoardView, window: &mut Window) -> Vec<AnyElement> {
         let a = v.to_screen([f.x, f.y]);
         let max_w = px(f.width as f32 * v.zoom);
         let top = a.y - px(FrameStyle::NAME_OFFSET_Y as f32 + NAME_LINE);
-        if a.x > o.x + vp.width || a.x + max_w < o.x || top > o.y + vp.height || a.y + px(f.height as f32 * v.zoom) < o.y { continue; }
+        if a.x > o.x + vp.width
+            || a.x + max_w < o.x
+            || top > o.y + vp.height
+            || a.y + px(f.height as f32 * v.zoom) < o.y
+        {
+            continue;
+        }
         let title: SharedString = get_frame_like_title(f).to_string().into();
-        let run = TextRun { len: title.len(), font: font.clone(), color: name_color(), background_color: None, underline: None, strikethrough: None };
+        let run = TextRun {
+            len: title.len(),
+            font: font.clone(),
+            color: name_color(),
+            background_color: None,
+            underline: None,
+            strikethrough: None,
+        };
         // (rounded up: a hair short and the ellipsis would cut it)
-        let w = (window.text_system().shape_line(title.clone(), fs, &[run], None).width.ceil() + px(1.)).min(max_w);
-        me.frame_labels.push((f.id.clone(), Bounds { origin: point(a.x, top), size: size(w, px(NAME_LINE)) }));
-        if me.frame_name.as_ref().is_some_and(|n| n.id == f.id) { continue; }
-        out.push(div().absolute().left(a.x - o.x).top(top - o.y).w(w).font_family(crate::board::chrome::style::ui_font()).h(px(NAME_LINE)).overflow_hidden().whitespace_nowrap().text_ellipsis()
-            .text_size(fs).line_height(px(NAME_LINE)).text_color(name_color()).child(title).into_any_element());
+        let w = (window
+            .text_system()
+            .shape_line(title.clone(), fs, &[run], None)
+            .width
+            .ceil()
+            + px(1.))
+        .min(max_w);
+        me.frame_labels.push((
+            f.id.clone(),
+            Bounds {
+                origin: point(a.x, top),
+                size: size(w, px(NAME_LINE)),
+            },
+        ));
+        if me.frame_name.as_ref().is_some_and(|n| n.id == f.id) {
+            continue;
+        }
+        out.push(
+            div()
+                .absolute()
+                .left(a.x - o.x)
+                .top(top - o.y)
+                .w(w)
+                .font_family(crate::board::chrome::style::ui_font())
+                .h(px(NAME_LINE))
+                .overflow_hidden()
+                .whitespace_nowrap()
+                .text_ellipsis()
+                .text_size(fs)
+                .line_height(px(NAME_LINE))
+                .text_color(name_color())
+                .child(title)
+                .into_any_element(),
+        );
     }
     out
 }
 
 /// The frame name under `p` (window), for a double-click.
 pub fn frame_name_at(me: &BoardView, p: Point<Pixels>) -> Option<String> {
-    me.frame_labels.iter().rev().find(|(_, b)| b.contains(&p)).map(|(id, _)| id.clone())
+    me.frame_labels
+        .iter()
+        .rev()
+        .find(|(_, b)| b.contains(&p))
+        .map(|(id, _)| id.clone())
 }
 
 /// Upstream's `<input>` in the name div: padding 6, shifted (-6, 6), so the
@@ -125,12 +222,29 @@ pub fn element(me: &BoardView, cx: &mut Context<BoardView>) -> Option<AnyElement
     let e = me.scene.get_non_deleted_element(&f.id)?;
     let _ = e;
     let w = px((text.chars().count() as f32 + 1.) * size * 0.6).max(px(size));
-    let bg = super::render::color(super::color::color_or_black(&me.app.view_background_color), 1.);
-    f.field.update(cx, |t, _| { t.size = size; t.line_height = NAME_LINE; t.color = name_color(); });
-    Some(div().absolute().left(b.origin.x - o.x - px(pad)).top(b.origin.y - o.y).p(px(pad)).rounded(px(4.)).bg(bg).border_1().border_color(super::chrome::style::primary())
-        .font_family(super::chrome::style::ui_font())
-        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-        .on_mouse_down(MouseButton::Right, |_, _, cx| cx.stop_propagation())
-        .child(div().w(w).child(f.field.clone()))
-        .into_any_element())
+    let bg = super::render::color(
+        super::color::color_or_black(&me.app.view_background_color),
+        1.,
+    );
+    f.field.update(cx, |t, _| {
+        t.size = size;
+        t.line_height = NAME_LINE;
+        t.color = name_color();
+    });
+    Some(
+        div()
+            .absolute()
+            .left(b.origin.x - o.x - px(pad))
+            .top(b.origin.y - o.y)
+            .p(px(pad))
+            .rounded(px(4.))
+            .bg(bg)
+            .border_1()
+            .border_color(super::chrome::style::primary())
+            .font_family(super::chrome::style::ui_font())
+            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .on_mouse_down(MouseButton::Right, |_, _, cx| cx.stop_propagation())
+            .child(div().w(w).child(f.field.clone()))
+            .into_any_element(),
+    )
 }

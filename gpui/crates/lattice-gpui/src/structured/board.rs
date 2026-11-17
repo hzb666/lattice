@@ -94,7 +94,11 @@ impl StructuredDocument {
         };
         let view = board.view.clone();
         view.update(cx, |view, cx| view.finish_editing(cx));
-        if self.board.as_ref().is_some_and(|board| board.save.is_some()) {
+        if self
+            .board
+            .as_ref()
+            .is_some_and(|board| board.save.is_some())
+        {
             self.write_board(cx);
         }
         cx.emit(StructuredEvent::Flushed);

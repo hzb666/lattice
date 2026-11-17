@@ -249,8 +249,8 @@ impl StructuredDocument {
             }
         };
         let deck = (kind == StructuredKind::Deck).then(|| slides::DeckSession::new(root, cx));
-        let board = native
-            .then(|| board::NativeBoard::new(&source, &root.join(&relative), window, cx));
+        let board =
+            native.then(|| board::NativeBoard::new(&source, &root.join(&relative), window, cx));
         Self {
             kind,
             island,
@@ -813,7 +813,10 @@ mod tests {
     fn kinds_follow_the_tauri_apps_paths() {
         assert_eq!(StructuredKind::of("map.tldr"), Some(StructuredKind::Board));
         assert_eq!(StructuredKind::of("a/B.TLDR"), Some(StructuredKind::Board));
-        assert_eq!(StructuredKind::of("figures/map.excalidraw"), Some(StructuredKind::Board));
+        assert_eq!(
+            StructuredKind::of("figures/map.excalidraw"),
+            Some(StructuredKind::Board)
+        );
         assert_eq!(
             StructuredKind::of("data/results.lattice-sheet"),
             Some(StructuredKind::Sheet)

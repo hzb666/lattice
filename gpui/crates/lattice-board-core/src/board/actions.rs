@@ -28,15 +28,38 @@ pub struct ActionResult {
 }
 
 impl ActionResult {
-    pub fn new(elements: Option<Vec<Element>>, app_state: Option<AppState>, capture_update: CaptureUpdateAction) -> Self { ActionResult { elements, app_state, capture_update } }
+    pub fn new(
+        elements: Option<Vec<Element>>,
+        app_state: Option<AppState>,
+        capture_update: CaptureUpdateAction,
+    ) -> Self {
+        ActionResult {
+            elements,
+            app_state,
+            capture_update,
+        }
+    }
     /// Nothing changed (`{ captureUpdate: EVENTUALLY }` / `false` upstream).
-    pub fn none() -> Self { ActionResult { elements: None, app_state: None, capture_update: CaptureUpdateAction::Eventually } }
+    pub fn none() -> Self {
+        ActionResult {
+            elements: None,
+            app_state: None,
+            capture_update: CaptureUpdateAction::Eventually,
+        }
+    }
 }
 
 /// `updateActiveTool(appState, { type })`: switch tools, keeping the lock
 /// and the tool to go back to.
-pub fn update_active_tool(a: &AppState, ty: super::app_state::ToolType) -> super::app_state::ActiveTool {
-    super::app_state::ActiveTool { ty, from_selection: false, ..a.active_tool.clone() }
+pub fn update_active_tool(
+    a: &AppState,
+    ty: super::app_state::ToolType,
+) -> super::app_state::ActiveTool {
+    super::app_state::ActiveTool {
+        ty,
+        from_selection: false,
+        ..a.active_tool.clone()
+    }
 }
 
 mod align;

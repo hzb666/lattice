@@ -22,15 +22,35 @@ use crate::board::viewport::*;
 
 /// `actionChangeViewBackgroundColor`.
 pub fn action_change_view_background_color(a: &AppState, color: &str) -> ActionResult {
-    ActionResult::new(None, Some(AppState { view_background_color: color.into(), ..a.clone() }), CaptureUpdateAction::Immediately)
+    ActionResult::new(
+        None,
+        Some(AppState {
+            view_background_color: color.into(),
+            ..a.clone()
+        }),
+        CaptureUpdateAction::Immediately,
+    )
 }
 
 /// `actionClearCanvas`: everything deleted, the app state back to defaults
 /// except the grid (the image tool falls back to selection).
 pub fn action_clear_canvas(elements: &[Element], a: &AppState) -> ActionResult {
-    let next = elements.iter().map(|e| new_element_with(e, |n| n.is_deleted = true, false)).collect();
-    let active_tool = if a.active_tool.ty == ToolType::Image { update_active_tool(a, a.preferred_selection_tool.ty) } else { a.active_tool.clone() };
-    let app = AppState { grid_size: a.grid_size, grid_step: a.grid_step, grid_mode_enabled: a.grid_mode_enabled, active_tool, ..AppState::default() };
+    let next = elements
+        .iter()
+        .map(|e| new_element_with(e, |n| n.is_deleted = true, false))
+        .collect();
+    let active_tool = if a.active_tool.ty == ToolType::Image {
+        update_active_tool(a, a.preferred_selection_tool.ty)
+    } else {
+        a.active_tool.clone()
+    };
+    let app = AppState {
+        grid_size: a.grid_size,
+        grid_step: a.grid_step,
+        grid_mode_enabled: a.grid_mode_enabled,
+        active_tool,
+        ..AppState::default()
+    };
     ActionResult::new(Some(next), Some(app), CaptureUpdateAction::Immediately)
 }
 
@@ -42,31 +62,113 @@ fn with_viewport(a: &AppState, v: Viewport) -> ActionResult {
 
 /// `actionZoomIn`. `anchor`: the viewport point kept in place (default: the
 /// canvas center).
-pub fn action_zoom_in(a: &AppState, c: Canvas, anchor: Option<[f64; 2]>, constraints: Option<&ScrollConstraints>) -> ActionResult { with_viewport(a, zoom_in(a.viewport(), c, anchor, constraints)) }
+pub fn action_zoom_in(
+    a: &AppState,
+    c: Canvas,
+    anchor: Option<[f64; 2]>,
+    constraints: Option<&ScrollConstraints>,
+) -> ActionResult {
+    with_viewport(a, zoom_in(a.viewport(), c, anchor, constraints))
+}
 /// `actionZoomOut`.
-pub fn action_zoom_out(a: &AppState, c: Canvas, anchor: Option<[f64; 2]>, constraints: Option<&ScrollConstraints>) -> ActionResult { with_viewport(a, zoom_out(a.viewport(), c, anchor, constraints)) }
+pub fn action_zoom_out(
+    a: &AppState,
+    c: Canvas,
+    anchor: Option<[f64; 2]>,
+    constraints: Option<&ScrollConstraints>,
+) -> ActionResult {
+    with_viewport(a, zoom_out(a.viewport(), c, anchor, constraints))
+}
 /// `actionResetZoom`.
-pub fn action_reset_zoom(a: &AppState, c: Canvas, anchor: Option<[f64; 2]>, constraints: Option<&ScrollConstraints>) -> ActionResult { with_viewport(a, reset_zoom(a.viewport(), c, anchor, constraints)) }
+pub fn action_reset_zoom(
+    a: &AppState,
+    c: Canvas,
+    anchor: Option<[f64; 2]>,
+    constraints: Option<&ScrollConstraints>,
+) -> ActionResult {
+    with_viewport(a, reset_zoom(a.viewport(), c, anchor, constraints))
+}
 
 /// What zoom to fit fits: the selection (if `selection` and any), the lock
 /// box, or all elements.
-fn fit_bounds(elements: &[Element], a: &AppState, selection: bool, constraints: Option<&ScrollConstraints>) -> Bounds {
+fn fit_bounds(
+    elements: &[Element],
+    a: &AppState,
+    selection: bool,
+    constraints: Option<&ScrollConstraints>,
+) -> Bounds {
     let map = array_to_map(elements);
-    let sel = if selection { get_selected_elements(elements, &a.selected_element_ids, SelectedOpts::default()) } else { vec![] };
-    if !sel.is_empty() { return get_common_bounds(sel, &map); }
-    if let Some(sc) = constraints { return scroll_constraints_bounds(sc); }
+    let sel = if selection {
+        get_selected_elements(elements, &a.selected_element_ids, SelectedOpts::default())
+    } else {
+        vec![]
+    };
+    if !sel.is_empty() {
+        return get_common_bounds(sel, &map);
+    }
+    if let Some(sc) = constraints {
+        return scroll_constraints_bounds(sc);
+    }
     get_common_bounds(elements.iter().filter(|e| !e.is_deleted), &map)
 }
 
 /// `actionZoomToFitSelectionInViewport` (never past 100%).
-pub fn action_zoom_to_fit_selection_in_viewport(elements: &[Element], a: &AppState, c: Canvas, offsets: Option<Offsets>, constraints: Option<&ScrollConstraints>) -> ActionResult {
-    with_viewport(a, zoom_to_fit(fit_bounds(elements, a, true, constraints), Fit::ScaleDown, a.viewport(), c, offsets, constraints))
+pub fn action_zoom_to_fit_selection_in_viewport(
+    elements: &[Element],
+    a: &AppState,
+    c: Canvas,
+    offsets: Option<Offsets>,
+    constraints: Option<&ScrollConstraints>,
+) -> ActionResult {
+    with_viewport(
+        a,
+        zoom_to_fit(
+            fit_bounds(elements, a, true, constraints),
+            Fit::ScaleDown,
+            a.viewport(),
+            c,
+            offsets,
+            constraints,
+        ),
+    )
 }
 /// `actionZoomToFitSelection` (Shift+3).
-pub fn action_zoom_to_fit_selection(elements: &[Element], a: &AppState, c: Canvas, offsets: Option<Offsets>, constraints: Option<&ScrollConstraints>) -> ActionResult {
-    with_viewport(a, zoom_to_fit(fit_bounds(elements, a, true, constraints), Fit::Contain, a.viewport(), c, offsets, constraints))
+pub fn action_zoom_to_fit_selection(
+    elements: &[Element],
+    a: &AppState,
+    c: Canvas,
+    offsets: Option<Offsets>,
+    constraints: Option<&ScrollConstraints>,
+) -> ActionResult {
+    with_viewport(
+        a,
+        zoom_to_fit(
+            fit_bounds(elements, a, true, constraints),
+            Fit::Contain,
+            a.viewport(),
+            c,
+            offsets,
+            constraints,
+        ),
+    )
 }
 /// `actionZoomToFit` (Shift+1).
-pub fn action_zoom_to_fit(elements: &[Element], a: &AppState, c: Canvas, offsets: Option<Offsets>, constraints: Option<&ScrollConstraints>) -> ActionResult {
-    with_viewport(a, zoom_to_fit(fit_bounds(elements, a, false, constraints), Fit::ScaleDown, a.viewport(), c, offsets, constraints))
+pub fn action_zoom_to_fit(
+    elements: &[Element],
+    a: &AppState,
+    c: Canvas,
+    offsets: Option<Offsets>,
+    constraints: Option<&ScrollConstraints>,
+) -> ActionResult {
+    with_viewport(
+        a,
+        zoom_to_fit(
+            fit_bounds(elements, a, false, constraints),
+            Fit::ScaleDown,
+            a.viewport(),
+            c,
+            offsets,
+            constraints,
+        ),
+    )
 }

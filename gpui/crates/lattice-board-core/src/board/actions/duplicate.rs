@@ -21,28 +21,61 @@ use crate::board::consts::DEFAULT_GRID_SIZE;
 use crate::board::duplicate::{DuplicateMode, duplicate_elements};
 use crate::board::fractional_index::sync_moved_indices;
 use crate::board::history::CaptureUpdateAction;
-use crate::board::selection::{SelectedOpts, get_selected_elements, get_selection_state_for_elements};
+use crate::board::selection::{
+    SelectedOpts, get_selected_elements, get_selection_state_for_elements,
+};
 use crate::board::types::Element;
 use rustc_hash::FxHashSet;
 
 /// `actionDuplicateSelection` (Cmd+D).
-pub fn action_duplicate_selection(elements: &[Element], a: &AppState, hooks: &dyn BindingHooks) -> ActionResult {
-    if a.selected_linear_element.as_ref().is_some_and(|s| s.is_editing) { return ActionResult::none(); }
-    let ids: FxHashSet<String> = get_selected_elements(elements, &a.selected_element_ids, SelectedOpts { include_bound_text_element: true, include_elements_in_frames: true })
-        .into_iter().map(|e| e.id.clone()).collect();
-    let mode = DuplicateMode::InPlace { ids: &ids, editing_group_id: a.editing_group_id.as_deref(), selected_group_ids: &a.selected_group_ids };
-    let mut overrides = |d: &mut Element, o: &Element, o2d: &rustc_hash::FxHashMap<String, String>| {
-        d.x = o.x + DEFAULT_GRID_SIZE / 2.;
-        d.y = o.y + DEFAULT_GRID_SIZE / 2.;
-        d.frame_id = o.frame_id.as_ref().map(|f| o2d.get(f).unwrap_or(f).clone());
+pub fn action_duplicate_selection(
+    elements: &[Element],
+    a: &AppState,
+    hooks: &dyn BindingHooks,
+) -> ActionResult {
+    if a.selected_linear_element
+        .as_ref()
+        .is_some_and(|s| s.is_editing)
+    {
+        return ActionResult::none();
+    }
+    let ids: FxHashSet<String> = get_selected_elements(
+        elements,
+        &a.selected_element_ids,
+        SelectedOpts {
+            include_bound_text_element: true,
+            include_elements_in_frames: true,
+        },
+    )
+    .into_iter()
+    .map(|e| e.id.clone())
+    .collect();
+    let mode = DuplicateMode::InPlace {
+        ids: &ids,
+        editing_group_id: a.editing_group_id.as_deref(),
+        selected_group_ids: &a.selected_group_ids,
     };
+    let mut overrides =
+        |d: &mut Element, o: &Element, o2d: &rustc_hash::FxHashMap<String, String>| {
+            d.x = o.x + DEFAULT_GRID_SIZE / 2.;
+            d.y = o.y + DEFAULT_GRID_SIZE / 2.;
+            d.frame_id = o.frame_id.as_ref().map(|f| o2d.get(f).unwrap_or(f).clone());
+        };
     let dup = duplicate_elements(elements, mode, true, Some(&mut overrides), hooks);
     let mut next = dup.elements_with_duplicates;
-    let moved: FxHashSet<String> = dup.duplicated_elements.iter().map(|e| e.id.clone()).collect();
+    let moved: FxHashSet<String> = dup
+        .duplicated_elements
+        .iter()
+        .map(|e| e.id.clone())
+        .collect();
     sync_moved_indices(&mut next, &moved);
     let targets: Vec<&Element> = next.iter().filter(|e| moved.contains(&e.id)).collect();
     // in the order they were made, as upstream passes them
-    let order: Vec<&Element> = dup.duplicated_elements.iter().filter_map(|d| targets.iter().find(|t| t.id == d.id).copied()).collect();
+    let order: Vec<&Element> = dup
+        .duplicated_elements
+        .iter()
+        .filter_map(|d| targets.iter().find(|t| t.id == d.id).copied())
+        .collect();
     let mut app = a.clone();
     get_selection_state_for_elements(&order, &next, a, false).apply(&mut app);
     ActionResult::new(Some(next), Some(app), CaptureUpdateAction::Immediately)

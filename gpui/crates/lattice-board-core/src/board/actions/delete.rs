@@ -28,17 +28,42 @@ use std::collections::BTreeSet;
 
 struct Live<'a>(&'a [Element], rustc_hash::FxHashMap<&'a str, usize>);
 impl ElementsMap for Live<'_> {
-    fn get_element(&self, id: &str) -> Option<&Element> { self.1.get(id).map(|&i| &self.0[i]).filter(|e| !e.is_deleted) }
+    fn get_element(&self, id: &str) -> Option<&Element> {
+        self.1
+            .get(id)
+            .map(|&i| &self.0[i])
+            .filter(|e| !e.is_deleted)
+    }
 }
 
-fn live_group<'a>(elements: &'a [Element], g: &str) -> Vec<&'a Element> { get_elements_in_group(elements, g).into_iter().filter(|e| !e.is_deleted).collect() }
+fn live_group<'a>(elements: &'a [Element], g: &str) -> Vec<&'a Element> {
+    get_elements_in_group(elements, g)
+        .into_iter()
+        .filter(|e| !e.is_deleted)
+        .collect()
+}
 
 /// `deleteSelectedElements`.
-fn delete_selected_elements(elements: &[Element], a: &AppState, with_frame_children: bool) -> (Vec<Element>, AppState) {
+fn delete_selected_elements(
+    elements: &[Element],
+    a: &AppState,
+    with_frame_children: bool,
+) -> (Vec<Element>, AppState) {
     let frames: Vec<&Element> = elements.iter().filter(|e| e.is_frame_like()).collect();
-    let frames: FxHashSet<&str> = frames.iter().filter(|e| !e.is_deleted && a.selected_element_ids.contains(&e.id)).map(|e| e.id.as_str()).collect();
+    let frames: FxHashSet<&str> = frames
+        .iter()
+        .filter(|e| !e.is_deleted && a.selected_element_ids.contains(&e.id))
+        .map(|e| e.id.as_str())
+        .collect();
     let child_of_deleted = |e: &Element| e.frame_id.as_deref().is_some_and(|f| frames.contains(f));
-    let map = Live(elements, elements.iter().enumerate().map(|(i, e)| (e.id.as_str(), i)).collect());
+    let map = Live(
+        elements,
+        elements
+            .iter()
+            .enumerate()
+            .map(|(i, e)| (e.id.as_str(), i))
+            .collect(),
+    );
     let mut selected: BTreeSet<String> = BTreeSet::new();
     let mut processed: FxHashSet<&str> = FxHashSet::default();
     if !with_frame_children {
@@ -46,39 +71,77 @@ fn delete_selected_elements(elements: &[Element], a: &AppState, with_frame_child
         ordered.sort();
         for f in ordered {
             for c in get_frame_children(elements, f) {
-                if !processed.insert(&c.id) { continue; }
-                if c.is_bound_to_container() { if let Some(k) = c.container_id().and_then(|id| map.get_element(id)) { selected.insert(k.id.clone()); } }
-                else { selected.insert(c.id.clone()); }
+                if !processed.insert(&c.id) {
+                    continue;
+                }
+                if c.is_bound_to_container() {
+                    if let Some(k) = c.container_id().and_then(|id| map.get_element(id)) {
+                        selected.insert(k.id.clone());
+                    }
+                } else {
+                    selected.insert(c.id.clone());
+                }
             }
         }
     }
     let mut select_editing_group = true;
     let mut unbind_elbows: Vec<(String, String)> = vec![];
-    let mut next: Vec<Element> = elements.iter().map(|e| {
-        if a.selected_element_ids.contains(&e.id) || (with_frame_children && child_of_deleted(e)) {
-            let container = e.container_id().and_then(|id| map.get_element(id));
-            if !with_frame_children && child_of_deleted(e) { select_editing_group = false; selected.insert(e.id.clone()); return e.clone(); }
-            if !with_frame_children && container.is_some_and(child_of_deleted) { return e.clone(); }
-            for b in e.bound_elements.iter().flatten() {
-                if map.get_element(&b.id).is_some_and(|x| x.is_elbow_arrow()) { unbind_elbows.push((b.id.clone(), e.id.clone())); }
+    let mut next: Vec<Element> = elements
+        .iter()
+        .map(|e| {
+            if a.selected_element_ids.contains(&e.id)
+                || (with_frame_children && child_of_deleted(e))
+            {
+                let container = e.container_id().and_then(|id| map.get_element(id));
+                if !with_frame_children && child_of_deleted(e) {
+                    select_editing_group = false;
+                    selected.insert(e.id.clone());
+                    return e.clone();
+                }
+                if !with_frame_children && container.is_some_and(child_of_deleted) {
+                    return e.clone();
+                }
+                for b in e.bound_elements.iter().flatten() {
+                    if map.get_element(&b.id).is_some_and(|x| x.is_elbow_arrow()) {
+                        unbind_elbows.push((b.id.clone(), e.id.clone()));
+                    }
+                }
+                return new_element_with(e, |n| n.is_deleted = true, false);
             }
-            return new_element_with(e, |n| n.is_deleted = true, false);
-        }
-        // a deleted frame's children leave it, selected
-        if child_of_deleted(e) {
-            select_editing_group = false;
-            if !e.is_bound_to_container() { selected.insert(e.id.clone()); }
-            return new_element_with(e, |n| n.frame_id = None, false);
-        }
-        if e.container_id().is_some_and(|c| a.selected_element_ids.contains(c)) { return new_element_with(e, |n| n.is_deleted = true, false); }
-        e.clone()
-    }).collect();
+            // a deleted frame's children leave it, selected
+            if child_of_deleted(e) {
+                select_editing_group = false;
+                if !e.is_bound_to_container() {
+                    selected.insert(e.id.clone());
+                }
+                return new_element_with(e, |n| n.frame_id = None, false);
+            }
+            if e.container_id()
+                .is_some_and(|c| a.selected_element_ids.contains(c))
+            {
+                return new_element_with(e, |n| n.is_deleted = true, false);
+            }
+            e.clone()
+        })
+        .collect();
     // elbow arrows lose the binding to what's deleted (upstream mutates the scene's copy)
     for (arrow, target) in unbind_elbows {
         if let Some(x) = next.iter_mut().find(|x| x.id == arrow) {
-            crate::board::mutate::mutate_element(x, |x| if let Some(l) = x.linear_mut() {
-                if l.start_binding.as_ref().is_some_and(|b| b.element_id == target) { l.start_binding = None; }
-                if l.end_binding.as_ref().is_some_and(|b| b.element_id == target) { l.end_binding = None; }
+            crate::board::mutate::mutate_element(x, |x| {
+                if let Some(l) = x.linear_mut() {
+                    if l.start_binding
+                        .as_ref()
+                        .is_some_and(|b| b.element_id == target)
+                    {
+                        l.start_binding = None;
+                    }
+                    if l.end_binding
+                        .as_ref()
+                        .is_some_and(|b| b.element_id == target)
+                    {
+                        l.end_binding = None;
+                    }
+                }
             });
         }
     }
@@ -86,14 +149,23 @@ fn delete_selected_elements(elements: &[Element], a: &AppState, with_frame_child
     // select the next element of the edited group, or of its super group
     if select_editing_group && let Some(g) = a.editing_group_id.as_deref() {
         let members = live_group(&next, g);
-        if let Some(first) = members.first() { selected.insert(first.id.clone()); }
+        if let Some(first) = members.first() {
+            selected.insert(first.id.clone());
+        }
         if members.len() <= 1 {
             editing = None;
             if let Some(last) = members.first() {
-                let i = last.group_ids.iter().position(|x| x == g).map_or(0, |i| i + 1);
+                let i = last
+                    .group_ids
+                    .iter()
+                    .position(|x| x == g)
+                    .map_or(0, |i| i + 1);
                 if let Some(sup) = last.group_ids.get(i) {
                     let sup_members = live_group(&next, sup);
-                    if sup_members.len() > 1 { editing = Some(sup.clone()); selected.extend(sup_members.iter().map(|e| e.id.clone())); }
+                    if sup_members.len() > 1 {
+                        editing = Some(sup.clone());
+                        selected.extend(sup_members.iter().map(|e| e.id.clone()));
+                    }
                 }
             }
         }
@@ -106,7 +178,9 @@ fn delete_selected_elements(elements: &[Element], a: &AppState, with_frame_child
 /// `handleGroupEditingState`: within an edited group, select its first
 /// remaining member.
 fn handle_group_editing_state(mut a: AppState, elements: &[Element]) -> AppState {
-    if let Some(g) = a.editing_group_id.as_deref() && let Some(first) = live_group(elements, g).first() {
+    if let Some(g) = a.editing_group_id.as_deref()
+        && let Some(first) = live_group(elements, g).first()
+    {
         a.selected_element_ids = BTreeSet::from([first.id.clone()]);
     }
     a
@@ -114,15 +188,28 @@ fn handle_group_editing_state(mut a: AppState, elements: &[Element]) -> AppState
 
 /// `actionDeleteSelected` (Delete / Backspace). `with_frame_children`: a
 /// deleted frame takes its children along.
-pub fn action_delete_selected(elements: &[Element], a: &AppState, with_frame_children: bool) -> ActionResult {
-    if a.selected_linear_element.as_ref().is_some_and(|s| s.is_editing) { return ActionResult::none(); }
+pub fn action_delete_selected(
+    elements: &[Element],
+    a: &AppState,
+    with_frame_children: bool,
+) -> ActionResult {
+    if a.selected_linear_element
+        .as_ref()
+        .is_some_and(|s| s.is_editing)
+    {
+        return ActionResult::none();
+    }
     let (mut next, app) = delete_selected_elements(elements, a, with_frame_children);
     let deleted: Vec<Element> = next.iter().filter(|e| e.is_deleted).cloned().collect();
     fix_bindings_after_deletion(&mut next, &deleted);
     let mut app = handle_group_editing_state(app, &next);
     app.active_tool = super::update_active_tool(a, a.preferred_selection_tool.ty);
     app.selected_linear_element = None;
-    let capture = if is_some_element_selected(elements, &a.selected_element_ids) { CaptureUpdateAction::Immediately } else { CaptureUpdateAction::Eventually };
+    let capture = if is_some_element_selected(elements, &a.selected_element_ids) {
+        CaptureUpdateAction::Immediately
+    } else {
+        CaptureUpdateAction::Eventually
+    };
     ActionResult::new(Some(next), Some(app), capture)
 }
 

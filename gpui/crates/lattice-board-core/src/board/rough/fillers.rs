@@ -18,7 +18,10 @@ pub fn fill_polygons(polygons: &mut [Vec<Point>], o: &Options, r: &mut Random) -
     let ops = match o.fill_style {
         FillStyle::CrossHatch => {
             let mut ops = hachure_ops(polygons, o, r);
-            let o2 = Options { hachure_angle: o.hachure_angle + 90., ..o.clone() };
+            let o2 = Options {
+                hachure_angle: o.hachure_angle + 90.,
+                ..o.clone()
+            };
             ops.extend(hachure_ops(polygons, &o2, r));
             ops
         }
@@ -28,14 +31,23 @@ pub fn fill_polygons(polygons: &mut [Vec<Point>], o: &Options, r: &mut Random) -
         FillStyle::Dashed => dashed(polygons, o, r),
         FillStyle::Hachure | FillStyle::Solid => hachure_ops(polygons, o, r),
     };
-    OpSet { ty: OpSetType::FillSketch, ops }
+    OpSet {
+        ty: OpSetType::FillSketch,
+        ops,
+    }
 }
 
-fn line_length(l: &Segment) -> f64 { ((l[0][0] - l[1][0]).powi(2) + (l[0][1] - l[1][1]).powi(2)).sqrt() }
+fn line_length(l: &Segment) -> f64 {
+    ((l[0][0] - l[1][0]).powi(2) + (l[0][1] - l[1][1]).powi(2)).sqrt()
+}
 
 fn render_lines(lines: &[Segment], o: &Options, r: &mut Random) -> Vec<Op> {
     let mut ops = vec![];
-    for l in lines { ops.extend(double_line_fill_ops(l[0][0], l[0][1], l[1][0], l[1][1], o, r)); }
+    for l in lines {
+        ops.extend(double_line_fill_ops(
+            l[0][0], l[0][1], l[1][0], l[1][1], o, r,
+        ));
+    }
     ops
 }
 
@@ -44,17 +56,30 @@ fn hachure_ops(polygons: &mut [Vec<Point>], o: &Options, r: &mut Random) -> Vec<
     render_lines(&lines, o, r)
 }
 
-fn gap_of(o: &Options) -> f64 { (if o.hachure_gap < 0. { o.stroke_width * 4. } else { o.hachure_gap }).max(0.1) }
+fn gap_of(o: &Options) -> f64 {
+    (if o.hachure_gap < 0. {
+        o.stroke_width * 4.
+    } else {
+        o.hachure_gap
+    })
+    .max(0.1)
+}
 
 /// `polygonHachureLines`.
-pub fn polygon_hachure_lines(polygons: &mut [Vec<Point>], o: &Options, r: &mut Random) -> Vec<Segment> {
+pub fn polygon_hachure_lines(
+    polygons: &mut [Vec<Point>],
+    o: &Options,
+    r: &mut Random,
+) -> Vec<Segment> {
     let angle = o.hachure_angle + 90.;
     let gap = gap_of(o);
     let mut skip = 1.;
     if o.roughness >= 1. {
         let v = if r.started() { r.next() } else { 0. };
         let v = if v != 0. { v } else { r.math_random() };
-        if v > 0.7 { skip = gap; }
+        if v > 0.7 {
+            skip = gap;
+        }
     }
     hachure_lines(polygons, gap, angle, if skip != 0. { skip } else { 1. })
 }
@@ -64,7 +89,10 @@ fn rotate_points(points: &mut [Point], deg: f64) {
     let (cos, sin) = (a.cos(), a.sin());
     for p in points {
         let [x, y] = *p;
-        *p = [((x - 0.) * cos) - ((y - 0.) * sin) + 0., ((x - 0.) * sin) + ((y - 0.) * cos) + 0.];
+        *p = [
+            ((x - 0.) * cos) - ((y - 0.) * sin) + 0.,
+            ((x - 0.) * sin) + ((y - 0.) * cos) + 0.,
+        ];
     }
 }
 
@@ -72,51 +100,97 @@ fn rotate_points(points: &mut [Point], deg: f64) {
 /// (even-odd) at `angle` degrees, every `step` px.
 pub fn hachure_lines(polygons: &mut [Vec<Point>], gap: f64, angle: f64, step: f64) -> Vec<Segment> {
     let gap = gap.max(0.1);
-    if angle != 0. { for p in polygons.iter_mut() { rotate_points(p, angle) } }
+    if angle != 0. {
+        for p in polygons.iter_mut() {
+            rotate_points(p, angle)
+        }
+    }
     let mut lines = straight_hachure_lines(polygons, gap, step);
     if angle != 0. {
-        for p in polygons.iter_mut() { rotate_points(p, -angle) }
-        for l in lines.iter_mut() { rotate_points(l, -angle) }
+        for p in polygons.iter_mut() {
+            rotate_points(p, -angle)
+        }
+        for l in lines.iter_mut() {
+            rotate_points(l, -angle)
+        }
     }
     lines
 }
 
-struct Edge { ymin: f64, ymax: f64, x: f64, islope: f64 }
+struct Edge {
+    ymin: f64,
+    ymax: f64,
+    x: f64,
+    islope: f64,
+}
 
 fn straight_hachure_lines(polygons: &[Vec<Point>], gap: f64, step: f64) -> Vec<Segment> {
     let mut edges: Vec<Edge> = vec![];
     for poly in polygons {
-        if poly.is_empty() { continue; }
+        if poly.is_empty() {
+            continue;
+        }
         let mut v = poly.clone();
-        if v[0] != v[v.len() - 1] { v.push(v[0]); }
-        if v.len() <= 2 { continue; }
+        if v[0] != v[v.len() - 1] {
+            v.push(v[0]);
+        }
+        if v.len() <= 2 {
+            continue;
+        }
         for w in v.windows(2) {
             let (p1, p2) = (w[0], w[1]);
             if p1[1] != p2[1] {
                 let ymin = p1[1].min(p2[1]);
-                edges.push(Edge { ymin, ymax: p1[1].max(p2[1]), x: if ymin == p1[1] { p1[0] } else { p2[0] }, islope: (p2[0] - p1[0]) / (p2[1] - p1[1]) });
+                edges.push(Edge {
+                    ymin,
+                    ymax: p1[1].max(p2[1]),
+                    x: if ymin == p1[1] { p1[0] } else { p2[0] },
+                    islope: (p2[0] - p1[0]) / (p2[1] - p1[1]),
+                });
             }
         }
     }
     use std::cmp::Ordering::*;
     edges.sort_by(|a, b| {
-        if a.ymin < b.ymin { return Less; }
-        if a.ymin > b.ymin { return Greater; }
-        if a.x < b.x { return Less; }
-        if a.x > b.x { return Greater; }
-        if a.ymax == b.ymax { return Equal; }
+        if a.ymin < b.ymin {
+            return Less;
+        }
+        if a.ymin > b.ymin {
+            return Greater;
+        }
+        if a.x < b.x {
+            return Less;
+        }
+        if a.x > b.x {
+            return Greater;
+        }
+        if a.ymax == b.ymax {
+            return Equal;
+        }
         if a.ymax < b.ymax { Less } else { Greater }
     });
     let mut lines = vec![];
-    if edges.is_empty() { return lines; }
+    if edges.is_empty() {
+        return lines;
+    }
     let mut edges: std::collections::VecDeque<Edge> = edges.into();
     let mut active: Vec<Edge> = vec![];
     let mut y = edges[0].ymin;
     let mut iteration = 0f64;
     while !active.is_empty() || !edges.is_empty() {
-        while edges.front().is_some_and(|e| e.ymin <= y) { active.push(edges.pop_front().unwrap()); }
+        while edges.front().is_some_and(|e| e.ymin <= y) {
+            active.push(edges.pop_front().unwrap());
+        }
         active.retain(|e| e.ymax > y);
-        active.sort_by(|a, b| if a.x == b.x { Equal } else if a.x < b.x { Less } else { Greater });
+        active.sort_by(|a, b| {
+            if a.x == b.x {
+                Equal
+            } else if a.x < b.x {
+                Less
+            } else {
+                Greater
+            }
+        });
         if (step != 1. || iteration % gap == 0.) && active.len() > 1 {
             let mut i = 0;
             while i + 1 < active.len() {
@@ -125,7 +199,9 @@ fn straight_hachure_lines(polygons: &[Vec<Point>], gap: f64, step: f64) -> Vec<S
             }
         }
         y += step;
-        for e in active.iter_mut() { e.x += step * e.islope; }
+        for e in active.iter_mut() {
+            e.x += step * e.islope;
+        }
         iteration += 1.;
     }
     lines
@@ -133,7 +209,10 @@ fn straight_hachure_lines(polygons: &[Vec<Point>], gap: f64, step: f64) -> Vec<S
 
 fn zigzag(polygons: &mut [Vec<Point>], o: &Options, r: &mut Random) -> Vec<Op> {
     let gap = gap_of(o);
-    let o2 = Options { hachure_gap: gap, ..o.clone() };
+    let o2 = Options {
+        hachure_gap: gap,
+        ..o.clone()
+    };
     let lines = polygon_hachure_lines(polygons, &o2, r);
     let a = (std::f64::consts::PI / 180.) * o.hachure_angle;
     let (dgx, dgy) = (gap * 0.5 * a.cos(), gap * 0.5 * a.sin());
@@ -149,14 +228,29 @@ fn zigzag(polygons: &mut [Vec<Point>], o: &Options, r: &mut Random) -> Vec<Op> {
 
 /// A line's ends left to right and its slope angle (`atan`).
 fn ordered(l: &Segment) -> (Point, Point, f64) {
-    let (p1, p2) = if l[0][0] > l[1][0] { (l[1], l[0]) } else { (l[0], l[1]) };
+    let (p1, p2) = if l[0][0] > l[1][0] {
+        (l[1], l[0])
+    } else {
+        (l[0], l[1])
+    };
     (p1, p2, ((p2[1] - p1[1]) / (p2[0] - p1[0])).atan())
 }
 
 fn zigzag_line(polygons: &mut [Vec<Point>], o: &Options, r: &mut Random) -> Vec<Op> {
-    let gap = if o.hachure_gap < 0. { o.stroke_width * 4. } else { o.hachure_gap };
-    let zo = if o.zigzag_offset < 0. { gap } else { o.zigzag_offset };
-    let o = Options { hachure_gap: gap + zo, ..o.clone() };
+    let gap = if o.hachure_gap < 0. {
+        o.stroke_width * 4.
+    } else {
+        o.hachure_gap
+    };
+    let zo = if o.zigzag_offset < 0. {
+        gap
+    } else {
+        o.zigzag_offset
+    };
+    let o = Options {
+        hachure_gap: gap + zo,
+        ..o.clone()
+    };
     let lines = polygon_hachure_lines(polygons, &o, r);
     let mut ops = vec![];
     for l in &lines {
@@ -170,8 +264,13 @@ fn zigzag_line(polygons: &mut [Vec<Point>], o: &Options, r: &mut Random) -> Vec<
             let dz = (2. * zo.powi(2)).sqrt();
             let start = [p1[0] + (lstart * alpha.cos()), p1[1] + lstart * alpha.sin()];
             let end = [p1[0] + (lend * alpha.cos()), p1[1] + (lend * alpha.sin())];
-            let mid = [start[0] + dz * (alpha + std::f64::consts::PI / 4.).cos(), start[1] + dz * (alpha + std::f64::consts::PI / 4.).sin()];
-            ops.extend(double_line_fill_ops(start[0], start[1], mid[0], mid[1], &o, r));
+            let mid = [
+                start[0] + dz * (alpha + std::f64::consts::PI / 4.).cos(),
+                start[1] + dz * (alpha + std::f64::consts::PI / 4.).sin(),
+            ];
+            ops.extend(double_line_fill_ops(
+                start[0], start[1], mid[0], mid[1], &o, r,
+            ));
             ops.extend(double_line_fill_ops(mid[0], mid[1], end[0], end[1], &o, r));
             i += 1.;
         }
@@ -180,7 +279,10 @@ fn zigzag_line(polygons: &mut [Vec<Point>], o: &Options, r: &mut Random) -> Vec<
 }
 
 fn dots(polygons: &mut [Vec<Point>], o: &Options, r: &mut Random) -> Vec<Op> {
-    let o = Options { hachure_angle: 0., ..o.clone() };
+    let o = Options {
+        hachure_angle: 0.,
+        ..o.clone()
+    };
     let lines = polygon_hachure_lines(polygons, &o, r);
     let gap = gap_of(&o);
     let fweight = o.fill_weight_or_default();
@@ -206,8 +308,16 @@ fn dots(polygons: &mut [Vec<Point>], o: &Options, r: &mut Random) -> Vec<Op> {
 
 fn dashed(polygons: &mut [Vec<Point>], o: &Options, r: &mut Random) -> Vec<Op> {
     let lines = polygon_hachure_lines(polygons, o, r);
-    let dflt = if o.hachure_gap < 0. { o.stroke_width * 4. } else { o.hachure_gap };
-    let offset = if o.dash_offset < 0. { dflt } else { o.dash_offset };
+    let dflt = if o.hachure_gap < 0. {
+        o.stroke_width * 4.
+    } else {
+        o.hachure_gap
+    };
+    let offset = if o.dash_offset < 0. {
+        dflt
+    } else {
+        o.dash_offset
+    };
     let gap = if o.dash_gap < 0. { dflt } else { o.dash_gap };
     let mut ops = vec![];
     for l in &lines {
@@ -219,9 +329,17 @@ fn dashed(polygons: &mut [Vec<Point>], o: &Options, r: &mut Random) -> Vec<Op> {
         while i < count {
             let lstart = i * (offset + gap);
             let lend = lstart + offset;
-            let start = [p1[0] + (lstart * alpha.cos()) + (start_offset * alpha.cos()), p1[1] + lstart * alpha.sin() + (start_offset * alpha.sin())];
-            let end = [p1[0] + (lend * alpha.cos()) + (start_offset * alpha.cos()), p1[1] + (lend * alpha.sin()) + (start_offset * alpha.sin())];
-            ops.extend(double_line_fill_ops(start[0], start[1], end[0], end[1], o, r));
+            let start = [
+                p1[0] + (lstart * alpha.cos()) + (start_offset * alpha.cos()),
+                p1[1] + lstart * alpha.sin() + (start_offset * alpha.sin()),
+            ];
+            let end = [
+                p1[0] + (lend * alpha.cos()) + (start_offset * alpha.cos()),
+                p1[1] + (lend * alpha.sin()) + (start_offset * alpha.sin()),
+            ];
+            ops.extend(double_line_fill_ops(
+                start[0], start[1], end[0], end[1], o, r,
+            ));
             i += 1.;
         }
     }

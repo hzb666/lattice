@@ -35,9 +35,21 @@ pub mod font_family {
     pub const COMIC_SHANNS: u32 = 8;
     pub const LIBERATION_SANS: u32 = 9;
     pub const ASSISTANT: u32 = 10;
-    pub const ALL: [u32; 9] = [VIRGIL, HELVETICA, CASCADIA, EXCALIFONT, NUNITO, LILITA_ONE, COMIC_SHANNS, LIBERATION_SANS, ASSISTANT];
+    pub const ALL: [u32; 9] = [
+        VIRGIL,
+        HELVETICA,
+        CASCADIA,
+        EXCALIFONT,
+        NUNITO,
+        LILITA_ONE,
+        COMIC_SHANNS,
+        LIBERATION_SANS,
+        ASSISTANT,
+    ];
     /// Monospaced families (`getGenericFontFamilyFallback`).
-    pub fn is_monospace(f: u32) -> bool { f == CASCADIA || f == COMIC_SHANNS }
+    pub fn is_monospace(f: u32) -> bool {
+        f == CASCADIA || f == COMIC_SHANNS
+    }
 }
 
 pub struct FrameStyle;

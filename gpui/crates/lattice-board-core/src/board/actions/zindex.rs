@@ -14,13 +14,27 @@ use crate::board::history::CaptureUpdateAction;
 use crate::board::types::Element;
 use crate::board::zindex::{move_all_left, move_all_right, move_one_left, move_one_right};
 
-fn done(next: Vec<Element>, a: &AppState) -> ActionResult { ActionResult::new(Some(next), Some(a.clone()), CaptureUpdateAction::Immediately) }
+fn done(next: Vec<Element>, a: &AppState) -> ActionResult {
+    ActionResult::new(
+        Some(next),
+        Some(a.clone()),
+        CaptureUpdateAction::Immediately,
+    )
+}
 
 /// `actionSendBackward` (Cmd+[).
-pub fn action_send_backward(elements: &[Element], a: &AppState) -> ActionResult { done(move_one_left(elements, a), a) }
+pub fn action_send_backward(elements: &[Element], a: &AppState) -> ActionResult {
+    done(move_one_left(elements, a), a)
+}
 /// `actionBringForward` (Cmd+]).
-pub fn action_bring_forward(elements: &[Element], a: &AppState) -> ActionResult { done(move_one_right(elements, a), a) }
+pub fn action_bring_forward(elements: &[Element], a: &AppState) -> ActionResult {
+    done(move_one_right(elements, a), a)
+}
 /// `actionSendToBack` (Cmd+Shift+[; Cmd+Alt+[ on macOS).
-pub fn action_send_to_back(elements: &[Element], a: &AppState) -> ActionResult { done(move_all_left(elements, a), a) }
+pub fn action_send_to_back(elements: &[Element], a: &AppState) -> ActionResult {
+    done(move_all_left(elements, a), a)
+}
 /// `actionBringToFront` (Cmd+Shift+]; Cmd+Alt+] on macOS).
-pub fn action_bring_to_front(elements: &[Element], a: &AppState) -> ActionResult { done(move_all_right(elements, a), a) }
+pub fn action_bring_to_front(elements: &[Element], a: &AppState) -> ActionResult {
+    done(move_all_right(elements, a), a)
+}

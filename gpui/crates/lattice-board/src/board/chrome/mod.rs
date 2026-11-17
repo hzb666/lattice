@@ -37,18 +37,37 @@ use std::collections::HashMap;
 /// The chrome's open popup (upstream `appState.openPopup` / `openMenu`; one
 /// at a time).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) enum Pop { Stroke, Background, StartArrowhead, EndArrowhead, Font, ExtraTools, MainMenu, CanvasBackground, ClearCanvas }
+pub(crate) enum Pop {
+    Stroke,
+    Background,
+    StartArrowhead,
+    EndArrowhead,
+    Font,
+    ExtraTools,
+    MainMenu,
+    CanvasBackground,
+    ClearCanvas,
+}
 
 thread_local! {
     /// Chrome-only state, per board view: which popup is open.
     static POP: RefCell<HashMap<EntityId, Pop>> = RefCell::default();
 }
 
-pub(crate) fn pop(cx: &Context<BoardView>) -> Option<Pop> { POP.with(|p| p.borrow().get(&cx.entity_id()).copied()) }
+pub(crate) fn pop(cx: &Context<BoardView>) -> Option<Pop> {
+    POP.with(|p| p.borrow().get(&cx.entity_id()).copied())
+}
 
 pub(crate) fn set_pop(p: Option<Pop>, cx: &mut Context<BoardView>) {
     let id = cx.entity_id();
-    POP.with(|m| match p { Some(p) => { m.borrow_mut().insert(id, p); } None => { m.borrow_mut().remove(&id); } });
+    POP.with(|m| match p {
+        Some(p) => {
+            m.borrow_mut().insert(id, p);
+        }
+        None => {
+            m.borrow_mut().remove(&id);
+        }
+    });
     color_picker::popup_changed(p, cx);
     properties::font_popup_changed(p == Some(Pop::Font), cx);
     cx.notify();
@@ -72,33 +91,67 @@ impl ChromeView {
         let watch = cx.observe(board, |me, board, cx| {
             let b = board.read(cx);
             let quiet = b.chrome_quiet.replace(false);
-            let same = me.seen.as_ref().is_some_and(|(s, a)| *a == b.app && b.scope_unchanged(s));
-            if quiet && same { return; }
-            if !same { me.seen = Some((b.scope_stamp(), b.app.clone())); }
+            let same = me
+                .seen
+                .as_ref()
+                .is_some_and(|(s, a)| *a == b.app && b.scope_unchanged(s));
+            if quiet && same {
+                return;
+            }
+            if !same {
+                me.seen = Some((b.scope_stamp(), b.app.clone()));
+            }
             cx.notify();
         });
-        ChromeView { board: board.downgrade(), seen: None, _watch: watch }
+        ChromeView {
+            board: board.downgrade(),
+            seen: None,
+            _watch: watch,
+        }
     }
 }
 
 impl Render for ChromeView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let Some(board) = self.board.upgrade() else { return div().into_any_element() };
+        let Some(board) = self.board.upgrade() else {
+            return div().into_any_element();
+        };
         board.update(cx, |me, cx| render(me, window, cx).into_any_element())
     }
 }
 
-pub fn render(me: &BoardView, window: &mut Window, cx: &mut Context<BoardView>) -> impl IntoElement {
+pub fn render(
+    me: &BoardView,
+    window: &mut Window,
+    cx: &mut Context<BoardView>,
+) -> impl IntoElement {
     let panel = properties::render(me, window, cx);
-    if panel.is_none() && matches!(pop(cx), Some(Pop::Stroke | Pop::Background | Pop::StartArrowhead | Pop::EndArrowhead | Pop::Font)) { set_pop(None, cx); }
-    div().absolute().top_0().left_0().size_full().font_family(style::ui_font()).text_color(style::text())
+    if panel.is_none()
+        && matches!(
+            pop(cx),
+            Some(
+                Pop::Stroke | Pop::Background | Pop::StartArrowhead | Pop::EndArrowhead | Pop::Font
+            )
+        )
+    {
+        set_pop(None, cx);
+    }
+    div()
+        .absolute()
+        .top_0()
+        .left_0()
+        .size_full()
+        .font_family(style::ui_font())
+        .text_color(style::text())
         .child(menu::main_menu(me, window, cx))
         .child(toolbar::render(me, cx))
         .when_some(panel, |d, p| d.child(p))
         .child(controls::footer(me, cx))
         .when_some(context_menu::render(me, window, cx), |d, m| d.child(m))
         .when(me.help_open(), |d| d.child(help::render(window, cx)))
-        .when(pop(cx) == Some(Pop::ClearCanvas), |d| d.child(help::clear_canvas(window, cx)))
+        .when(pop(cx) == Some(Pop::ClearCanvas), |d| {
+            d.child(help::clear_canvas(window, cx))
+        })
 }
 
 // ---------------------------------------------------------------------------
@@ -115,12 +168,22 @@ pub(crate) fn eat<E: InteractiveElement>(e: E) -> E {
 /// `Island`: island background, `--shadow-island`, radius 8, padding
 /// `padding × --space-factor`.
 pub(crate) fn island(id: impl Into<ElementId>, padding: f32) -> Stateful<Div> {
-    eat(div().id(id).occlude().bg(style::island_bg()).shadow(style::shadow_island()).rounded(px(style::RADIUS_LG)).p(px(padding * style::SPACE)))
+    eat(div()
+        .id(id)
+        .occlude()
+        .bg(style::island_bg())
+        .shadow(style::shadow_island())
+        .rounded(px(style::RADIUS_LG))
+        .p(px(padding * style::SPACE)))
 }
 
 /// An upstream icon (`assets/icons/excalidraw/`).
 pub(crate) fn icon(name: &str, size: f32, color: Hsla) -> Svg {
-    svg().path(SharedString::from(format!("icons/excalidraw/{name}.svg"))).size(px(size)).flex_none().text_color(color)
+    svg()
+        .path(SharedString::from(format!("icons/excalidraw/{name}.svg")))
+        .size(px(size))
+        .flex_none()
+        .text_color(color)
 }
 
 /// `.ToolIcon` in the tool bar (`.App-toolbar-container .ToolIcon__icon`):
@@ -128,18 +191,47 @@ pub(crate) fn icon(name: &str, size: f32, color: Hsla) -> Svg {
 /// `--button-active-border` ring; checked `--color-surface-primary-container`
 /// with the icon in `--color-on-primary-container`.
 pub(crate) fn tool_icon(id: impl Into<ElementId>, size: f32, checked: bool) -> Stateful<Div> {
-    div().id(id).flex_none().relative().size(px(size)).flex().items_center().justify_center().rounded(px(style::RADIUS_LG)).cursor_pointer()
+    div()
+        .id(id)
+        .flex_none()
+        .relative()
+        .size(px(size))
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded(px(style::RADIUS_LG))
+        .cursor_pointer()
         .when(checked, |d| d.bg(style::surface_primary_container()))
         .when(!checked, |d| d.hover(|s| s.bg(style::button_hover_bg())))
-        .active(|s| s.bg(style::button_hover_bg()).border_1().border_color(style::button_active_border()))
+        .active(|s| {
+            s.bg(style::button_hover_bg())
+                .border_1()
+                .border_color(style::button_active_border())
+        })
 }
 
-pub(crate) fn tool_icon_color(checked: bool) -> Hsla { if checked { style::on_primary_container() } else { style::text() } }
+pub(crate) fn tool_icon_color(checked: bool) -> Hsla {
+    if checked {
+        style::on_primary_container()
+    } else {
+        style::text()
+    }
+}
 
 /// `.ToolIcon__keybinding`: bottom 2, right 3, 10px, `--keybinding-color`.
 pub(crate) fn keybinding(k: impl Into<SharedString>, checked: bool) -> Div {
-    div().absolute().right(px(3.)).bottom(px(2.)).text_size(px(10.)).line_height(px(10.))
-        .text_color(if checked { style::on_primary_container() } else { style::keybinding() }).child(k.into())
+    div()
+        .absolute()
+        .right(px(3.))
+        .bottom(px(2.))
+        .text_size(px(10.))
+        .line_height(px(10.))
+        .text_color(if checked {
+            style::on_primary_container()
+        } else {
+            style::keybinding()
+        })
+        .child(k.into())
 }
 
 /// `outlineButtonIconStyles` in the styles panel (`.buttonList label`):
@@ -147,9 +239,25 @@ pub(crate) fn keybinding(k: impl Into<SharedString>, checked: bool) -> Div {
 /// `--button-hover-bg`; pressed `--color-primary-darkest` border; checked
 /// `--color-surface-primary-container` with `--color-on-primary-container`.
 pub(crate) fn outline_button(id: impl Into<ElementId>, checked: bool) -> Stateful<Div> {
-    div().id(id).flex_none().size(px(style::DEFAULT_BUTTON)).flex().items_center().justify_center().rounded(px(style::RADIUS_LG)).border_1().cursor_pointer()
-        .when(checked, |d| d.bg(style::surface_primary_container()).border_color(style::surface_primary_container()))
-        .when(!checked, |d| d.bg(style::panel_button_bg()).border_color(transparent_black()).hover(|s| s.bg(style::panel_button_hover_bg())))
+    div()
+        .id(id)
+        .flex_none()
+        .size(px(style::DEFAULT_BUTTON))
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded(px(style::RADIUS_LG))
+        .border_1()
+        .cursor_pointer()
+        .when(checked, |d| {
+            d.bg(style::surface_primary_container())
+                .border_color(style::surface_primary_container())
+        })
+        .when(!checked, |d| {
+            d.bg(style::panel_button_bg())
+                .border_color(transparent_black())
+                .hover(|s| s.bg(style::panel_button_hover_bg()))
+        })
         .active(|s| s.border_color(style::primary_darkest()))
 }
 
@@ -158,9 +266,24 @@ pub(crate) fn outline_button(id: impl Into<ElementId>, checked: bool) -> Statefu
 /// `--color-surface-lowest` ring; hover `--button-hover-bg`; pressed
 /// `--color-brand-active` ring.
 pub(crate) fn filled_button(id: impl Into<ElementId>, open: bool) -> Stateful<Div> {
-    eat(div().id(id).occlude().flex_none().h(px(style::LG_BUTTON)).min_w(px(style::LG_BUTTON)).flex().items_center().justify_center().gap(px(8.))
-        .rounded(px(style::RADIUS_LG)).cursor_pointer().shadow(style::ring(style::surface_lowest()))
-        .bg(if open { style::button_hover_bg() } else { style::surface_low() })
+    eat(div()
+        .id(id)
+        .occlude()
+        .flex_none()
+        .h(px(style::LG_BUTTON))
+        .min_w(px(style::LG_BUTTON))
+        .flex()
+        .items_center()
+        .justify_center()
+        .gap(px(8.))
+        .rounded(px(style::RADIUS_LG))
+        .cursor_pointer()
+        .shadow(style::ring(style::surface_lowest()))
+        .bg(if open {
+            style::button_hover_bg()
+        } else {
+            style::surface_low()
+        })
         .hover(|s| s.bg(style::button_hover_bg()))
         .active(|s| s.shadow(style::ring(style::brand_active()))))
 }
@@ -169,11 +292,26 @@ pub(crate) fn filled_button(id: impl Into<ElementId>, open: bool) -> Stateful<Di
 pub(crate) fn shortcut(s: &str) -> String {
     use crate::settings::tr;
     let mac = cfg!(target_os = "macos");
-    s.split('+').map(|k| match k {
-        "CtrlOrCmd" => if mac { "Cmd" } else { "Ctrl" },
-        "Alt" => if mac { "Option" } else { "Alt" },
-        "Enter" => tr("回车键", "Enter"),
-        "Space" => tr("空格", "Space"),
-        k => k,
-    }).collect::<Vec<_>>().join("+")
+    s.split('+')
+        .map(|k| match k {
+            "CtrlOrCmd" => {
+                if mac {
+                    "Cmd"
+                } else {
+                    "Ctrl"
+                }
+            }
+            "Alt" => {
+                if mac {
+                    "Option"
+                } else {
+                    "Alt"
+                }
+            }
+            "Enter" => tr("回车键", "Enter"),
+            "Space" => tr("空格", "Space"),
+            k => k,
+        })
+        .collect::<Vec<_>>()
+        .join("+")
 }

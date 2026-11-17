@@ -33,11 +33,17 @@ impl Board {
             return Ok(Board::default());
         }
         let d = load_file(json, &RestoreOpts::load())?;
-        Ok(Board { elements: d.elements.into_iter().filter(|e| !e.is_deleted).collect(), files: d.files, app: d.app_state })
+        Ok(Board {
+            elements: d.elements.into_iter().filter(|e| !e.is_deleted).collect(),
+            files: d.files,
+            app: d.app_state,
+        })
     }
 
     /// The official JSON, as a file holds it.
-    pub fn file_json(&self) -> String { serialize_as_json(&self.elements, &self.app, &self.files, FILE_SOURCE) + "\n" }
+    pub fn file_json(&self) -> String {
+        serialize_as_json(&self.elements, &self.app, &self.files, FILE_SOURCE) + "\n"
+    }
 
     /// The board as it is in a file that changed outside (disk, git,
     /// Overleaf), merged with what is open: `base` is the file as the open
@@ -50,21 +56,34 @@ impl Board {
     /// is by fractional index, as upstream orders a reconciled scene.
     pub fn reconcile(local: &[Element], base: &Board, remote: Board) -> Vec<Element> {
         use rustc_hash::{FxHashMap, FxHashSet};
-        let in_base: FxHashMap<&str, &Element> = base.elements.iter().map(|e| (e.id.as_str(), e)).collect();
+        let in_base: FxHashMap<&str, &Element> =
+            base.elements.iter().map(|e| (e.id.as_str(), e)).collect();
         let mut remote_ids: FxHashSet<String> = FxHashSet::default();
-        let local_by_id: FxHashMap<&str, &Element> = local.iter().map(|e| (e.id.as_str(), e)).collect();
+        let local_by_id: FxHashMap<&str, &Element> =
+            local.iter().map(|e| (e.id.as_str(), e)).collect();
         let mut out: Vec<Element> = Vec::with_capacity(remote.elements.len() + local.len());
         for r in remote.elements {
             remote_ids.insert(r.id.clone());
             match local_by_id.get(r.id.as_str()) {
-                Some(l) if l.version > r.version || (l.version == r.version && l.version_nonce <= r.version_nonce) => out.push((*l).clone()),
+                Some(l)
+                    if l.version > r.version
+                        || (l.version == r.version && l.version_nonce <= r.version_nonce) =>
+                {
+                    out.push((*l).clone())
+                }
                 _ => out.push(r),
             }
         }
         for l in local {
-            if remote_ids.contains(&l.id) { continue; }
-            let unchanged_since_base = in_base.get(l.id.as_str()).is_some_and(|b| b.version == l.version && b.version_nonce == l.version_nonce);
-            if unchanged_since_base || l.is_deleted { continue; }
+            if remote_ids.contains(&l.id) {
+                continue;
+            }
+            let unchanged_since_base = in_base
+                .get(l.id.as_str())
+                .is_some_and(|b| b.version == l.version && b.version_nonce == l.version_nonce);
+            if unchanged_since_base || l.is_deleted {
+                continue;
+            }
             out.push(l.clone());
         }
         crate::board::fractional_index::order_by_fractional_index(&mut out);
@@ -73,6 +92,11 @@ impl Board {
 
     /// Changes whenever an element does (`getSceneVersion` plus the count).
     pub fn version(&self) -> u64 {
-        self.elements.iter().fold(self.elements.len() as u64, |n, e| n.wrapping_mul(31).wrapping_add(e.version as u64 ^ e.version_nonce as u64))
+        self.elements
+            .iter()
+            .fold(self.elements.len() as u64, |n, e| {
+                n.wrapping_mul(31)
+                    .wrapping_add(e.version as u64 ^ e.version_nonce as u64)
+            })
     }
 }

@@ -20,20 +20,44 @@
 //! 760 KB). Helvetica (2) and Liberation Sans (9) draw with the system's
 //! Helvetica / Arial, as browsers resolve them.
 
+use gpui::{App, Font, FontFallbacks, FontFeatures, FontStyle, FontWeight};
 use lattice_board_core::board::consts::font_family as ff;
 use lattice_board_core::board::text_measure::set_font_source;
-use gpui::{App, Font, FontFallbacks, FontFeatures, FontStyle, FontWeight};
 use std::borrow::Cow;
 
 /// Bundled faces: family number, family name (as Excalidraw's CSS names it,
 /// and as the font's name table says), the font file.
 const BUNDLED: [(u32, &str, &[u8]); 6] = [
-    (ff::EXCALIFONT, "Excalifont", include_bytes!("../../assets/fonts/excalidraw/Excalifont-Regular.ttf")),
-    (ff::VIRGIL, "Virgil", include_bytes!("../../assets/fonts/excalidraw/Virgil-Regular.ttf")),
-    (ff::NUNITO, "Nunito", include_bytes!("../../assets/fonts/excalidraw/Nunito-Medium.ttf")),
-    (ff::LILITA_ONE, "Lilita One", include_bytes!("../../assets/fonts/excalidraw/LilitaOne-Regular.ttf")),
-    (ff::COMIC_SHANNS, "Comic Shanns", include_bytes!("../../assets/fonts/excalidraw/ComicShanns-Regular.ttf")),
-    (ff::CASCADIA, "Cascadia", include_bytes!("../../assets/fonts/excalidraw/CascadiaCode-Regular.ttf")),
+    (
+        ff::EXCALIFONT,
+        "Excalifont",
+        include_bytes!("../../assets/fonts/excalidraw/Excalifont-Regular.ttf"),
+    ),
+    (
+        ff::VIRGIL,
+        "Virgil",
+        include_bytes!("../../assets/fonts/excalidraw/Virgil-Regular.ttf"),
+    ),
+    (
+        ff::NUNITO,
+        "Nunito",
+        include_bytes!("../../assets/fonts/excalidraw/Nunito-Medium.ttf"),
+    ),
+    (
+        ff::LILITA_ONE,
+        "Lilita One",
+        include_bytes!("../../assets/fonts/excalidraw/LilitaOne-Regular.ttf"),
+    ),
+    (
+        ff::COMIC_SHANNS,
+        "Comic Shanns",
+        include_bytes!("../../assets/fonts/excalidraw/ComicShanns-Regular.ttf"),
+    ),
+    (
+        ff::CASCADIA,
+        "Cascadia",
+        include_bytes!("../../assets/fonts/excalidraw/CascadiaCode-Regular.ttf"),
+    ),
 ];
 
 /// The font file of a family (core's `FontSource`, for SVG export).
@@ -44,7 +68,9 @@ pub fn bytes(family: u32) -> Option<&'static [u8]> {
 /// Registers the faces and hands core the font files for SVG export.
 pub fn load(cx: &App) {
     let fonts = BUNDLED.iter().map(|b| Cow::Borrowed(b.2)).collect();
-    if let Err(e) = cx.text_system().add_fonts(fonts) { log::warn!("board fonts: {e}"); }
+    if let Err(e) = cx.text_system().add_fonts(fonts) {
+        log::warn!("board fonts: {e}");
+    }
     set_font_source(bytes);
 }
 
@@ -58,11 +84,24 @@ pub fn load_into(db: &mut resvg::usvg::fontdb::Database) {
 
 /// The family name GPUI looks a family up by.
 pub fn family_name(family: u32) -> &'static str {
-    let arial = if cfg!(target_os = "linux") { "Liberation Sans" } else { "Arial" };
+    let arial = if cfg!(target_os = "linux") {
+        "Liberation Sans"
+    } else {
+        "Arial"
+    };
     match family {
-        ff::HELVETICA => if cfg!(target_os = "macos") { "Helvetica" } else { arial },
+        ff::HELVETICA => {
+            if cfg!(target_os = "macos") {
+                "Helvetica"
+            } else {
+                arial
+            }
+        }
         ff::LIBERATION_SANS => arial,
-        f => BUNDLED.iter().find(|b| b.0 == f).map_or("Excalifont", |b| b.1),
+        f => BUNDLED
+            .iter()
+            .find(|b| b.0 == f)
+            .map_or("Excalifont", |b| b.1),
     }
 }
 
@@ -71,16 +110,32 @@ pub fn family_name(family: u32) -> &'static str {
 fn system_fallbacks(family: u32) -> Vec<String> {
     let mono = ff::is_monospace(family);
     let v: &[&str] = if cfg!(target_os = "macos") {
-        if mono { &["Menlo", "PingFang SC", "Apple Color Emoji"] } else { &["Helvetica", "PingFang SC", "Apple Color Emoji"] }
+        if mono {
+            &["Menlo", "PingFang SC", "Apple Color Emoji"]
+        } else {
+            &["Helvetica", "PingFang SC", "Apple Color Emoji"]
+        }
     } else if cfg!(target_os = "windows") {
-        if mono { &["Consolas", "Microsoft YaHei", "Segoe UI Emoji"] } else { &["Arial", "Microsoft YaHei", "Segoe UI Emoji"] }
-    } else { &[] };
+        if mono {
+            &["Consolas", "Microsoft YaHei", "Segoe UI Emoji"]
+        } else {
+            &["Arial", "Microsoft YaHei", "Segoe UI Emoji"]
+        }
+    } else {
+        &[]
+    };
     v.iter().map(|s| s.to_string()).collect()
 }
 
 /// A family's font, with the system's fonts behind it.
 pub fn font(family: u32) -> Font {
-    Font { family: family_name(family).into(), features: FontFeatures::default(), fallbacks: Some(FontFallbacks::from_fonts(system_fallbacks(family))), weight: FontWeight::NORMAL, style: FontStyle::Normal }
+    Font {
+        family: family_name(family).into(),
+        features: FontFeatures::default(),
+        fallbacks: Some(FontFallbacks::from_fonts(system_fallbacks(family))),
+        weight: FontWeight::NORMAL,
+        style: FontStyle::Normal,
+    }
 }
 
 /// `text` as runs by font (byte lengths): one, the family's; the text

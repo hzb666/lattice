@@ -52,17 +52,32 @@ const M: &TestMeasure = &TestMeasure;
 /// Routes elbow arrows (the app's hooks do the same).
 struct Elbow;
 impl BindingHooks for Elbow {
-    fn update_elbow_arrow_points(&self, arrow: &Element, map: &dyn ElementsMap, updates: &ElbowUpdate, opts: &ElbowOptions) -> ElbowUpdate {
+    fn update_elbow_arrow_points(
+        &self,
+        arrow: &Element,
+        map: &dyn ElementsMap,
+        updates: &ElbowUpdate,
+        opts: &ElbowOptions,
+    ) -> ElbowUpdate {
         update_elbow_arrow_points(arrow, map, updates, opts)
     }
 }
 
-fn get<'a>(s: &'a Scene, id: &str) -> &'a Element { s.get_element(id).unwrap() }
-fn font_size(s: &Scene, id: &str) -> f64 { get(s, id).text().unwrap().font_size }
-fn xywh(s: &Scene, id: &str) -> [f64; 4] { let e = get(s, id); [e.x, e.y, e.width, e.height] }
+fn get<'a>(s: &'a Scene, id: &str) -> &'a Element {
+    s.get_element(id).unwrap()
+}
+fn font_size(s: &Scene, id: &str) -> f64 {
+    get(s, id).text().unwrap().font_size
+}
+fn xywh(s: &Scene, id: &str) -> [f64; 4] {
+    let e = get(s, id);
+    [e.x, e.y, e.width, e.height]
+}
 fn check(s: &Scene, id: &str, e: [f64; 4]) {
     let a = xywh(s, id);
-    for i in 0..4 { close(a[i], e[i], 2); }
+    for i in 0..4 {
+        close(a[i], e[i], 2);
+    }
     close(get(s, id).angle, 0., 2);
 }
 
@@ -72,28 +87,76 @@ fn ui_shape(s: &mut Scene, ty: ElementType, id: &str, x: f64, y: f64, w: f64, h:
     e.roundness = None;
     s.insert_element(e);
 }
-fn ui_line(s: &mut Scene, id: &str, x: f64, y: f64, points: Vec<Point>) { s.insert_element(line(id, x, y, points)); }
-fn ui_arrow(s: &mut Scene, id: &str, x: f64, y: f64, points: Vec<Point>) { let mut a = arrow(id, x, y, points); a.roundness = None; s.insert_element(a); }
+fn ui_line(s: &mut Scene, id: &str, x: f64, y: f64, points: Vec<Point>) {
+    s.insert_element(line(id, x, y, points));
+}
+fn ui_arrow(s: &mut Scene, id: &str, x: f64, y: f64, points: Vec<Point>) {
+    let mut a = arrow(id, x, y, points);
+    a.roundness = None;
+    s.insert_element(a);
+}
 fn ui_freedraw(s: &mut Scene, id: &str, x: f64, y: f64, points: Vec<Point>) {
     let (w, h) = get_size_from_points(&points);
-    s.insert_element(new_free_draw_element(opts(id, x, y, w, h), points, vec![], true, None));
+    s.insert_element(new_free_draw_element(
+        opts(id, x, y, w, h),
+        points,
+        vec![],
+        true,
+        None,
+    ));
 }
 fn ui_image(s: &mut Scene, id: &str, x: f64, y: f64, w: f64, h: f64) {
-    s.insert_element(new_image_element(opts(id, x, y, w, h), None, None, None, None));
+    s.insert_element(new_image_element(
+        opts(id, x, y, w, h),
+        None,
+        None,
+        None,
+        None,
+    ));
 }
 /// The text tool: a click at `x`, `y` and typing `text` (font `size`).
 fn ui_text(s: &mut Scene, id: &str, x: f64, y: f64, text: &str, size: f64) {
-    s.insert_element(new_text_element(TextOpts { text: text.into(), font_size: Some(size), ..Default::default() }, ElementOpts { id: Some(id.into()), ..ElementOpts::at(x, y) }, M));
+    s.insert_element(new_text_element(
+        TextOpts {
+            text: text.into(),
+            font_size: Some(size),
+            ..Default::default()
+        },
+        ElementOpts {
+            id: Some(id.into()),
+            ..ElementOpts::at(x, y)
+        },
+        M,
+    ));
 }
 /// `UI.editText` on a container: a centered label (font `size`).
 fn ui_label(s: &mut Scene, cid: &str, text: &str, size: f64) -> String {
     let c = get(s, cid).clone();
-    let t = new_text_element(TextOpts {
-        text: text.into(), font_size: Some(size), text_align: Some(TextAlign::Center), vertical_align: Some(VerticalAlign::Middle),
-        container_id: Some(cid.into()), label_position: c.is_arrow().then_some(DEFAULT_BOUND_TEXT_LABEL_POSITION), ..Default::default()
-    }, ElementOpts { angle: if c.is_arrow() { 0. } else { c.angle }, ..ElementOpts::at(c.x, c.y) }, M);
+    let t = new_text_element(
+        TextOpts {
+            text: text.into(),
+            font_size: Some(size),
+            text_align: Some(TextAlign::Center),
+            vertical_align: Some(VerticalAlign::Middle),
+            container_id: Some(cid.into()),
+            label_position: c.is_arrow().then_some(DEFAULT_BOUND_TEXT_LABEL_POSITION),
+            ..Default::default()
+        },
+        ElementOpts {
+            angle: if c.is_arrow() { 0. } else { c.angle },
+            ..ElementOpts::at(c.x, c.y)
+        },
+        M,
+    );
     let tid = t.id.clone();
-    s.mutate_element(cid, true, |e| e.bound_elements.get_or_insert_with(Vec::new).push(BoundElement { id: tid.clone(), kind: BoundType::Text }));
+    s.mutate_element(cid, true, |e| {
+        e.bound_elements
+            .get_or_insert_with(Vec::new)
+            .push(BoundElement {
+                id: tid.clone(),
+                kind: BoundType::Text,
+            })
+    });
     let i = s.get_element_index(cid).unwrap();
     s.insert_elements_at_index(vec![t], Some(i + 1));
     let t = get(s, &tid).clone();
@@ -102,41 +165,112 @@ fn ui_label(s: &mut Scene, cid: &str, text: &str, size: f64) -> String {
 }
 
 #[derive(Clone, Copy, Default)]
-struct Mods { shift: bool, alt: bool }
-const NONE: Mods = Mods { shift: false, alt: false };
-const SHIFT: Mods = Mods { shift: true, alt: false };
-const ALT: Mods = Mods { shift: false, alt: true };
+struct Mods {
+    shift: bool,
+    alt: bool,
+}
+const NONE: Mods = Mods {
+    shift: false,
+    alt: false,
+};
+const SHIFT: Mods = Mods {
+    shift: true,
+    alt: false,
+};
+const ALT: Mods = Mods {
+    shift: false,
+    alt: true,
+};
 
 /// `UI.resize` / `UI.rotate`: down on the handle's center, one move by `mv`,
 /// through `transform_elements` as `maybeHandleResize` calls it.
-fn transform(s: &mut Scene, ids: &[&str], h: HandleType, mv: Point, m: Mods, hooks: &dyn BindingHooks) {
+fn transform(
+    s: &mut Scene,
+    ids: &[&str],
+    h: HandleType,
+    mv: Point,
+    m: Mods,
+    hooks: &dyn BindingHooks,
+) {
     let ids: Vec<String> = ids.iter().map(|s| s.to_string()).collect();
     let original: Vec<Element> = s.non_deleted_elements().cloned().collect();
     let sel: Vec<&Element> = ids.iter().map(|id| get(s, id)).collect();
-    let handles = if sel.len() == 1 { get_transform_handles(sel[0], 1., s, PointerType::Mouse, OmitSides::default()) } else {
+    let handles = if sel.len() == 1 {
+        get_transform_handles(sel[0], 1., s, PointerType::Mouse, OmitSides::default())
+    } else {
         let [x1, y1, x2, y2] = get_common_bounds(sel.iter().copied(), s);
-        let omit = if sel.iter().any(|e| e.is_frame_like()) { OMIT_SIDES_FOR_FRAME } else { OMIT_SIDES_FOR_MULTIPLE_ELEMENTS };
-        get_transform_handles_from_coords([x1, y1, x2, y2, (x1 + x2) / 2., (y1 + y2) / 2.], 0., 1., PointerType::Mouse, omit, 4., 2.)
+        let omit = if sel.iter().any(|e| e.is_frame_like()) {
+            OMIT_SIDES_FOR_FRAME
+        } else {
+            OMIT_SIDES_FOR_MULTIPLE_ELEMENTS
+        };
+        get_transform_handles_from_coords(
+            [x1, y1, x2, y2, (x1 + x2) / 2., (y1 + y2) / 2.],
+            0.,
+            1.,
+            PointerType::Mouse,
+            omit,
+            4.,
+            2.,
+        )
     };
-    let hc = handles.get(h).unwrap_or_else(|| panic!("no {} handle", h.as_str()));
+    let hc = handles
+        .get(h)
+        .unwrap_or_else(|| panic!("no {} handle", h.as_str()));
     let (cx, cy) = (hc[0] + hc[2] / 2., hc[1] + hc[3] / 2.);
     let off = get_resize_offset_xy(Some(h), &sel, s, cx, cy);
     let [x1, y1, x2, y2] = get_common_bounds(sel.iter().copied(), s);
     let center = [(x1 + x2) / 2., (y1 + y2) / 2.];
-    let proportional = sel.iter().any(|e| e.is_image()) || (sel.len() == 1 && sel[0].is_sticky_note() && matches!(h, HandleType::Nw | HandleType::Ne | HandleType::Sw | HandleType::Se));
-    let o = TransformOpts { rotate_with_discrete_angle: m.shift, resize_from_center: m.alt, maintain_aspect_ratio: m.shift != proportional };
-    transform_elements(&original, h, &ids, s, o, [cx + mv[0] - off[0], cy + mv[1] - off[1]], center, M, hooks);
+    let proportional = sel.iter().any(|e| e.is_image())
+        || (sel.len() == 1
+            && sel[0].is_sticky_note()
+            && matches!(
+                h,
+                HandleType::Nw | HandleType::Ne | HandleType::Sw | HandleType::Se
+            ));
+    let o = TransformOpts {
+        rotate_with_discrete_angle: m.shift,
+        resize_from_center: m.alt,
+        maintain_aspect_ratio: m.shift != proportional,
+    };
+    transform_elements(
+        &original,
+        h,
+        &ids,
+        s,
+        o,
+        [cx + mv[0] - off[0], cy + mv[1] - off[1]],
+        center,
+        M,
+        hooks,
+    );
 }
-fn resize(s: &mut Scene, ids: &[&str], h: &str, mv: [f64; 2], m: Mods) { transform(s, ids, handle(h), mv, m, &NO_BINDING_HOOKS) }
-fn rotate(s: &mut Scene, ids: &[&str], mv: [f64; 2], m: Mods) { transform(s, ids, HandleType::Rotation, mv, m, &NO_BINDING_HOOKS) }
-fn handle(h: &str) -> HandleType { HandleType::ORDER.into_iter().find(|t| t.as_str() == h).unwrap() }
+fn resize(s: &mut Scene, ids: &[&str], h: &str, mv: [f64; 2], m: Mods) {
+    transform(s, ids, handle(h), mv, m, &NO_BINDING_HOOKS)
+}
+fn rotate(s: &mut Scene, ids: &[&str], mv: [f64; 2], m: Mods) {
+    transform(s, ids, HandleType::Rotation, mv, m, &NO_BINDING_HOOKS)
+}
+fn handle(h: &str) -> HandleType {
+    HandleType::ORDER
+        .into_iter()
+        .find(|t| t.as_str() == h)
+        .unwrap()
+}
 
 /// `getBoundsFromPoints` (resize.test.tsx).
 fn points_bounds(e: &Element) -> Bounds {
-    if e.is_linear() { return get_element_points_coords(e, e.points().unwrap()); }
+    if e.is_linear() {
+        return get_element_points_coords(e, e.points().unwrap());
+    }
     let p = e.points().unwrap();
     let (xs, ys) = (p.iter().map(|p| p[0]), p.iter().map(|p| p[1]));
-    [xs.clone().fold(f64::INFINITY, f64::min) + e.x, ys.clone().fold(f64::INFINITY, f64::min) + e.y, xs.fold(f64::NEG_INFINITY, f64::max) + e.x, ys.fold(f64::NEG_INFINITY, f64::max) + e.y]
+    [
+        xs.clone().fold(f64::INFINITY, f64::min) + e.x,
+        ys.clone().fold(f64::INFINITY, f64::min) + e.y,
+        xs.fold(f64::NEG_INFINITY, f64::max) + e.x,
+        ys.fold(f64::NEG_INFINITY, f64::max) + e.y,
+    ]
 }
 
 // ---------------------------------------------------------------------------
@@ -145,9 +279,16 @@ fn points_bounds(e: &Element) -> Bounds {
 
 #[test]
 fn generic_resizes_with_each_handle() {
-    for (h, mv, size, xy) in [("n", [10., -27.], [200., 127.], [0., -27.]), ("e", [67., -45.], [267., 100.], [0., 0.]), ("s", [-50., -39.], [200., 61.], [0., 0.]),
-        ("w", [20., 90.], [180., 100.], [20., 0.]), ("ne", [5., -33.], [205., 133.], [0., -33.]), ("se", [-30., -81.], [170., 19.], [0., 0.]),
-        ("sw", [37., 25.], [163., 125.], [37., 0.]), ("nw", [-34., 42.], [234., 58.], [-34., 42.])] {
+    for (h, mv, size, xy) in [
+        ("n", [10., -27.], [200., 127.], [0., -27.]),
+        ("e", [67., -45.], [267., 100.], [0., 0.]),
+        ("s", [-50., -39.], [200., 61.], [0., 0.]),
+        ("w", [20., 90.], [180., 100.], [20., 0.]),
+        ("ne", [5., -33.], [205., 133.], [0., -33.]),
+        ("se", [-30., -81.], [170., 19.], [0., 0.]),
+        ("sw", [37., 25.], [163., 125.], [37., 0.]),
+        ("nw", [-34., 42.], [234., 58.], [-34., 42.]),
+    ] {
         setup();
         let mut s = Scene::default();
         ui_shape(&mut s, ElementType::Rectangle, "r", 0., 0., 200., 100.);
@@ -158,9 +299,16 @@ fn generic_resizes_with_each_handle() {
 
 #[test]
 fn generic_flips_while_resizing() {
-    for (h, mv, size, xy) in [("n", [15., 139.], [200., 39.], [0., 100.]), ("e", [-245., 67.], [45., 100.], [-45., 0.]), ("s", [-26., -210.], [200., 110.], [0., -110.]),
-        ("w", [241., 0.], [41., 100.], [200., 0.]), ("ne", [-250., 125.], [50., 25.], [-50., 100.]), ("se", [-283., -58.], [83., 42.], [-83., 0.]),
-        ("sw", [40., -123.], [160., 23.], [40., -23.]), ("nw", [270., 133.], [70., 33.], [200., 100.])] {
+    for (h, mv, size, xy) in [
+        ("n", [15., 139.], [200., 39.], [0., 100.]),
+        ("e", [-245., 67.], [45., 100.], [-45., 0.]),
+        ("s", [-26., -210.], [200., 110.], [0., -110.]),
+        ("w", [241., 0.], [41., 100.], [200., 0.]),
+        ("ne", [-250., 125.], [50., 25.], [-50., 100.]),
+        ("se", [-283., -58.], [83., 42.], [-83., 0.]),
+        ("sw", [40., -123.], [160., 23.], [40., -23.]),
+        ("nw", [270., 133.], [70., 33.], [200., 100.]),
+    ] {
         setup();
         let mut s = Scene::default();
         ui_shape(&mut s, ElementType::Rectangle, "r", 0., 0., 200., 100.);
@@ -214,13 +362,23 @@ fn generic_resizes_with_a_label() {
 
 #[test]
 fn labeled_containers_flip_horizontally_while_resizing() {
-    for ty in [ElementType::Rectangle, ElementType::Ellipse, ElementType::Diamond] {
+    for ty in [
+        ElementType::Rectangle,
+        ElementType::Ellipse,
+        ElementType::Diamond,
+    ] {
         for proportional in [false, true] {
             setup();
             let mut s = Scene::default();
             ui_shape(&mut s, ty, "c", 0., 0., 200., 100.);
             let t = ui_label(&mut s, "c", "Hello", 20.);
-            resize(&mut s, &["c"], if proportional { "se" } else { "e" }, [-500., 0.], if proportional { SHIFT } else { NONE });
+            resize(
+                &mut s,
+                &["c"],
+                if proportional { "se" } else { "e" },
+                [-500., 0.],
+                if proportional { SHIFT } else { NONE },
+            );
             let c = get(&s, "c");
             close(c.x, -300., 2);
             close(c.y, 0., 2);
@@ -230,7 +388,11 @@ fn labeled_containers_flip_horizontally_while_resizing() {
             close(l.x + l.width / 2., c.x + c.width / 2., 0);
             close(l.y + l.height / 2., c.y + c.height / 2., 0);
             assert_eq!(l.angle, 0.);
-            if proportional { assert!(font_size(&s, &t) > 20.); } else { assert_eq!(font_size(&s, &t), 20.); }
+            if proportional {
+                assert!(font_size(&s, &t) > 20.);
+            } else {
+                assert_eq!(font_size(&s, &t), 20.);
+            }
         }
     }
 }
@@ -244,7 +406,8 @@ fn resizes_from_center_with_multi_line_label_respecting_min_height() {
         let t = ui_label(&mut s, "r", "hello\nhello\nhello\nhello\nhello", 20.);
         let r = get(&s, "r");
         let init_cy = r.y + r.height / 2.;
-        let min_h = compute_container_dimension_for_bound_text(get(&s, &t).height, ElementType::Rectangle);
+        let min_h =
+            compute_container_dimension_for_bound_text(get(&s, &t).height, ElementType::Rectangle);
         resize(&mut s, &["r"], h, mv, ALT);
         let r = get(&s, "r");
         close(r.y + r.height / 2., init_cy, 2);
@@ -262,13 +425,27 @@ fn keeps_the_flipped_corner_anchored_while_wrapped_text_sets_min_height() {
     let orig = get(&s, "r").clone();
     let mut min_h = 0.;
     for nh in [-10., -40., -80., -200.] {
-        resize_single_element(80., nh, "r", &orig, &original, &mut s, HandleType::Se, SingleOpts::default(), M, &NO_BINDING_HOOKS);
+        resize_single_element(
+            80.,
+            nh,
+            "r",
+            &orig,
+            &original,
+            &mut s,
+            HandleType::Se,
+            SingleOpts::default(),
+            M,
+            &NO_BINDING_HOOKS,
+        );
         let (r, l) = (get(&s, "r"), get(&s, &t));
         assert_eq!(r.x, orig.x);
         assert_eq!(r.y + r.height, orig.y);
         assert!(l.y > r.y);
         assert!(l.y + l.height < r.y + r.height);
-        if nh == -10. { min_h = r.height; assert!(min_h > 80.); }
+        if nh == -10. {
+            min_h = r.height;
+            assert!(min_h > 80.);
+        }
         assert_eq!(r.height, f64::max(min_h, -nh));
     }
 }
@@ -277,7 +454,12 @@ fn keeps_the_flipped_corner_anchored_while_wrapped_text_sets_min_height() {
 // resize.test.tsx: line / freedraw
 // ---------------------------------------------------------------------------
 
-const FREEDRAW: [Point; 4] = [[0., 0.], [-2.474600807561444, 41.021700699972], [3.6627956000014024, 47.84174560617245], [40.495224145598115, 47.15909710753482]];
+const FREEDRAW: [Point; 4] = [
+    [0., 0.],
+    [-2.474600807561444, 41.021700699972],
+    [3.6627956000014024, 47.84174560617245],
+    [40.495224145598115, 47.15909710753482],
+];
 
 #[test]
 fn freedraw_resizes() {
@@ -287,7 +469,9 @@ fn freedraw_resizes() {
     let b = points_bounds(get(&s, "f"));
     resize(&mut s, &["f"], "ne", [30., -60.], NONE);
     let n = points_bounds(get(&s, "f"));
-    for (a, e) in n.iter().zip([b[0], b[1] - 60., b[2] + 30., b[3]]) { close(*a, e, 2); }
+    for (a, e) in n.iter().zip([b[0], b[1] - 60., b[2] + 30., b[3]]) {
+        close(*a, e, 2);
+    }
     close(get(&s, "f").angle, 0., 2);
 }
 
@@ -299,7 +483,9 @@ fn freedraw_flips_while_resizing() {
     let b = points_bounds(get(&s, "f"));
     resize(&mut s, &["f"], "sw", [140., -80.], NONE);
     let n = points_bounds(get(&s, "f"));
-    for (a, e) in n.iter().zip([b[2], b[3] - 80., b[0] + 140., b[1]]) { close(*a, e, 2); }
+    for (a, e) in n.iter().zip([b[2], b[3] - 80., b[0] + 140., b[1]]) {
+        close(*a, e, 2);
+    }
 }
 
 #[test]
@@ -311,7 +497,12 @@ fn freedraw_resizes_with_locked_aspect_ratio() {
     resize(&mut s, &["f"], "ne", [30., -60.], SHIFT);
     let n = points_bounds(get(&s, "f"));
     let scale = 1. + 60. / (b[3] - b[1]);
-    for (a, e) in n.iter().zip([b[0], b[1] - 60., b[0] + (b[2] - b[0]) * scale, b[3]]) { close(*a, e, 2); }
+    for (a, e) in n
+        .iter()
+        .zip([b[0], b[1] - 60., b[0] + (b[2] - b[0]) * scale, b[3]])
+    {
+        close(*a, e, 2);
+    }
 }
 
 #[test]
@@ -322,7 +513,12 @@ fn freedraw_resizes_from_center() {
     let b = points_bounds(get(&s, "f"));
     resize(&mut s, &["f"], "nw", [-20., -30.], ALT);
     let n = points_bounds(get(&s, "f"));
-    for (a, e) in n.iter().zip([b[0] - 20., b[1] - 30., b[2] + 20., b[3] + 30.]) { close(*a, e, 2); }
+    for (a, e) in n
+        .iter()
+        .zip([b[0] - 20., b[1] - 30., b[2] + 20., b[3] + 30.])
+    {
+        close(*a, e, 2);
+    }
 }
 
 const LINE: [Point; 4] = [[0., 0.], [60., -20.], [20., 40.], [-40., 0.]];
@@ -334,12 +530,26 @@ fn line_resizes() {
     ui_line(&mut s, "l", 0., 0., LINE.to_vec());
     let e = get(&s, "l").clone();
     let (nw, nh) = (e.width + 30., e.height + 30.);
-    resize_single_element(nw, nh, "l", &e, &s.non_deleted_elements().cloned().collect::<Vec<_>>(), &mut s, HandleType::Ne, SingleOpts::default(), M, &NO_BINDING_HOOKS);
+    resize_single_element(
+        nw,
+        nh,
+        "l",
+        &e,
+        &s.non_deleted_elements().cloned().collect::<Vec<_>>(),
+        &mut s,
+        HandleType::Ne,
+        SingleOpts::default(),
+        M,
+        &NO_BINDING_HOOKS,
+    );
     let n = get(&s, "l");
     assert!(n.x != e.x && n.y != e.y);
     assert_eq!((n.width, n.height), (nw, nh));
     assert_eq!(n.points().unwrap()[0], [0., 0.]);
-    assert_eq!(get_size_from_points(n.points().unwrap()), (n.width, n.height));
+    assert_eq!(
+        get_size_from_points(n.points().unwrap()),
+        (n.width, n.height)
+    );
 }
 
 #[test]
@@ -348,10 +558,24 @@ fn line_flips_while_resizing() {
     let mut s = Scene::default();
     ui_line(&mut s, "l", 0., 0., LINE.to_vec());
     let e = get(&s, "l").clone();
-    resize_single_element(-e.width, -e.height, "l", &e, &s.non_deleted_elements().cloned().collect::<Vec<_>>(), &mut s, HandleType::Se, SingleOpts::default(), M, &NO_BINDING_HOOKS);
+    resize_single_element(
+        -e.width,
+        -e.height,
+        "l",
+        &e,
+        &s.non_deleted_elements().cloned().collect::<Vec<_>>(),
+        &mut s,
+        HandleType::Se,
+        SingleOpts::default(),
+        M,
+        &NO_BINDING_HOOKS,
+    );
     let n = get(&s, "l");
     assert_eq!((n.width, n.height), (e.width, e.height));
-    for (p, q) in n.points().unwrap().iter().zip(e.points().unwrap()) { close(p[0], -q[0], 2); close(p[1], -q[1], 2); }
+    for (p, q) in n.points().unwrap().iter().zip(e.points().unwrap()) {
+        close(p[0], -q[0], 2);
+        close(p[1], -q[1], 2);
+    }
 }
 
 #[test]
@@ -369,13 +593,43 @@ fn line_resizes_with_locked_aspect_ratio() {
 fn line_resizes_from_center() {
     setup();
     let mut s = Scene::default();
-    ui_line(&mut s, "l", 0., 0., vec![[0., 0.], [338.05644048727373, -180.4761618151104], [338.05644048727373, 180.4761618151104],
-        [-338.05644048727373, 180.4761618151104], [-338.05644048727373, -180.4761618151104]]);
+    ui_line(
+        &mut s,
+        "l",
+        0.,
+        0.,
+        vec![
+            [0., 0.],
+            [338.05644048727373, -180.4761618151104],
+            [338.05644048727373, 180.4761618151104],
+            [-338.05644048727373, 180.4761618151104],
+            [-338.05644048727373, -180.4761618151104],
+        ],
+    );
     let e = get(&s, "l").clone();
-    let xs = |e: &Element| { let p = e.points().unwrap(); (p.iter().map(|p| p[0]).fold(f64::INFINITY, f64::min), p.iter().map(|p| p[0]).fold(f64::NEG_INFINITY, f64::max)) };
+    let xs = |e: &Element| {
+        let p = e.points().unwrap();
+        (
+            p.iter().map(|p| p[0]).fold(f64::INFINITY, f64::min),
+            p.iter().map(|p| p[0]).fold(f64::NEG_INFINITY, f64::max),
+        )
+    };
     let (pmin, pmax) = xs(&e);
-    resize_single_element(e.width + 20., e.height, "l", &e, &s.non_deleted_elements().cloned().collect::<Vec<_>>(), &mut s, HandleType::E,
-        SingleOpts { resize_from_center: true, ..Default::default() }, M, &NO_BINDING_HOOKS);
+    resize_single_element(
+        e.width + 20.,
+        e.height,
+        "l",
+        &e,
+        &s.non_deleted_elements().cloned().collect::<Vec<_>>(),
+        &mut s,
+        HandleType::E,
+        SingleOpts {
+            resize_from_center: true,
+            ..Default::default()
+        },
+        M,
+        &NO_BINDING_HOOKS,
+    );
     let n = get(&s, "l");
     close(n.width, e.width + 20., 2);
     close(n.height, e.height, 2);
@@ -394,7 +648,13 @@ fn line_resizes_from_center() {
 fn arrow_resizes_with_a_label() {
     setup();
     let mut s = Scene::default();
-    ui_arrow(&mut s, "a", 0., 0., vec![[0., 0.], [40., 140.], [80., 60.], [180., 20.], [200., 120.]]);
+    ui_arrow(
+        &mut s,
+        "a",
+        0.,
+        0.,
+        vec![[0., 0.], [40., 140.], [80., 60.], [180., 20.], [200., 120.]],
+    );
     let t = ui_label(&mut s, "a", "Hello", 20.);
     let label_ok = |s: &Scene| {
         assert_eq!(get(s, &t).text().unwrap().label_position, Some(Some(0.5)));
@@ -409,7 +669,21 @@ fn arrow_resizes_with_a_label() {
     assert_eq!(font_size(&s, &t), 20.);
     let a = get(&s, "a").clone();
     let original: Vec<Element> = s.non_deleted_elements().cloned().collect();
-    resize_single_element(-2. * a.width, 2. * a.height, "a", &a, &original, &mut s, HandleType::Se, SingleOpts { maintain_aspect_ratio: true, ..Default::default() }, M, &NO_BINDING_HOOKS);
+    resize_single_element(
+        -2. * a.width,
+        2. * a.height,
+        "a",
+        &a,
+        &original,
+        &mut s,
+        HandleType::Se,
+        SingleOpts {
+            maintain_aspect_ratio: true,
+            ..Default::default()
+        },
+        M,
+        &NO_BINDING_HOOKS,
+    );
     close(points_bounds(get(&s, "a"))[2], a.x, 2);
     close(get(&s, "a").width, 2. * a.width, 2);
     close(font_size(&s, &t), 40., 2);
@@ -419,12 +693,38 @@ fn arrow_resizes_with_a_label() {
 fn elbow_bound_to_rect(s: &mut Scene) {
     ui_shape(s, ElementType::Rectangle, "r", -100., -75., 95., 100.);
     let (w, h) = (125., 200.);
-    let mut a = new_arrow_element(opts("a", -5., 0., w, h), vec![[0., 0.], [w, h]], None, Some(Arrowhead::Arrow), true, None);
-    if let Some(l) = a.linear_mut() { l.start_binding = Some(FixedPointBinding { element_id: "r".into(), fixed_point: [1.06, 0.75], mode: BindMode::Orbit }); }
+    let mut a = new_arrow_element(
+        opts("a", -5., 0., w, h),
+        vec![[0., 0.], [w, h]],
+        None,
+        Some(Arrowhead::Arrow),
+        true,
+        None,
+    );
+    if let Some(l) = a.linear_mut() {
+        l.start_binding = Some(FixedPointBinding {
+            element_id: "r".into(),
+            fixed_point: [1.06, 0.75],
+            mode: BindMode::Orbit,
+        });
+    }
     s.insert_element(a);
-    s.mutate_element("r", true, |e| e.bound_elements = Some(vec![BoundElement { id: "a".into(), kind: BoundType::Arrow }]));
+    s.mutate_element("r", true, |e| {
+        e.bound_elements = Some(vec![BoundElement {
+            id: "a".into(),
+            kind: BoundType::Arrow,
+        }])
+    });
 }
-fn start_fixed(s: &Scene) -> [f64; 2] { get(s, "a").linear().unwrap().start_binding.as_ref().unwrap().fixed_point }
+fn start_fixed(s: &Scene) -> [f64; 2] {
+    get(s, "a")
+        .linear()
+        .unwrap()
+        .start_binding
+        .as_ref()
+        .unwrap()
+        .fixed_point
+}
 
 #[test]
 fn elbow_fixed_point_survives_negative_resize_of_single_bindable() {
@@ -442,7 +742,14 @@ fn elbow_fixed_point_flips_on_negative_resize_of_group_selection() {
     setup();
     let mut s = Scene::default();
     elbow_bound_to_rect(&mut s);
-    transform(&mut s, &["r", "a"], HandleType::Nw, [300., 350.], NONE, &Elbow);
+    transform(
+        &mut s,
+        &["r", "a"],
+        HandleType::Nw,
+        [300., 350.],
+        NONE,
+        &Elbow,
+    );
     let f = start_fixed(&s);
     close(f[0], -0.06, 2);
     close(f[1], 0.25, 2);
@@ -499,8 +806,16 @@ fn text_wraps_when_narrower_than_its_text() {
     setup();
     let mut s = Scene::default();
     ui_text(&mut s, "t", 0., 0., "Excalidraw\nEditor", 20.);
-    let (pw, ph, pt) = (get(&s, "t").width, get(&s, "t").height, get(&s, "t").text().unwrap().text.clone());
-    let state = |s: &Scene| { let e = get(s, "t"); let d = e.text().unwrap(); (e.width, e.height, d.text.clone(), d.auto_resize) };
+    let (pw, ph, pt) = (
+        get(&s, "t").width,
+        get(&s, "t").height,
+        get(&s, "t").text().unwrap().text.clone(),
+    );
+    let state = |s: &Scene| {
+        let e = get(s, "t");
+        let d = e.text().unwrap();
+        (e.width, e.height, d.text.clone(), d.auto_resize)
+    };
     resize(&mut s, &["t"], "w", [50., 0.], NONE);
     let (w, h, t, ar) = state(&s);
     assert!(w == pw - 50. && h > ph && t != pt && !ar);
@@ -522,7 +837,10 @@ fn text_keeps_properties_when_wrapped() {
     for dx in [-60., 60.] {
         resize(&mut s, &["t"], "e", [dx, 0.], NONE);
         let d = get(&s, "t").text().unwrap();
-        assert_eq!((d.text_align, d.font_size, d.font_family, d.auto_resize), (d0.text_align, d0.font_size, d0.font_family, false));
+        assert_eq!(
+            (d.text_align, d.font_size, d.font_family, d.auto_resize),
+            (d0.text_align, d0.font_size, d0.font_family, false)
+        );
     }
 }
 
@@ -549,7 +867,9 @@ fn text_has_a_minimum_width_when_wrapped() {
 // resize.test.tsx: image element
 // ---------------------------------------------------------------------------
 
-fn scale(s: &Scene, id: &str) -> [f64; 2] { get(s, id).image().unwrap().scale }
+fn scale(s: &Scene, id: &str) -> [f64; 2] {
+    get(s, id).image().unwrap().scale
+}
 
 #[test]
 fn image_resizes() {
@@ -634,13 +954,47 @@ fn multi_resizes_with_generic_elements() {
 fn multi_resizes_with_linear_elements_of_more_than_two_points() {
     setup();
     let mut s = Scene::default();
-    ui_line(&mut s, "l", 60., 40., vec![[0., 0.], [-40., 40.], [-60., 0.], [0., -40.], [40., 20.], [0., 40.]]);
-    ui_freedraw(&mut s, "f", 63.56072661326618, 100., vec![[0., 0.], [-43.56072661326618, 18.15048126846341], [-43.56072661326618, 29.041198460587566],
-        [-38.115368017204105, 42.652452795512204], [-19.964886748740696, 66.24829266003775], [19.056612930986716, 77.1390098521619]]);
+    ui_line(
+        &mut s,
+        "l",
+        60.,
+        40.,
+        vec![
+            [0., 0.],
+            [-40., 40.],
+            [-60., 0.],
+            [0., -40.],
+            [40., 20.],
+            [0., 40.],
+        ],
+    );
+    ui_freedraw(
+        &mut s,
+        "f",
+        63.56072661326618,
+        100.,
+        vec![
+            [0., 0.],
+            [-43.56072661326618, 18.15048126846341],
+            [-43.56072661326618, 29.041198460587566],
+            [-38.115368017204105, 42.652452795512204],
+            [-19.964886748740696, 66.24829266003775],
+            [19.056612930986716, 77.1390098521619],
+        ],
+    );
     let k = f64::max(1. - 25. / 100., 1. - 25. / 177.1390098521619);
     resize(&mut s, &["l", "f"], "se", [-25., -25.], SHIFT);
     check(&s, "l", [60. * k, 40. * k, 100. * k, 80. * k]);
-    check(&s, "f", [63.56072661326618 * k, 100. * k, 62.6173395442529 * k, 77.1390098521619 * k]);
+    check(
+        &s,
+        "f",
+        [
+            63.56072661326618 * k,
+            100. * k,
+            62.6173395442529 * k,
+            77.1390098521619 * k,
+        ],
+    );
 }
 
 #[test]
@@ -649,7 +1003,11 @@ fn multi_resizes_with_two_point_lines() {
     let mut s = Scene::default();
     // at roughness 0: the selection's bounds follow the rough.js curve, and
     // its jitter (seed-dependent) would move the anchor off the points
-    for (id, x, y, p) in [("h", 0., 0., [120., 0.]), ("v", 0., 20., [0., 80.]), ("d", 40., 40., [60., 60.])] {
+    for (id, x, y, p) in [
+        ("h", 0., 0., [120., 0.]),
+        ("v", 0., 20., [0., 80.]),
+        ("d", 40., 40., [60., 60.]),
+    ] {
         let mut l = line(id, x, y, vec![[0., 0.], p]);
         l.roughness = 0.;
         s.insert_element(l);
@@ -658,8 +1016,21 @@ fn multi_resizes_with_two_point_lines() {
     let k = f64::max(1. - 40. / sw, 1. - 40. / sh);
     resize(&mut s, &["h", "v", "d"], "nw", [40., 40.], SHIFT);
     check(&s, "h", [sw * (1. - k), sh * (1. - k), 120. * k, 0.]);
-    check(&s, "v", [sw * (1. - k), (sh - 20.) * (1. - k) + 20., 0., 80. * k]);
-    check(&s, "d", [(sw - 40.) * (1. - k) + 40., (sh - 40.) * (1. - k) + 40., 60. * k, 60. * k]);
+    check(
+        &s,
+        "v",
+        [sw * (1. - k), (sh - 20.) * (1. - k) + 20., 0., 80. * k],
+    );
+    check(
+        &s,
+        "d",
+        [
+            (sw - 40.) * (1. - k) + 40.,
+            (sh - 40.) * (1. - k) + 40.,
+            60. * k,
+            60. * k,
+        ],
+    );
 }
 
 #[test]
@@ -720,10 +1091,27 @@ fn multi_resizes_with_images_proportionally() {
 fn multi_resizes_from_center() {
     setup();
     let mut s = Scene::default();
-    ui_shape(&mut s, ElementType::Rectangle, "r", -200., -140., 120., 100.);
+    ui_shape(
+        &mut s,
+        ElementType::Rectangle,
+        "r",
+        -200.,
+        -140.,
+        120.,
+        100.,
+    );
     ui_shape(&mut s, ElementType::Ellipse, "e", 60., 60., 140., 80.);
     let k = f64::max(1. - 160. / 400., 1. - 160. / 280.);
-    resize(&mut s, &["r", "e"], "se", [-80., -80.], Mods { shift: true, alt: true });
+    resize(
+        &mut s,
+        &["r", "e"],
+        "se",
+        [-80., -80.],
+        Mods {
+            shift: true,
+            alt: true,
+        },
+    );
     check(&s, "r", [-200. * k, -140. * k, 120. * k, 100. * k]);
     check(&s, "e", [60. * k, 60. * k, 140. * k, 80. * k]);
 }
@@ -734,7 +1122,21 @@ fn multi_flips_while_resizing() {
     let mut s = Scene::default();
     ui_image(&mut s, "i", 60., 100., 100., 100.);
     s.mutate_element("i", true, |e| e.angle = PI * 7. / 6.);
-    ui_line(&mut s, "l", 60., 0., vec![[0., 0.], [-40., 40.], [-20., 60.], [20., 20.], [40., 40.], [-20., 100.], [-60., 60.]]);
+    ui_line(
+        &mut s,
+        "l",
+        60.,
+        0.,
+        vec![
+            [0., 0.],
+            [-40., 40.],
+            [-20., 60.],
+            [20., 20.],
+            [40., 40.],
+            [-20., 100.],
+            [-60., 60.],
+        ],
+    );
     ui_shape(&mut s, ElementType::Rectangle, "r", 180., 60., 160., 80.);
     s.mutate_element("r", true, |e| e.angle = PI / 6.);
     let rl = ui_label(&mut s, "r", "hello\nworld", 20.);
@@ -753,10 +1155,25 @@ fn multi_flips_while_resizing() {
     close(nb[2], 0., 2);
     assert_eq!(l.angle, 0.);
     let i = get(&s, "i");
-    for (a, e) in [(i.x, 160. * sx), (i.y, 100. * sy), (i.width, 100. * -sx), (i.height, 100. * sy), (i.angle, PI * 5. / 6.)] { close(a, e, 2); }
+    for (a, e) in [
+        (i.x, 160. * sx),
+        (i.y, 100. * sy),
+        (i.width, 100. * -sx),
+        (i.height, 100. * sy),
+        (i.angle, PI * 5. / 6.),
+    ] {
+        close(a, e, 2);
+    }
     assert_eq!(scale(&s, "i"), [-1., 1.]);
     let r = get(&s, "r");
-    for (a, e) in [(r.x, 340. * sx), (r.y, 60. * sy), (r.width, 160. * -sx), (r.height, 80. * sy)] { close(a, e, 2); }
+    for (a, e) in [
+        (r.x, 340. * sx),
+        (r.y, 60. * sy),
+        (r.width, 160. * -sx),
+        (r.height, 80. * sy),
+    ] {
+        close(a, e, 2);
+    }
     assert_eq!(r.angle, PI * 11. / 6.);
     centered(&s, &rl, "r");
     close(font_size(&s, &rl), 20. * sy, 2);
@@ -781,14 +1198,50 @@ fn multi_flips_while_resizing() {
 /// The arrow tool's draw from `from` to `to`, binding its ends.
 fn draw_arrow(s: &mut Scene, id: &str, from: Point, to: Point) {
     let ctx = BindingCtx::default();
-    ui_arrow(s, id, from[0], from[1], vec![[0., 0.], [to[0] - from[0], to[1] - from[1]]]);
-    let o = BindOpts { new_arrow: true, ..Default::default() };
-    bind_or_unbind_binding_element(id, &PointsPositionUpdates::from([(0, PointUpdate::at([0., 0.]))]), from, s, &ctx, &o);
-    let st = LinearDragState { origin: Some(from), ..Default::default() };
+    ui_arrow(
+        s,
+        id,
+        from[0],
+        from[1],
+        vec![[0., 0.], [to[0] - from[0], to[1] - from[1]]],
+    );
+    let o = BindOpts {
+        new_arrow: true,
+        ..Default::default()
+    };
+    bind_or_unbind_binding_element(
+        id,
+        &PointsPositionUpdates::from([(0, PointUpdate::at([0., 0.]))]),
+        from,
+        s,
+        &ctx,
+        &o,
+    );
+    let st = LinearDragState {
+        origin: Some(from),
+        ..Default::default()
+    };
     let p = *get(s, id).points().unwrap().last().unwrap();
-    bind_or_unbind_binding_element(id, &PointsPositionUpdates::from([(1, PointUpdate::at(p))]), to, s, &BindingCtx { drag: Some(&st), ..ctx }, &o);
+    bind_or_unbind_binding_element(
+        id,
+        &PointsPositionUpdates::from([(1, PointUpdate::at(p))]),
+        to,
+        s,
+        &BindingCtx {
+            drag: Some(&st),
+            ..ctx
+        },
+        &o,
+    );
 }
-fn end_of(s: &Scene, id: &str) -> Option<String> { get(s, id).linear().unwrap().end_binding.as_ref().map(|b| b.element_id.clone()) }
+fn end_of(s: &Scene, id: &str) -> Option<String> {
+    get(s, id)
+        .linear()
+        .unwrap()
+        .end_binding
+        .as_ref()
+        .map(|b| b.element_id.clone())
+}
 
 #[test]
 fn unselected_bound_arrow_updates_when_rotating_its_target() {
@@ -833,18 +1286,29 @@ fn unselected_bound_arrows_update_when_rotating_their_targets() {
 // flip.test.tsx
 // ---------------------------------------------------------------------------
 
-fn selected(ids: &[&str]) -> AppState { AppState { selected_element_ids: ids.iter().map(|s| s.to_string()).collect(), ..Default::default() } }
+fn selected(ids: &[&str]) -> AppState {
+    AppState {
+        selected_element_ids: ids.iter().map(|s| s.to_string()).collect(),
+        ..Default::default()
+    }
+}
 fn flip(s: &mut Scene, ids: &[&str], dirs: &[FlipDirection]) {
     for d in dirs {
         let a = selected(ids);
         let els = s.elements_including_deleted().to_vec();
-        let r = match d { FlipDirection::Horizontal => action_flip_horizontal(&els, &a, M, &NO_BINDING_HOOKS), FlipDirection::Vertical => action_flip_vertical(&els, &a, M, &NO_BINDING_HOOKS) };
+        let r = match d {
+            FlipDirection::Horizontal => action_flip_horizontal(&els, &a, M, &NO_BINDING_HOOKS),
+            FlipDirection::Vertical => action_flip_vertical(&els, &a, M, &NO_BINDING_HOOKS),
+        };
         *s = Scene::new(r.elements.unwrap());
     }
 }
 /// `checkElementsBoundingBox`: the size stays (to -1 digits, as upstream).
 fn same_size(a: &Element, b: &Element) {
-    let ([x1, y1, x2, y2, ..], [u1, v1, u2, v2, ..]) = (get_element_absolute_coords(a, &vec![a.clone()], false), get_element_absolute_coords(b, &vec![b.clone()], false));
+    let ([x1, y1, x2, y2, ..], [u1, v1, u2, v2, ..]) = (
+        get_element_absolute_coords(a, &vec![a.clone()], false),
+        get_element_absolute_coords(b, &vec![b.clone()], false),
+    );
     close(x2 - x1, u2 - u1, -1);
     close(y2 - y1, v2 - v1, -1);
 }
@@ -853,7 +1317,9 @@ fn check_flip(s: &mut Scene, dirs: &[FlipDirection], angle: Option<f64>) {
     let before = get(s, &id).clone();
     flip(s, &[&id], dirs);
     let after = get(s, &id);
-    if let Some(a) = angle { close(after.angle, a, 2); }
+    if let Some(a) = angle {
+        close(after.angle, a, 2);
+    }
     same_size(&before, after);
 }
 use FlipDirection::{Horizontal as H, Vertical as V};
@@ -866,14 +1332,20 @@ fn one(ty: ElementType, angle: f64) -> Scene {
         ElementType::FreeDraw => ui_freedraw(&mut s, "x", 0., 0., vec![[0., 0.], [50., 100.]]),
         _ => ui_shape(&mut s, ty, "x", 0., 0., 100., 50.),
     }
-    if angle != 0. { s.mutate_element("x", true, |e| e.angle = angle); }
+    if angle != 0. {
+        s.mutate_element("x", true, |e| e.angle = angle);
+    }
     s
 }
 
 #[test]
 fn flips_shapes() {
-    for (ty, a, e) in [(ElementType::Rectangle, 3. * PI / 4., 5. * PI / 4.), (ElementType::Diamond, 5. * PI / 4., 3. * PI / 4.), (ElementType::Ellipse, 7. * PI / 4., PI / 4.),
-        (ElementType::FreeDraw, PI / 4., 7. * PI / 4.)] {
+    for (ty, a, e) in [
+        (ElementType::Rectangle, 3. * PI / 4., 5. * PI / 4.),
+        (ElementType::Diamond, 5. * PI / 4., 3. * PI / 4.),
+        (ElementType::Ellipse, 7. * PI / 4., PI / 4.),
+        (ElementType::FreeDraw, PI / 4., 7. * PI / 4.),
+    ] {
         for dir in [H, V] {
             setup();
             check_flip(&mut one(ty, 0.), &[dir], None);
@@ -903,10 +1375,29 @@ fn flips_two_point_arrows_and_lines() {
 
 /// `createLinearElementWithCurveInsideMinMaxPoints`.
 fn curve_inside(ty: ElementType) -> Scene {
-    let o = ElementOpts { id: Some("x".into()), x: 2256.910668124894, y: -2412.5069664197654, width: 1750.4888916015625, height: 410.51605224609375, stroke_width: 1.,
-        roundness: Some(Roundness { kind: roundness::PROPORTIONAL_RADIUS, value: None }), ..Default::default() };
-    let pts = vec![[0., 0.], [-922.4761962890625, 300.3277587890625], [828.0126953125, 410.51605224609375]];
-    let e = if ty == ElementType::Arrow { new_arrow_element(o, pts, None, Some(Arrowhead::Arrow), false, None) } else { new_linear_element(o, pts, None) };
+    let o = ElementOpts {
+        id: Some("x".into()),
+        x: 2256.910668124894,
+        y: -2412.5069664197654,
+        width: 1750.4888916015625,
+        height: 410.51605224609375,
+        stroke_width: 1.,
+        roundness: Some(Roundness {
+            kind: roundness::PROPORTIONAL_RADIUS,
+            value: None,
+        }),
+        ..Default::default()
+    };
+    let pts = vec![
+        [0., 0.],
+        [-922.4761962890625, 300.3277587890625],
+        [828.0126953125, 410.51605224609375],
+    ];
+    let e = if ty == ElementType::Arrow {
+        new_arrow_element(o, pts, None, Some(Arrowhead::Arrow), false, None)
+    } else {
+        new_linear_element(o, pts, None)
+    };
     Scene::new(vec![e])
 }
 
@@ -926,8 +1417,17 @@ fn flips_curved_arrows_and_lines_inside_min_max_points() {
 #[test]
 fn flips_images() {
     // the smiley fixture: 56 × 77
-    let image = |angle: f64| { let mut s = Scene::default(); ui_image(&mut s, "x", 0., 0., 56., 77.); s.mutate_element("x", true, |e| e.angle = angle); s };
-    for (dirs, sc) in [(&[H][..], [-1., 1.]), (&[V][..], [1., -1.]), (&[H, V][..], [-1., -1.])] {
+    let image = |angle: f64| {
+        let mut s = Scene::default();
+        ui_image(&mut s, "x", 0., 0., 56., 77.);
+        s.mutate_element("x", true, |e| e.angle = angle);
+        s
+    };
+    for (dirs, sc) in [
+        (&[H][..], [-1., 1.]),
+        (&[V][..], [1., -1.]),
+        (&[H, V][..], [-1., -1.]),
+    ] {
         setup();
         let mut s = image(0.);
         check_flip(&mut s, dirs, Some(0.));

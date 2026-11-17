@@ -25,7 +25,9 @@ impl BoardView {
     }
 
     /// Why the file couldn't be read, if it couldn't.
-    pub fn unreadable(&self) -> Option<&str> { self.unreadable.as_deref() }
+    pub fn unreadable(&self) -> Option<&str> {
+        self.unreadable.as_deref()
+    }
 
     /// The file's text as the board is now; marks it as what the file holds.
     pub fn file_text(&mut self) -> String {
@@ -39,7 +41,9 @@ impl BoardView {
     /// with what is open (`Board::reconcile`), not an undo step, as
     /// Excalidraw applies a remote scene (`CaptureUpdateAction.NEVER`).
     pub fn merge_file(&mut self, text: &str, cx: &mut Context<Self>) {
-        let Ok(remote) = Board::from_file(text) else { return };
+        let Ok(remote) = Board::from_file(text) else {
+            return;
+        };
         if self.unreadable.take().is_some() {
             // the file is readable again: it is what shows
             self.files = remote.files.clone();
@@ -52,7 +56,11 @@ impl BoardView {
         }
         let files = remote.files.clone();
         let app = remote.app.clone();
-        let next = Board::reconcile(self.scene.elements_including_deleted(), &self.base, remote.clone());
+        let next = Board::reconcile(
+            self.scene.elements_including_deleted(),
+            &self.base,
+            remote.clone(),
+        );
         self.files.extend(files);
         self.app.apply_exported(&app);
         self.scene.replace_all_elements(next);
@@ -70,10 +78,23 @@ impl BoardView {
     /// Puts the camera back where the reader left it.
     pub fn restore_view_state(&mut self, state: &Value, cx: &mut Context<Self>) {
         let num = |k: &str| state.get(k).and_then(Value::as_f64);
-        let (Some(scroll_x), Some(scroll_y), Some(zoom)) = (num("scrollX"), num("scrollY"), num("zoom")) else { return };
-        if !(zoom.is_finite() && zoom > 0.) { return; }
+        let (Some(scroll_x), Some(scroll_y), Some(zoom)) =
+            (num("scrollX"), num("scrollY"), num("zoom"))
+        else {
+            return;
+        };
+        if !(zoom.is_finite() && zoom > 0.) {
+            return;
+        }
         self.fitted = true;
-        self.set_viewport(super::viewport::Viewport { scroll_x, scroll_y, zoom }, cx);
+        self.set_viewport(
+            super::viewport::Viewport {
+                scroll_x,
+                scroll_y,
+                zoom,
+            },
+            cx,
+        );
         cx.emit(BoardEvent::ViewChanged);
     }
 }

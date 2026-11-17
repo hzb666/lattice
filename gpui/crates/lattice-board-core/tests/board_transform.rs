@@ -20,9 +20,9 @@
 
 #[path = "board_transform"]
 mod board {
+    mod actions;
     mod common;
-    mod resize;
     mod frame_drag;
     mod order;
-    mod actions;
+    mod resize;
 }

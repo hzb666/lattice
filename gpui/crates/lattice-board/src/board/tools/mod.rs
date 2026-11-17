@@ -29,7 +29,10 @@ use super::app_state::ToolType;
 /// After drawing: back to the selection tool unless the tool is locked.
 pub(crate) fn tool_done(me: &mut BoardView) {
     if !me.app.active_tool.locked {
-        me.app.active_tool = super::actions::update_active_tool(&me.app, me.app.preferred_selection_tool.ty);
-        if me.app.active_tool.ty != ToolType::Selection { me.app.active_tool.ty = ToolType::Selection; }
+        me.app.active_tool =
+            super::actions::update_active_tool(&me.app, me.app.preferred_selection_tool.ty);
+        if me.app.active_tool.ty != ToolType::Selection {
+            me.app.active_tool.ty = ToolType::Selection;
+        }
     }
 }

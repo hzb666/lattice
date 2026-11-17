@@ -55,10 +55,18 @@ impl Tool {
 
 /// Which arrowhead a `SetArrowhead` changes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum End { Start, End }
+pub enum End {
+    Start,
+    End,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Layer { Forward, Backward, Front, Back }
+pub enum Layer {
+    Forward,
+    Backward,
+    Front,
+    Back,
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum BoardAction {
