@@ -2,14 +2,14 @@
 //! asked from the Agent island's page as its own modules ask
 //! (`gpui/islands/agent/documents.ts`), on the tutorial's board and sheet:
 //!
-//! - a canvas tool call goes to the board shown in front, where the Tauri
-//!   app's board adapter runs it: its listing is the board's shapes, and a
-//!   shape it deletes leaves the panel's text;
+//! - a canvas tool call goes to the board shown in front, where the native
+//!   board runs it as the Tauri app's adapter does: its listing is the
+//!   board's shapes, and a shape it deletes leaves the panel's text;
 //! - a range read goes to the open sheet it names and is read from its open
 //!   document; one naming a sheet that is not open is the page's to run
 //!   (`local`);
 //! - a board the Agent creates is created, opened, and answered with its path
-//!   once its editor has registered with the canvas tools;
+//!   once its board is there;
 //! - the page reads the project's papers (`list_papers`) and annotations
 //!   (`list_annotations`) through its owner.
 
@@ -87,9 +87,16 @@ impl Run {
         // A canvas call on the board in front.
         let board_path = root.join("e2e-agent-map.excalidraw");
         std::fs::write(&board_path, BOARD)?;
-        let board = self
-            .open_structured(cx, &board_path, Duration::from_secs(40))
-            .await?;
+        // the native board has no page: open once its view is there
+        let board = Some(self.open(cx, &board_path, None)?);
+        let board = board.filter(|panel| {
+            cx.update(|cx| {
+                panel
+                    .read(cx)
+                    .structured()
+                    .is_some_and(|document| document.read(cx).board().is_some())
+            })
+        });
         let listing = self
             .agent_call(
                 cx,
@@ -109,11 +116,11 @@ impl Run {
                 && envelope["type"] == "lattice:canvas-tool-result"
                 && envelope["id"] == "e2e-list"
                 && envelope["ok"] == true
-                && envelope["result"]["total"].as_u64() == Some(shape_count(BOARD) as u64)
+                && envelope["result"]["total"].as_u64() == Some(listed_count(BOARD) as u64)
                 && !shapes.is_empty(),
             json!({ "opened": board.is_some(), "answer": listing }),
         );
-        if let (Some((panel, _)), Some(first)) = (
+        if let (Some(panel), Some(first)) = (
             &board,
             shapes.first().and_then(|shape| shape["id"].as_str()),
         ) {
@@ -252,4 +259,21 @@ impl Run {
         }
         Ok(())
     }
+}
+
+/// The shapes the canvas tools list in a board's file: what is not deleted,
+/// labels aside (they are their container's `text`).
+fn listed_count(text: &str) -> usize {
+    serde_json::from_str::<Value>(text)
+        .ok()
+        .and_then(|file| {
+            file["elements"].as_array().map(|elements| {
+                elements
+                    .iter()
+                    .filter(|e| e["isDeleted"] != true)
+                    .filter(|e| !(e["type"] == "text" && e["containerId"].is_string()))
+                    .count()
+            })
+        })
+        .unwrap_or(0)
 }
