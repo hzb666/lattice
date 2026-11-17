@@ -256,12 +256,19 @@ pub(crate) fn render(me: &BoardView, cx: &mut Context<BoardView>) -> impl IntoEl
         .relative()
         .child(row)
         .children(super::hints::render(me));
+    // `.App-menu_top`'s `1fr auto 1fr` grid: centered, but never over the
+    // main menu's column when the board is narrow.
     div()
         .absolute()
         .top(px(style::TOP_PADDING))
         .left_0()
         .right_0()
         .flex()
-        .justify_center()
+        .child(
+            div()
+                .flex_1()
+                .min_w(px(style::PADDING + style::LG_BUTTON + 8.)),
+        )
         .child(bar)
+        .child(div().flex_1())
 }

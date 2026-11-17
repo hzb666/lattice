@@ -421,7 +421,8 @@ pub(crate) fn render(me: &BoardView, cx: &mut Context<BoardView>) -> Option<AnyE
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::matches;
+    use crate::board::types::Element;
 
     fn text(id: &str, text: &str) -> Element {
         let element = format!(
