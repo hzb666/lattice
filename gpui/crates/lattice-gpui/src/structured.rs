@@ -1,8 +1,9 @@
 //! Boards, spreadsheets and Open Slide decks: the Tauri app's structured
-//! documents (`structuredDocumentKind` in `src/canvas/document-canvas.tsx`),
-//! each a webview island in its document's panel, built from the Tauri app's
-//! own editor (`gpui/islands/`: tldraw's board, Univer's sheet, the Open
-//! Slide workspace).
+//! documents (`structuredDocumentKind` in `src/canvas/document-canvas.tsx`).
+//! A sheet and a deck are webview islands in their document's panel, built
+//! from the Tauri app's own editor (`gpui/islands/`: Univer's sheet, the Open
+//! Slide workspace); a board is the native whiteboard (`lattice-board`, a
+//! port of Excalidraw from quiet.md), held the same way (`structured/board.rs`).
 //!
 //! The document is the panel's like any other: its buffer holds the file's
 //! text, saved by the panel's own autosave through lattice-core's editor
@@ -90,7 +91,7 @@ impl StructuredKind {
     /// The kind of the project file at `relative`, if it is a structured one.
     pub fn of(relative: &str) -> Option<Self> {
         let lower = relative.replace('\\', "/").to_lowercase();
-        if lower.ends_with(".tldr") || lower.ends_with(".excalidraw") {
+        if lower.ends_with(".excalidraw") {
             Some(Self::Board)
         } else if lower.ends_with(".lattice-sheet") {
             Some(Self::Sheet)
@@ -120,7 +121,7 @@ impl StructuredKind {
 
     fn entry(self) -> &'static str {
         match self {
-            Self::Board => "board/index.html",
+            Self::Board => unreachable!("a board is drawn natively, without an island"),
             Self::Sheet => "sheet/index.html",
             Self::Deck => "slides/index.html",
             Self::Markdown => "markdown/index.html",
@@ -222,7 +223,7 @@ impl StructuredDocument {
             .flatten();
         let palette = cx.palette().clone();
         let mut subscriptions = Vec::new();
-        let native = kind == StructuredKind::Board && board::is_native(&relative);
+        let native = kind == StructuredKind::Board;
         let (island, unavailable) = match bundle {
             _ if native => (None, None),
             Ok(scope) => {
@@ -811,8 +812,9 @@ mod tests {
 
     #[test]
     fn kinds_follow_the_tauri_apps_paths() {
-        assert_eq!(StructuredKind::of("map.tldr"), Some(StructuredKind::Board));
-        assert_eq!(StructuredKind::of("a/B.TLDR"), Some(StructuredKind::Board));
+        for board in ["map.excalidraw", "a/B.EXCALIDRAW"] {
+            assert_eq!(StructuredKind::of(board), Some(StructuredKind::Board));
+        }
         assert_eq!(
             StructuredKind::of("figures/map.excalidraw"),
             Some(StructuredKind::Board)

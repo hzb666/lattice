@@ -104,9 +104,20 @@ pub const CORE_SOFTWARE: &[Credit] = &[
         "@open-slide/core",
     ),
     Credit {
-        attribution: Some("Native whiteboard ported from quiet.md by s1dashu"),
-        ..licensed(credit("Excalidraw", "https://excalidraw.com"), "MIT")
+        attribution: Some("The GPUI app's native whiteboard is ported from quiet.md by s1dashu"),
+        ..licensed(
+            of(
+                credit("Excalidraw", "https://excalidraw.com"),
+                Npm,
+                "@excalidraw/excalidraw",
+            ),
+            "MIT",
+        )
     },
+    licensed(
+        of(credit("tldraw", "https://tldraw.dev"), Npm, "tldraw"),
+        "tldraw license",
+    ),
     Credit {
         attribution: Some("Uses Trellis by DanFessler - github.com/DanFessler/trellis"),
         ..licensed(

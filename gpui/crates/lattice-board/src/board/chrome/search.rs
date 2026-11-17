@@ -439,10 +439,19 @@ mod tests {
 
     #[test]
     fn matches_ignore_case_and_keep_byte_ranges_per_line() {
-        let els = [text("a", "Attention map
-attention heads"), text("b", "Résumé ATTENTION")];
+        let els = [
+            text(
+                "a",
+                "Attention map
+attention heads",
+            ),
+            text("b", "Résumé ATTENTION"),
+        ];
         let found = matches(els.iter(), "aTTention");
-        let spots: Vec<_> = found.iter().map(|m| (m.id.as_str(), m.line, m.range.clone())).collect();
+        let spots: Vec<_> = found
+            .iter()
+            .map(|m| (m.id.as_str(), m.line, m.range.clone()))
+            .collect();
         assert_eq!(spots, [("a", 0, 0..9), ("a", 1, 0..9), ("b", 0, 9..18)]);
         assert_eq!(&found[2].text[found[2].range.clone()], "ATTENTION");
     }

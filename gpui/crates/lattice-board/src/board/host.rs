@@ -40,6 +40,11 @@ impl BoardView {
         self.export_target = Some((dir, stem));
     }
 
+    /// Where the board was last laid out, in window coordinates.
+    pub fn bounds(&self) -> Bounds<Pixels> {
+        self.bounds.get()
+    }
+
     /// Why the file couldn't be read, if it couldn't.
     pub fn unreadable(&self) -> Option<&str> {
         self.unreadable.as_deref()

@@ -28,11 +28,6 @@ pub(super) struct NativeBoard {
     _subscriptions: Vec<Subscription>,
 }
 
-/// A board file the native whiteboard opens.
-pub(super) fn is_native(relative: &str) -> bool {
-    relative.to_lowercase().ends_with(".excalidraw")
-}
-
 impl NativeBoard {
     pub(super) fn new(
         source: &str,
