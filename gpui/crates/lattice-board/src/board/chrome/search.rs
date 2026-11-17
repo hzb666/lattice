@@ -424,16 +424,14 @@ mod tests {
     use super::*;
 
     fn text(id: &str, text: &str) -> Element {
-        let file = serde_json::json!({
-            "type": "excalidraw", "version": 2, "source": "test",
-            "elements": [{
-                "id": id, "type": "text", "x": 0, "y": 0, "width": 100, "height": 25,
-                "text": text, "originalText": text, "fontSize": 20, "fontFamily": 5,
-                "textAlign": "left", "verticalAlign": "top", "lineHeight": 1.25
-            }],
-            "appState": {}, "files": {}
-        });
-        let board = crate::whiteboard::Board::from_file(&file.to_string()).expect("a board");
+        let element = format!(
+            r#"{{"id":{id:?},"type":"text","x":0,"y":0,"width":100,"height":25,"text":{t},"originalText":{t},"fontSize":20,"fontFamily":5,"textAlign":"left","verticalAlign":"top","lineHeight":1.25}}"#,
+            t = serde_json::Value::from(text),
+        );
+        let file = format!(
+            r#"{{"type":"excalidraw","version":2,"source":"test","elements":[{element}],"appState":{{}},"files":{{}}}}"#
+        );
+        let board = crate::whiteboard::Board::from_file(&file).expect("a board");
         board.elements.into_iter().next().expect("the text")
     }
 
