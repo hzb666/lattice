@@ -671,6 +671,7 @@ impl Render for BoardView {
         {
             let app: &App = cx;
             crate::theme::set_dark(lattice_ui::ActiveLattice::palette(app).is_dark());
+            crate::theme::set_palette(lattice_ui::ActiveLattice::palette(app));
             crate::theme::set_ui_family(lattice_ui::ActiveLattice::lattice(app).fonts.ui.clone());
         }
         text_editor::restyle(self, window, cx);
@@ -693,10 +694,7 @@ impl Render for BoardView {
             .occlude()
             .relative()
             .size_full()
-            .bg(render::color(
-                color::color_or_black(&self.app.view_background_color),
-                1.,
-            ))
+            .bg(crate::theme::canvas())
             .font_family(crate::theme::ui_family())
             .cursor(canvas::cursor(self))
             .map(|d| keys::listeners(d, cx))

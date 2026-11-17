@@ -9,7 +9,8 @@
 //! `dropdownMenu/*` (`DropdownMenu.scss`) @ 3a317b5: the hamburger
 //! (`.main-menu-trigger`) opens an island (padding 8) of 32px items (icon,
 //! 14px text, faded shortcut). The default items we support: 帮助 and 重置画布
-//! (with its confirm dialog) and the canvas background (`ChangeCanvasBackground`).
+//! (with its confirm dialog); Lattice leaves out the canvas background, as the
+//! canvas is the editor sheet.
 //! Differs: no open / save / export / search / socials / theme items (the
 //! app's header, above the board, has the way back and the document menu).
 
@@ -88,17 +89,8 @@ pub(crate) fn dropdown_item(
         })
 }
 
-/// `DropdownMenuSeparator`: 1px `--default-border-color`, 6px above and below.
-pub(crate) fn dropdown_separator() -> Div {
-    div().flex_none().h(px(1.)).my(px(6.)).bg(style::border())
-}
-
 /// Top left (`.excalidraw-ui-top-left`): the hamburger and its menu.
-pub(crate) fn main_menu(
-    me: &BoardView,
-    window: &mut Window,
-    cx: &mut Context<BoardView>,
-) -> impl IntoElement {
+pub(crate) fn main_menu(cx: &mut Context<BoardView>) -> impl IntoElement {
     let open = matches!(pop(cx), Some(Pop::MainMenu | Pop::CanvasBackground));
     let trigger = filled_button("board-main-menu", open)
         .w(px(style::LG_BUTTON))
@@ -148,35 +140,6 @@ pub(crate) fn main_menu(
                     false,
                 )
                 .on_click(cx.listener(|_, _, _, cx| set_pop(Some(Pop::ClearCanvas), cx))),
-            )
-            // `ChangeCanvasBackground`: 12 below the separator, a 14px label
-            // (4 below, 8 in) over the picker 10 in
-            .child(dropdown_separator())
-            .child(
-                div()
-                    .mt(px(12.))
-                    .flex()
-                    .flex_col()
-                    .child(
-                        div()
-                            .mb(px(4.))
-                            .ml(px(8.))
-                            .text_size(px(14.))
-                            .line_height(style::lh(14.))
-                            .text_color(style::on_surface())
-                            .child(tr("画布背景", "Canvas background")),
-                    )
-                    .child(div().px(px(10.)).child(super::color_picker::color_picker(
-                        "board-canvas-bg",
-                        None,
-                        Pop::CanvasBackground,
-                        Some(me.app_state().view_background_color.clone()),
-                        super::colors::CANVAS_BACKGROUND_PICKS,
-                        BoardAction::ViewBackgroundColor,
-                        me.elements(),
-                        window,
-                        cx,
-                    ))),
             );
         // below the trigger, left edges aligned (`sideOffset` 8)
         col = col.child(

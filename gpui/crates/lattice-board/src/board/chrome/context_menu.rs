@@ -356,7 +356,7 @@ pub(crate) fn render(
                         .cursor_default()
                         .hover(move |s| {
                             s.bg(if danger {
-                                style::hex(style::RED_6)
+                                crate::theme::palette(|p| p.danger)
                             } else {
                                 style::select_highlight()
                             })
@@ -369,7 +369,9 @@ pub(crate) fn render(
                             div()
                                 .flex_1()
                                 .mr(px(20.))
-                                .when(danger, |d| d.text_color(style::hex(style::RED_7)))
+                                .when(danger, |d| {
+                                    d.text_color(crate::theme::palette(|p| p.danger))
+                                })
                                 .group_hover(group.clone(), |s| s.text_color(hover_text))
                                 .child(label),
                         )

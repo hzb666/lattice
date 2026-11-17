@@ -4,19 +4,20 @@
 // s1dashu. Excalidraw: MIT License, Copyright (c) 2020 Excalidraw. See
 // THIRD_PARTY_NOTICES.md.
 
-//! Excalidraw's UI design tokens, after `packages/excalidraw/css/theme.scss`
+//! Excalidraw's UI design tokens, mapped to Lattice's as the Tauri app's
+//! restyled Excalidraw maps them (`.board-editor-root .excalidraw`, the LATA-10
+//! theme table); sizes and the token names follow `packages/excalidraw/css/theme.scss`
 //! (`.excalidraw` and `.excalidraw.theme--dark`), `variables.module.scss` and
-//! `styles.scss` @ 3a317b5. The board's chrome uses these, not our `Theme`:
-//! one function per CSS variable, light or dark by the app's look (upstream's
-//! UI isn't filtered in dark mode; only colors shown as scene colors, like
-//! swatches, go through the canvas mapping). Sizes are px at upstream's 16px
+//! `styles.scss` @ 3a317b5: one function per CSS variable, read from the
+//! app's palette (upstream's UI isn't filtered in dark mode; only colors shown
+//! as scene colors, like swatches, go through the canvas mapping). Sizes are px at upstream's 16px
 //! rem (`--default-button-size: 2rem` = 32 …); the ≥1921px-wide variants are
 //! left out.
 
 use gpui::{BoxShadow, Hsla, Rgba, point, px};
 
-fn dark() -> bool {
-    crate::theme::dark()
+fn p<T>(read: impl FnOnce(&lattice_ui::Palette) -> T) -> T {
+    crate::theme::palette(read)
 }
 pub fn hex(c: u32) -> Hsla {
     Rgba {
@@ -32,12 +33,6 @@ pub fn hexa(c: u32, a: f32) -> Hsla {
     h.a = a;
     h
 }
-fn pick(light: u32, dark_: u32) -> Hsla {
-    hex(if dark() { dark_ } else { light })
-}
-fn hsl(h: f32, s: f32, l: f32) -> Hsla {
-    gpui::hsla(h / 360., s / 100., l / 100., 1.)
-}
 
 /// `--ui-font`: Lattice's interface family, as the Tauri app's restyled
 /// Excalidraw sets it.
@@ -50,8 +45,8 @@ pub const SPACE: f32 = 4.; // --space-factor: 0.25rem
 pub const DEFAULT_BUTTON: f32 = 32.; // --default-button-size
 pub const LG_BUTTON: f32 = 36.; // --lg-button-size
 pub const ICON: f32 = 16.; // --default-icon-size, --lg-icon-size
-pub const RADIUS_LG: f32 = 8.; // --border-radius-lg
-pub const RADIUS_MD: f32 = 6.; // --border-radius-md
+pub const RADIUS_LG: f32 = 10.; // --border-radius-lg: --radius-surface
+pub const RADIUS_MD: f32 = 6.; // --border-radius-md: --radius-control
 pub const PADDING: f32 = 16.; // --editor-container-padding
 /// Above the top row (menu, toolbar): ours, as the board sits under the
 /// app's header, which already leaves room (upstream: `PADDING`).
@@ -67,144 +62,123 @@ pub fn lh(size: f32) -> gpui::Pixels {
 }
 
 // ---- colors (`.excalidraw` / `.theme--dark`)
+/// `--color-primary` (and its darker steps, `--color-brand-*`): `--control-active`.
 pub fn primary() -> Hsla {
-    pick(0x6965db, 0xa8a5ff)
+    p(|p| p.accent)
 }
 pub fn primary_darker() -> Hsla {
-    pick(0x5b57d1, 0xb2aeff)
+    primary()
 }
 pub fn primary_darkest() -> Hsla {
-    pick(0x4a47b1, 0xbeb9ff)
+    primary()
 }
+/// `--color-primary-light`: `--control-pressed-surface`.
 pub fn primary_light() -> Hsla {
-    pick(0xe3e2fe, 0x4f4d6f)
+    p(|p| p.pressed)
 }
+/// `--island-bg-color`: `--surface-elevated` (the lift).
 pub fn island_bg() -> Hsla {
-    pick(0xffffff, 0x232329)
+    p(|p| p.raised)
 }
 pub fn popup_bg() -> Hsla {
     island_bg()
 }
+/// `--color-surface-high` (`--button-active-bg`): `--control-pressed-surface`.
 pub fn surface_high() -> Hsla {
-    pick(0xf1f0ff, 0x2e2d39)
+    p(|p| p.pressed)
 }
+/// `--color-surface-mid`: `--control-hover-surface`.
 pub fn surface_mid() -> Hsla {
-    if dark() {
-        hsl(240., 6., 10.)
-    } else {
-        hex(0xf6f6f9)
-    }
+    p(|p| p.hover)
 }
+/// `--color-surface-low`: `--surface-chrome`.
 pub fn surface_low() -> Hsla {
-    if dark() {
-        hsl(240., 8., 15.)
-    } else {
-        hex(0xececf4)
-    }
+    p(|p| p.chrome)
 }
 pub fn surface_lowest() -> Hsla {
-    if dark() {
-        hsl(0., 0., 7.)
-    } else {
-        hex(0xffffff)
-    }
+    p(|p| p.raised)
 }
+/// `--color-on-surface`: `--text-primary`.
 pub fn on_surface() -> Hsla {
-    pick(0x1b1b1f, 0xe3e3e8)
+    p(|p| p.text)
 }
 pub fn brand_active() -> Hsla {
-    pick(0x4440bf, 0xd0ccff)
+    primary()
 }
 pub fn on_primary_container() -> Hsla {
-    pick(0x030064, 0xe0dfff)
+    p(|p| p.text)
 }
+/// `--color-surface-primary-container` (the selected tool): `--control-pressed-surface`.
 pub fn surface_primary_container() -> Hsla {
-    pick(0xe0dfff, 0x403e6a)
+    p(|p| p.pressed)
 }
 /// `--text-primary-color`, `--icon-fill-color`.
 pub fn text() -> Hsla {
     on_surface()
 }
-/// `--default-border-color`, `--button-hover-bg`, `--button-active-bg`.
+/// `--default-border-color`: `--border-subtle`.
 pub fn border() -> Hsla {
-    surface_high()
+    p(|p| p.line)
 }
+/// `--button-hover-bg`: `--control-hover-surface`.
 pub fn button_hover_bg() -> Hsla {
-    surface_high()
+    p(|p| p.hover)
 }
-/// `--button-active-border`.
+/// `--button-active-border`: none (selection is a fill, never a second outline).
 pub fn button_active_border() -> Hsla {
-    brand_active()
+    gpui::transparent_black()
 }
 pub fn disabled() -> Hsla {
-    pick(GRAY_40, GRAY_70)
+    p(|p| p.disabled_ink)
 }
 pub fn keybinding() -> Hsla {
-    pick(GRAY_40, GRAY_60)
+    p(|p| p.text_secondary)
 }
 pub fn button_gray_2() -> Hsla {
-    pick(0xced4da, 0x272727)
+    p(|p| p.hover)
 }
 pub fn button_gray_3() -> Hsla {
-    pick(0xadb5bd, 0x222222)
+    p(|p| p.pressed)
 }
 pub fn popup_secondary_bg() -> Hsla {
-    pick(0xf1f3f5, 0x222222)
+    p(|p| p.raised)
 }
 pub fn popup_text() -> Hsla {
-    pick(0x000000, 0xced4da)
+    p(|p| p.text)
 }
 pub fn select_highlight() -> Hsla {
-    pick(0x339af0, 0x4dabf7)
+    p(|p| p.focus)
 }
 pub fn dialog_border() -> Hsla {
-    pick(GRAY_20, GRAY_80)
+    p(|p| p.line)
 }
-/// `--list-border-color` (`QuickSearch.scss`; dark draws no border there).
 pub fn list_border() -> Hsla {
-    if dark() {
-        gpui::transparent_black()
-    } else {
-        hex(GRAY_20)
-    }
+    p(|p| p.line)
 }
+/// `--overlay-bg-color`: `--surface-backdrop`.
 pub fn overlay_bg() -> Hsla {
-    hexa(0x0c0c0e, if dark() { 0.65 } else { 0.35 })
+    p(|p| p.backdrop)
 }
 pub fn input_label() -> Hsla {
-    pick(0x495057, 0xe9ecef)
+    p(|p| p.text_secondary)
 }
 pub fn slider_track() -> Hsla {
-    if dark() {
-        hsl(244., 23., 39.)
-    } else {
-        hsl(240., 100., 90.)
-    }
+    p(|p| p.pressed)
 }
 pub fn slider_thumb() -> Hsla {
-    hex(GRAY_80)
+    p(|p| p.accent)
 }
-/// `ColorPicker.scss` `--color-outline`.
 pub fn color_outline() -> Hsla {
-    pick(GRAY_20, GRAY_80)
+    p(|p| p.line)
 }
-/// The styles panel's buttons (`.App-menu__left`, `.shape-actions-theme-scope`).
 pub fn panel_button_bg() -> Hsla {
-    if dark() {
-        surface_high()
-    } else {
-        surface_mid()
-    }
+    p(|p| p.hover)
 }
 pub fn panel_button_hover_bg() -> Hsla {
-    if dark() {
-        hex(0x363541)
-    } else {
-        surface_high()
-    }
+    p(|p| p.pressed)
 }
 pub fn hint_text() -> Hsla {
-    pick(GRAY_40, GRAY_60)
+    p(|p| p.text_secondary)
 }
 /// `$color-red-7` / `$color-red-6` (the context menu's dangerous item).
 pub const RED_7: u32 = 0xf03e3e;
@@ -217,43 +191,25 @@ pub const GRAY_70: u32 = 0x5c5c5c;
 pub const GRAY_80: u32 = 0x3d3d3d;
 /// `$color-gray-5` (`.context-menu-item-separator`).
 pub const GRAY_5: u32 = 0xadb5bd;
-/// `--color-selection`: the interactive canvas's selection color.
+/// `--color-selection`: `--focus`.
 pub fn selection() -> Hsla {
-    pick(0x6965db, 0xb4b0ff)
+    p(|p| p.focus)
 }
 
 // ---- shadows
-fn sh(y: f32, blur: f32, a: f32) -> BoxShadow {
-    BoxShadow {
-        color: gpui::hsla(0., 0., 0., a),
-        offset: point(px(0.), px(y)),
-        blur_radius: px(blur),
-        spread_radius: px(0.),
-        inset: false,
-    }
-}
-/// `--shadow-island`.
+/// `--shadow-island`: `--elevation-popover-shadow`.
 pub fn shadow_island() -> Vec<BoxShadow> {
-    vec![sh(0., 1., 0.17), sh(0., 3., 0.08), sh(7., 14., 0.05)]
+    p(|p| lattice_ui::Elevation::Popover.shadows(p))
 }
-/// `--shadow-island-stronger`.
 pub fn shadow_island_stronger() -> Vec<BoxShadow> {
-    vec![sh(0., 1., 0.17), sh(0., 3., 0.08), sh(7., 14., 0.18)]
+    p(|p| lattice_ui::Elevation::Floating.shadows(p))
 }
-/// `--modal-shadow`.
+/// `--modal-shadow`: `--elevation-dialog-shadow`.
 pub fn shadow_modal() -> Vec<BoxShadow> {
-    vec![
-        sh(100., 80., 0.07),
-        sh(41.78, 33.42, 0.0503),
-        sh(22.34, 17.87, 0.0417),
-        sh(12.52, 10.02, 0.035),
-        sh(6.65, 5.32, 0.0283),
-        sh(2.77, 2.21, 0.0197),
-    ]
+    p(|p| lattice_ui::Elevation::Dialog.shadows(p))
 }
-/// `.context-menu`: `0 3px 10px rgba(0, 0, 0, 0.2)`.
 pub fn shadow_context_menu() -> Vec<BoxShadow> {
-    vec![sh(3., 10., 0.2)]
+    shadow_island()
 }
 /// A 1px ring (`box-shadow: 0 0 0 1px …`).
 pub fn ring(c: Hsla) -> Vec<BoxShadow> {

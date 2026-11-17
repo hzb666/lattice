@@ -29,12 +29,47 @@ pub fn bind_keys(cx: &mut gpui::App) {
 
 /// The look the board draws in, as the host's theme has it.
 pub mod theme {
-    use gpui::{Font, SharedString, font};
+    use gpui::{Font, Hsla, SharedString, font};
+    use lattice_ui::Palette;
     use std::cell::{Cell, RefCell};
 
     thread_local! {
         static DARK: Cell<bool> = const { Cell::new(false) };
         static UI: RefCell<SharedString> = RefCell::new(SharedString::new_static("Inter"));
+        static PALETTE: RefCell<Option<Palette>> = const { RefCell::new(None) };
+    }
+
+    /// Reads the app's palette as the board last rendered with it: the chrome
+    /// wears Lattice's tokens, as the Tauri app's restyled Excalidraw does
+    /// (its \`.board-editor-root .excalidraw\` variables).
+    pub fn palette<T>(read: impl FnOnce(&Palette) -> T) -> T {
+        PALETTE.with(|p| match p.borrow().as_ref() {
+            Some(palette) => read(palette),
+            None => read(&Palette::new(
+                if dark() {
+                    lattice_ui::Appearance::Dark
+                } else {
+                    lattice_ui::Appearance::Light
+                },
+                Default::default(),
+                Default::default(),
+            )),
+        })
+    }
+
+    pub(crate) fn set_palette(palette: &Palette) {
+        PALETTE.with(|p| {
+            if p.borrow().as_ref() != Some(palette) {
+                *p.borrow_mut() = Some(palette.clone());
+            }
+        });
+    }
+
+    /// The canvas ground: the board draws on a transparent background over
+    /// the editor sheet (\`--board-canvas-surface\` → \`--editor-bg\`), whatever
+    /// \`viewBackgroundColor\` the file holds.
+    pub fn canvas() -> Hsla {
+        palette(|p| p.editor)
     }
 
     /// The board is drawn in the dark theme (Excalidraw's `theme === "dark"`).

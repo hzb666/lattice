@@ -143,7 +143,7 @@ pub fn render(
         .size_full()
         .font_family(style::ui_font())
         .text_color(style::text())
-        .child(menu::main_menu(me, window, cx))
+        .child(menu::main_menu(cx))
         .child(toolbar::render(me, cx))
         .when_some(panel, |d, p| d.child(p))
         .child(controls::footer(me, cx))

@@ -222,10 +222,7 @@ pub fn element(me: &BoardView, cx: &mut Context<BoardView>) -> Option<AnyElement
     let e = me.scene.get_non_deleted_element(&f.id)?;
     let _ = e;
     let w = px((text.chars().count() as f32 + 1.) * size * 0.6).max(px(size));
-    let bg = super::render::color(
-        super::color::color_or_black(&me.app.view_background_color),
-        1.,
-    );
+    let bg = crate::theme::canvas();
     f.field.update(cx, |t, _| {
         t.size = size;
         t.line_height = NAME_LINE;

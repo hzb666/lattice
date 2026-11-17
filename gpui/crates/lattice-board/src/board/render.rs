@@ -185,11 +185,8 @@ pub fn placeholder_color(opacity: f64) -> Hsla {
 }
 
 /// The canvas color (`viewBackgroundColor`), as drawn.
-pub fn canvas_color(board: &Board) -> Hsla {
-    hsla(
-        dl::canvas_color(&board.app.view_background_color, crate::theme::dark()),
-        1.,
-    )
+pub fn canvas_color(_board: &Board) -> Hsla {
+    crate::theme::canvas()
 }
 
 /// One tessellated path and what paints it.

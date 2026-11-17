@@ -113,10 +113,7 @@ pub fn canvas_element(me: &BoardView, cx: &mut Context<BoardView>) -> impl IntoE
             let Some(e) = entity.upgrade() else { return };
             // borrow the scene for the paint (no clone per frame)
             let (scene, files, faded, view, bg, pending) = e.update(cx, |v, _| {
-                let bg = super::render::color(
-                    super::color::color_or_black(&v.app.view_background_color),
-                    1.,
-                );
+                let bg = crate::theme::canvas();
                 let mut faded = v.faded.clone();
                 if let Some(t) = &v.text {
                     faded.insert(t.session.element_id.clone(), 0.);
