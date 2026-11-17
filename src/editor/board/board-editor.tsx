@@ -13,8 +13,9 @@ import "./board-editor.css";
 import type { BoardFileViewState } from "../../app-types";
 import type { Theme } from "../../settings/app-settings";
 import {
-  mergeExternalElements, parseBoardScene, savedVersions, serializeBoardScene,
+  excalidrawLangCode, mergeExternalElements, parseBoardScene, savedVersions, serializeBoardScene,
 } from "./board-store";
+import { useLatestRef } from "../../hooks/use-latest-ref";
 
 const SERIALIZE_DEBOUNCE_MS = 300;
 
@@ -93,7 +94,7 @@ export function BoardEditor({
   theme,
 }: BoardEditorProps) {
   const { i18n } = useLingui();
-  const langCode = i18n.locale === "zh-CN" ? "zh-CN" : "en";
+  const langCode = excalidrawLangCode(i18n.locale);
   const callbacksRef = useRef({ onChange, onViewState });
   useLayoutEffect(() => {
     callbacksRef.current = { onChange, onViewState };
@@ -124,8 +125,7 @@ export function BoardEditor({
     fileRef.current = { source: json, versions: savedVersions(elements), scene: sceneVersion(elements, api.getFiles()) };
     callbacksRef.current.onChange(json);
   };
-  const flushRef = useRef(flush);
-  flushRef.current = flush;
+  const flushRef = useLatestRef(flush);
 
   useLayoutEffect(() => {
     if (!onFlushPendingChange) return;
@@ -134,7 +134,7 @@ export function BoardEditor({
       return true;
     });
     return () => onFlushPendingChange(null);
-  }, [onFlushPendingChange]);
+  }, [flushRef, onFlushPendingChange]);
 
   // Commit pending edits on unmount, so switching files never loses the last
   // stroke, and report where the view was left.
@@ -144,17 +144,19 @@ export function BoardEditor({
     if (view.frame !== null) window.cancelAnimationFrame(view.frame);
     if (view.last) callbacksRef.current.onViewState?.(view.last);
     apiRef.current = null;
-  }, []);
+  }, [flushRef]);
 
   const handleChange = (elements: readonly OrderedExcalidrawElement[], appState: AppState, files: BinaryFiles) => {
     const view = { scrollX: appState.scrollX, scrollY: appState.scrollY, zoom: appState.zoom.value };
     const last = viewRef.current.last;
     if (!last || last.scrollX !== view.scrollX || last.scrollY !== view.scrollY || last.zoom !== view.zoom) {
       viewRef.current.last = view;
-      viewRef.current.frame ??= window.requestAnimationFrame(() => {
-        viewRef.current.frame = null;
-        if (viewRef.current.last) callbacksRef.current.onViewState?.(viewRef.current.last);
-      });
+      if (viewRef.current.frame === null) {
+        viewRef.current.frame = window.requestAnimationFrame(() => {
+          viewRef.current.frame = null;
+          if (viewRef.current.last) callbacksRef.current.onViewState?.(viewRef.current.last);
+        });
+      }
     }
     // The live element count, for checks that cannot read Excalidraw's canvas
     // (the GPUI board island's end-to-end scenario).
@@ -163,7 +165,7 @@ export function BoardEditor({
     // onChange also fires for selection, hover and view changes; only an edit
     // to the scene is written.
     if (sceneVersion(elements, files) === fileRef.current.scene) return;
-    timerRef.current ??= window.setTimeout(() => flushRef.current(), SERIALIZE_DEBOUNCE_MS);
+    if (timerRef.current === null) timerRef.current = window.setTimeout(() => flushRef.current(), SERIALIZE_DEBOUNCE_MS);
   };
 
   // Excalidraw takes ⌘/Ctrl+P on its container to toast a hint about its own
