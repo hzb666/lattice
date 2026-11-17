@@ -51,6 +51,8 @@ pub fn run(me: &mut BoardView, a: BoardAction, window: &mut Window, cx: &mut Con
             }
             return;
         }
+        BoardAction::FindOnCanvas => return me.toggle_search(window, cx),
+        BoardAction::ExportImage => return me.toggle_export_image(cx),
         BoardAction::ShowHelp => {
             me.help = !me.help;
             cx.notify();
@@ -213,7 +215,9 @@ pub fn run(me: &mut BoardView, a: BoardAction, window: &mut Window, cx: &mut Con
         | BoardAction::ResetZoom
         | BoardAction::ZoomToFit
         | BoardAction::ZoomToSelection
-        | BoardAction::ShowHelp => unreachable!(),
+        | BoardAction::ShowHelp
+        | BoardAction::FindOnCanvas
+        | BoardAction::ExportImage => unreachable!(),
         BoardAction::ToggleGrid => {
             let mut a = app.clone();
             a.grid_mode_enabled = !a.grid_mode_enabled;
@@ -473,17 +477,56 @@ fn copy(me: &mut BoardView, cx: &mut Context<BoardView>) {
 /// PNG `tEXt` chunk, as its file exports embed it), so pasting the picture
 /// back gives the elements.
 fn copy_picture(me: &mut BoardView, png: bool, cx: &mut Context<BoardView>) {
+    let selected = !me.app.selected_element_ids.is_empty();
+    let Some((svg, scene)) = picture(me, selected, true, false) else {
+        return;
+    };
+    if !png {
+        write_clipboard(embed_in_svg(&svg, &scene), cx);
+        return;
+    }
+    let Some(bytes) = rasterize(&svg, 2., false)
+        .and_then(|p| super::encode::encode_png_metadata(&p, &scene).ok())
+    else {
+        return;
+    };
+    let img = Image::from_bytes(ImageFormat::Png, bytes);
+    cx.write_to_clipboard(ClipboardItem::new_image(&img));
+}
+
+/// \`svg\` with \`scene\` in its \`<metadata>\` (\`exportEmbedScene\`).
+pub(crate) fn embed_in_svg(svg: &str, scene: &str) -> String {
+    svg.replacen(
+        "<metadata></metadata>",
+        &format!(
+            "<metadata>{}</metadata>",
+            super::encode::encode_svg_base64_payload(scene)
+        ),
+        1,
+    )
+}
+
+/// The selection with its labels and frame children (\`selected\`), or the
+/// whole board, as an SVG (\`exportToSvg\`; \`background\`: the canvas color
+/// painted, \`dark\`: upstream's dark filter on the root) and its scene JSON;
+/// None when there is nothing to draw.
+pub(crate) fn picture(
+    me: &BoardView,
+    selected: bool,
+    background: bool,
+    dark: bool,
+) -> Option<(String, String)> {
     let all = me.scene.elements_including_deleted();
-    let els: Vec<super::types::Element> = if me.app.selected_element_ids.is_empty() {
-        me.scene.non_deleted_elements().cloned().collect()
-    } else {
+    let els: Vec<super::types::Element> = if selected {
         get_elements_to_copy(all, &me.app)
             .into_iter()
             .cloned()
             .collect()
+    } else {
+        me.scene.non_deleted_elements().cloned().collect()
     };
     if els.is_empty() {
-        return;
+        return None;
     }
     let used: rustc_hash::FxHashSet<&str> = els
         .iter()
@@ -509,33 +552,21 @@ fn copy_picture(me: &mut BoardView, png: bool, cx: &mut Context<BoardView>) {
     );
     let opts = super::export_svg::SvgExportOpts {
         background: bd.app.view_background_color.clone(),
+        paint_background: background,
+        dark,
         image_href: Some(&href),
         ..Default::default()
     };
-    let svg = super::export_svg::export_to_svg(&bd.elements, &bd.files, &*me.m, &opts);
-    if !png {
-        let svg = svg.replacen(
-            "<metadata></metadata>",
-            &format!(
-                "<metadata>{}</metadata>",
-                super::encode::encode_svg_base64_payload(&scene)
-            ),
-            1,
-        );
-        write_clipboard(svg, cx);
-        return;
-    }
-    let Some(bytes) =
-        rasterize(&svg, 2.).and_then(|p| super::encode::encode_png_metadata(&p, &scene).ok())
-    else {
-        return;
-    };
-    let img = Image::from_bytes(ImageFormat::Png, bytes);
-    cx.write_to_clipboard(ClipboardItem::new_image(&img));
+    Some((
+        super::export_svg::export_to_svg(&bd.elements, &bd.files, &*me.m, &opts),
+        scene,
+    ))
 }
 
-/// An SVG drawn at `scale` as PNG bytes.
-fn rasterize(svg: &str, scale: f32) -> Option<Vec<u8>> {
+/// An SVG drawn at `scale` as PNG bytes; `dark`: through upstream's dark
+/// filter, pixel by pixel (`applyDarkModeFilter`, as the export canvas's
+/// `filter` draws it).
+pub(crate) fn rasterize(svg: &str, scale: f32, dark: bool) -> Option<Vec<u8>> {
     let mut o = resvg::usvg::Options::default();
     o.fontdb_mut().load_system_fonts();
     super::fonts::load_into(o.fontdb_mut());
@@ -556,6 +587,15 @@ fn rasterize(svg: &str, scale: f32) -> Option<Vec<u8>> {
         .iter()
         .flat_map(|p| {
             let c = p.demultiply();
+            if dark {
+                let d = super::color::apply_dark_mode_filter(super::color::Rgba {
+                    r: c.red(),
+                    g: c.green(),
+                    b: c.blue(),
+                    a: c.alpha(),
+                });
+                return [d.r, d.g, d.b, d.a];
+            }
             [c.red(), c.green(), c.blue(), c.alpha()]
         })
         .collect();

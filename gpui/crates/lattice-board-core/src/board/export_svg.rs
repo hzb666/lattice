@@ -46,6 +46,8 @@ pub struct SvgExportOpts<'a> {
     /// What an image's `href` is; defaults to the file's data URL. Images
     /// without one aren't drawn, as upstream.
     pub image_href: Option<&'a dyn Fn(&FileData) -> Option<String>>,
+    /// \`exportWithDarkMode\`: the root carries upstream's \`THEME_FILTER\`.
+    pub dark: bool,
 }
 
 impl Default for SvgExportOpts<'_> {
@@ -56,6 +58,7 @@ impl Default for SvgExportOpts<'_> {
             paint_background: true,
             frames: RenderOpts::default(),
             image_href: None,
+            dark: false,
         }
     }
 }
@@ -507,8 +510,13 @@ pub fn export_to_svg(
     }
 
     let (ws, hs) = (js_number(w), js_number(h));
+    let filter = if opts.dark {
+        r#" filter="invert(93%) hue-rotate(180deg)""#
+    } else {
+        ""
+    };
     let mut out = format!(
-        r#"<svg version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {ws} {hs}" width="{ws}" height="{hs}"><!-- svg-source:excalidraw --><metadata></metadata><defs>{defs}</defs>"#
+        r#"<svg version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {ws} {hs}" width="{ws}" height="{hs}"{filter}><!-- svg-source:excalidraw --><metadata></metadata><defs>{defs}</defs>"#
     );
     if opts.paint_background && !color_or_black(&opts.background).is_transparent() {
         let bg = color_or_black(&opts.background);

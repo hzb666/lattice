@@ -55,6 +55,8 @@ actions!(
         ZoomToFit,
         ZoomToSelection,
         Help,
+        FindOnCanvas,
+        ExportImage,
         AlignTop,
         AlignBottom,
         AlignLeft,
@@ -146,6 +148,8 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("shift-@", ZoomToSelection, c),
         KeyBinding::new("shift-?", Help, c),
         KeyBinding::new("?", Help, c),
+        KeyBinding::new(k("mod-f"), FindOnCanvas, c),
+        KeyBinding::new(k("mod-shift-e"), ExportImage, c),
         KeyBinding::new(k("mod-shift-up"), AlignTop, c),
         KeyBinding::new(k("mod-shift-down"), AlignBottom, c),
         KeyBinding::new(k("mod-shift-left"), AlignLeft, c),
@@ -250,6 +254,12 @@ pub fn listeners(d: Stateful<Div>, cx: &mut Context<BoardView>) -> Stateful<Div>
             run(BoardAction::ZoomToSelection)(me, w, cx)
         }))
         .on_action(cx.listener(|me, _: &Help, w, cx| run(BoardAction::ShowHelp)(me, w, cx)))
+        .on_action(
+            cx.listener(|me, _: &FindOnCanvas, w, cx| run(BoardAction::FindOnCanvas)(me, w, cx)),
+        )
+        .on_action(
+            cx.listener(|me, _: &ExportImage, w, cx| run(BoardAction::ExportImage)(me, w, cx)),
+        )
         .on_action(cx.listener(|me, _: &AlignTop, w, cx| {
             run(BoardAction::Align(Axis::Y, Position::Start))(me, w, cx)
         }))

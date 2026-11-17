@@ -134,6 +134,13 @@ pub struct BoardView {
     pub(crate) pointer: Point<Pixels>,
     pub(crate) menu: Option<(Point<Pixels>, bool)>,
     pub(crate) help: bool,
+    /// Find on canvas (⌘F), while open.
+    pub(crate) search: Option<chrome::search::Search>,
+    /// Export image (⇧⌘E), while open.
+    pub(crate) export: Option<chrome::export::ExportImage>,
+    /// Where an exported image is saved first, and its name: the board's
+    /// folder and file stem (\`set_export_target\`).
+    pub(crate) export_target: Option<(std::path::PathBuf, String)>,
     /// ⌥⌘C's elements.
     pub(crate) copied_styles: Vec<Element>,
     pub(crate) flowchart: FlowChartCreator,
@@ -248,6 +255,9 @@ impl BoardView {
             pointer: point(px(0.), px(0.)),
             menu: None,
             help: false,
+            search: None,
+            export: None,
+            export_target: None,
             copied_styles: vec![],
             flowchart: FlowChartCreator::default(),
             navigator: FlowChartNavigator::default(),
@@ -565,6 +575,7 @@ impl BoardView {
         if v != self.saved && self.unreadable.is_none() {
             self.saved = v;
             cx.emit(BoardEvent::Changed);
+            self.refresh_search(false, cx);
         }
         cx.notify();
     }

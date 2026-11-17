@@ -138,6 +138,8 @@ fn editor() -> Vec<Row> {
             false,
         ),
         r(tr("重置画布", "Reset the canvas"), &["CtrlOrCmd+Delete"]),
+        r(tr("在画布上查找", "Find on canvas"), &["CtrlOrCmd+F"]),
+        r(tr("导出图片", "Export image"), &["CtrlOrCmd+Shift+E"]),
         r(tr("删除", "Delete"), &["Delete"]),
         r(tr("剪切", "Cut"), &["CtrlOrCmd+X"]),
         r(tr("拷贝", "Copy"), &["CtrlOrCmd+C"]),
@@ -300,7 +302,7 @@ fn island_rows(caption: &'static str, rows: Vec<Row>) -> Div {
 }
 
 /// `Modal` + `Dialog`: the scrim, and the island (`max_w`) with its title.
-fn modal(
+pub(crate) fn modal(
     id: &'static str,
     max_w: f32,
     title: &'static str,

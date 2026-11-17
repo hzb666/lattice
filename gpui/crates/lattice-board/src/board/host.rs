@@ -30,6 +30,16 @@ impl BoardView {
         v
     }
 
+    /// Where Export image saves first: the board's folder, under its name.
+    pub fn set_export_target(&mut self, file: &std::path::Path) {
+        let dir = file.parent().map(Into::into).unwrap_or_default();
+        let stem = file
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        self.export_target = Some((dir, stem));
+    }
+
     /// Why the file couldn't be read, if it couldn't.
     pub fn unreadable(&self) -> Option<&str> {
         self.unreadable.as_deref()

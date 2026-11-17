@@ -8,7 +8,7 @@
 //! `main-menu/MainMenu.tsx`, `main-menu/DefaultItems.tsx` and
 //! `dropdownMenu/*` (`DropdownMenu.scss`) @ 3a317b5: the hamburger
 //! (`.main-menu-trigger`) opens an island (padding 8) of 32px items (icon,
-//! 14px text, faded shortcut). The default items we support: 帮助 and 重置画布
+//! 14px text, faded shortcut). The default items we support: 导出图片, 在画布上查找, 帮助 and 重置画布
 //! (with its confirm dialog); Lattice leaves out the canvas background, as the
 //! canvas is the editor sheet.
 //! Differs: no open / save / export / search / socials / theme items (the
@@ -120,6 +120,26 @@ pub(crate) fn main_menu(cx: &mut Context<BoardView>) -> impl IntoElement {
                     set_pop(None, cx)
                 }
             }))
+            .child(
+                dropdown_item(
+                    "board-mm-export",
+                    Some("image"),
+                    tr("导出图片...", "Export image..."),
+                    Some(shortcut("CtrlOrCmd+Shift+E")),
+                    false,
+                )
+                .on_click(run(BoardAction::ExportImage)),
+            )
+            .child(
+                dropdown_item(
+                    "board-mm-search",
+                    Some("search"),
+                    tr("在画布上查找", "Find on canvas"),
+                    Some(shortcut("CtrlOrCmd+F")),
+                    false,
+                )
+                .on_click(run(BoardAction::FindOnCanvas)),
+            )
             .child(
                 dropdown_item(
                     "board-mm-help",

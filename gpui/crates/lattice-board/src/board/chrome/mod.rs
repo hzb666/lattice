@@ -20,10 +20,12 @@ pub(crate) mod color_picker;
 pub mod colors;
 mod context_menu;
 mod controls;
+pub(crate) mod export;
 mod help;
 mod hints;
 mod menu;
 mod properties;
+pub(crate) mod search;
 pub mod style;
 mod tip;
 mod toolbar;
@@ -121,10 +123,13 @@ impl Render for ChromeView {
 }
 
 pub fn render(
-    me: &BoardView,
+    me: &mut BoardView,
     window: &mut Window,
     cx: &mut Context<BoardView>,
 ) -> impl IntoElement {
+    let export = export::render(me, window, cx);
+    let search = search::render(me, cx);
+    let me = &*me;
     let panel = properties::render(me, window, cx);
     if panel.is_none()
         && matches!(
@@ -148,6 +153,8 @@ pub fn render(
         .when_some(panel, |d, p| d.child(p))
         .child(controls::footer(me, cx))
         .when_some(context_menu::render(me, window, cx), |d, m| d.child(m))
+        .when_some(search, |d, s| d.child(s))
+        .when_some(export, |d, e| d.child(e))
         .when(me.help_open(), |d| d.child(help::render(window, cx)))
         .when(pop(cx) == Some(Pop::ClearCanvas), |d| {
             d.child(help::clear_canvas(window, cx))

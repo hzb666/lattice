@@ -16,8 +16,7 @@
 //! selection color is `--color-selection` (#6965db, dark #b4b0ff), the other
 //! UI colors go through the dark-mode mapping (`getThemedColor`) as
 //! upstream's do, the binding highlight and snap lines use upstream's own
-//! dark values. Differs: no focus-point indicators, remote selections or
-//! search highlights; the lasso trail is the path itself (dashed 7/7, no
+//! dark values. Differs: no focus-point indicators or remote selections; the lasso trail is the path itself (dashed 7/7, no
 //! taper), the eraser trail a 5px line without the fade.
 
 use super::BoardView;
@@ -324,6 +323,29 @@ pub fn build(me: &BoardView) -> Overlay {
     let mut o = Overlay::default();
     let v = me.view();
     let z = me.app.zoom;
+    // Find on canvas's matches (\`renderSearchMatches\`): yellow, the focused
+    // one orange, each a box over its run of text
+    if let Some(search) = &me.search {
+        for (i, m) in search.matches.iter().enumerate().filter(|(_, m)| !m.frame) {
+            let Some(e) = me.scene.get_non_deleted_element(&m.id) else {
+                continue;
+            };
+            let Some(q) = super::chrome::search::quad(e, m, &*me.m) else {
+                continue;
+            };
+            let fill = if search.focus == Some(i) {
+                hsla(29. / 360., 1., 0.5, 0.4)
+            } else {
+                hsla(60. / 360., 1., 0.62, 0.4)
+            };
+            o.prims.push(Prim::Poly {
+                pts: q.iter().map(|p| v.to_screen(*p)).collect(),
+                closed: true,
+                stroke: None,
+                fill: Some(fill),
+            });
+        }
+    }
     let scene = &me.scene;
     // the frame a drag drops into (`renderFrameHighlight`: rgb(0,118,255),
     // the frame's 2px stroke and 8px radius)

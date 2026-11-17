@@ -40,7 +40,11 @@ impl NativeBoard {
         window: &mut Window,
         cx: &mut Context<StructuredDocument>,
     ) -> Self {
-        let view = cx.new(|cx| BoardView::open(source, window, cx));
+        let view = cx.new(|cx| {
+            let mut view = BoardView::open(source, window, cx);
+            view.set_export_target(path);
+            view
+        });
         let state = saved_view_state(path, cx);
         if !state.is_null() {
             view.update(cx, |view, cx| view.restore_view_state(&state, cx));

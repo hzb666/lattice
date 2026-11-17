@@ -149,4 +149,8 @@ pub enum BoardAction {
     InsertImage,
     ToggleLinearEditor,
     ShowHelp,
+    /// \`actionToggleSearchMenu\` (⌘F).
+    FindOnCanvas,
+    /// The image export dialog (⇧⌘E).
+    ExportImage,
 }
