@@ -386,5 +386,3 @@ Only GPUI Kit, gpui-webview, gpui-fast, Zed's crates, pdfium-render, the LaTeX g
 | [tree-sitter-latex](https://github.com/latex-lsp/tree-sitter-latex) (`codebook-tree-sitter-latex` 0.6.1) | MIT | none | dependency |
 | Lattice's `lattice-core` (`../src-tauri/lattice-core`) | Apache-2.0 | none | dependency (path): the backend both apps share |
 
-tldraw is not used.
-
