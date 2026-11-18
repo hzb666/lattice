@@ -6,6 +6,14 @@ msgstr "传入的文字"
 msgid "Keeping {name}"
 msgstr "保留 {name}"
 
+#: lattice-gpui/src/history/compare.rs
+msgid "Wrap"
+msgstr "自动换行"
+
+#: lattice-gpui/src/history/compare.rs
+msgid "Wrap long lines"
+msgstr "长行自动换行"
+
 #: lattice-gpui/src/history/conflict_resolver.rs
 msgid "{name} removed this part."
 msgstr "{name} 删掉了这部分。"

@@ -520,6 +520,10 @@ pub struct Settings {
     pub save_full_text: bool,
     /// A user-selected TeX Live version root, containing its `bin` directory.
     pub texlive_root: Option<String>,
+    /// A source diff in History › Compare versions wraps its long lines
+    /// instead of scrolling sideways (`lattice.history.diff-wrap.v1`); off
+    /// until the writer turns it on.
+    pub history_diff_wrap: bool,
 }
 
 impl Settings {
@@ -582,6 +586,7 @@ impl Settings {
                 .and_then(Value::as_str)
                 .filter(|path| !path.trim().is_empty())
                 .map(str::to_owned),
+            history_diff_wrap: field("historyDiffWrap") == Some(&Value::Bool(true)),
         }
     }
 
@@ -742,8 +747,10 @@ mod tests {
         settings.live_preview.insert("/papers/thesis".into(), false);
         settings.live_preview_removed = true;
         settings.texlive_root = Some(r"D:\Software\texlive\2022".into());
+        settings.history_diff_wrap = true;
         let value = settings.to_value();
         assert_eq!(value["livePreview"]["/papers/thesis"], json!(false));
+        assert_eq!(value["historyDiffWrap"], json!(true));
         assert_eq!(value["version"], json!(1));
         assert_eq!(value["appearance"]["accent"], json!("teal"));
         assert_eq!(value["hiddenBuildFiles"], json!(true));
