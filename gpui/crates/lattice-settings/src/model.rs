@@ -160,6 +160,7 @@ choice!(
         AgentDisplay = "agent-display",
         Overleaf = "overleaf",
         Literature = "literature",
+        Plugins = "plugins",
         Api = "api",
         Doctor = "doctor",
         Logs = "logs",

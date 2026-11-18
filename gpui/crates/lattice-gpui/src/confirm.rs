@@ -8,10 +8,11 @@ use std::rc::Rc;
 use gpui::{
     App, AppContext as _, Context, Entity, FocusHandle, Global, InteractiveElement as _,
     IntoElement, KeyDownEvent, ParentElement as _, Render, SharedString, Styled as _, Window, div,
+    px,
 };
 use lattice_i18n::{t, tc};
 use lattice_ui::{
-    ActiveLattice as _, Icon,
+    ActiveLattice as _, Icon, TextRole, TextRoleStyle as _,
     components::{Button, DialogCard, LayerPlacement, ModalLayer},
 };
 
@@ -29,6 +30,7 @@ const PRIORITY: usize = 20;
 pub struct Confirm {
     title: SharedString,
     body: Option<SharedString>,
+    /// Bullets under the body (`ul`), as a plugin's permissions are listed.
     list: Vec<SharedString>,
     confirm_label: SharedString,
     /// The other answer's words, when not "Cancel": a question whose two
@@ -190,6 +192,13 @@ impl ConfirmHost {
 
     /// The open question's body, for a scenario.
     #[cfg(any(target_os = "macos", target_os = "windows"))]
+    pub fn question_list(&self) -> Vec<SharedString> {
+        self.pending
+            .as_ref()
+            .map(|question| question.list.clone())
+            .unwrap_or_default()
+    }
+
     pub fn question_body(&self) -> Option<SharedString> {
         self.pending
             .as_ref()
@@ -244,11 +253,16 @@ impl Render for ConfirmHost {
                 div()
                     .flex()
                     .flex_col()
-                    .gap(gpui::px(4.))
-                    .children(question.list.iter().enumerate().map(|(index, item)| {
-                        div().id(("confirm-list-item", index)).child(item.clone())
-                    }))
-                    .into_any_element(),
+                    .gap(px(4.))
+                    .text_role(TextRole::Body, cx)
+                    .text_color(palette.text)
+                    .children(question.list.iter().enumerate().map(|(index, line)| {
+                        div()
+                            .id(("confirm-list-item", index))
+                            .flex()
+                            .child(div().flex_none().w(px(16.)).child("•"))
+                            .child(div().flex_1().min_w_0().child(line.clone()))
+                    })),
             );
         }
         let mut card = card.action(

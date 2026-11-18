@@ -1,0 +1,259 @@
+#: lattice-gpui/src/settings/plugins_pane/view.rs
+msgid "A plugin’s .zip release over https, checked against the SHA-256 its author publishes."
+msgstr "插件作者发布的 https .zip 文件，并根据其公布的 SHA-256 校验。"
+
+#: lattice-gpui/src/shell/palette/plugin_view.rs
+msgid "Add entry"
+msgstr "添加条目"
+
+#: lattice-gpui/src/shell/plugin_actions.rs
+msgid "Add this entry to {file}?"
+msgstr "将此条目添加到 {file}？"
+
+#: lattice-gpui/src/settings/plugins_pane/view.rs
+msgid "Access"
+msgstr "访问权限"
+
+#: lattice-gpui/src/shell/plugin_actions.rs
+msgid "Already cited here"
+msgstr "此处已引用"
+
+#: lattice-gpui/src/shell/palette/plugin_view.rs
+msgid "After"
+msgstr "后续内容"
+
+#: lattice-gpui/src/settings/plugins_pane/view.rs
+msgid "Asks for new permissions"
+msgstr "请求新的权限"
+
+#: lattice-gpui/src/plugins/text.rs
+msgid "Add to bibliography"
+msgstr "添加到参考文献"
+
+#: lattice-gpui/src/shell/plugin_actions.rs
+msgid "Cancelled."
+msgstr "已取消。"
+
+#: lattice-gpui/src/settings/plugins_pane/view.rs
+msgid "Choose folder…"
+msgstr "选择文件夹…"
+
+#: lattice-gpui/src/plugins/text.rs
+msgid "Connect to localhost:{port}"
+msgstr "连接到 localhost:{port}"
+
+#: lattice-gpui/src/plugins/text.rs
+msgid "Couldn’t start the plugin: {detail}"
+msgstr "无法启动插件：{detail}"
+
+#: lattice-gpui/src/settings/plugins_pane.rs
+msgid "Enter a replacement"
+msgstr "输入替代值"
+
+#: lattice-gpui/src/settings/plugins_pane/view.rs
+msgid "Folder {source}"
+msgstr "文件夹 {source}"
+
+#: lattice-gpui/src/settings/plugins_pane/view.rs
+msgid "For developing a plugin: Lattice runs the folder in place, so your edits apply on the next run."
+msgstr "用于开发插件：Lattice 会直接运行该文件夹，下次运行时即可应用你的修改。"
+
+#: lattice-gpui/src/settings/plugins_pane/view.rs
+msgid "From {source}"
+msgstr "来自 {source}"
+
+#: lattice-gpui/src/settings/search.rs
+msgid "develop"
+msgstr "开发"
+
+#: lattice-gpui/src/settings/search.rs
+msgid "plugin extension add-on sandbox permissions"
+msgstr "插件 扩展 附加组件 沙箱 权限"
+
+#: lattice-gpui/src/settings/plugins_pane.rs
+msgid "Install from folder…"
+msgstr "从文件夹安装…"
+
+#: lattice-gpui/src/settings/plugins_pane.rs
+msgid "Install from URL…"
+msgstr "从 URL 安装…"
+
+#: lattice-gpui/src/settings/plugins_pane.rs
+msgid "Install plugin"
+msgstr "安装插件"
+
+#: lattice-gpui/src/settings/plugins_pane.rs
+msgid "It will be able to:"
+msgstr "它将能够："
+
+#: lattice-gpui/src/settings/plugins_pane.rs
+msgid "Its commands leave the palette, and its data and saved secrets are deleted."
+msgstr "它的命令将从命令面板移除，其数据和已保存的密钥也会删除。"
+
+#: lattice-gpui/src/settings/plugins_pane/view.rs
+msgid "Licence: {license}"
+msgstr "许可证：{license}"
+
+#: lattice-gpui/src/settings/plugins_pane.rs
+msgid "Link to the .zip (https://…)"
+msgstr ".zip 文件链接（https://…）"
+
+#: lattice-gpui/src/settings/plugins_pane/view.rs
+msgid "No access beyond the project’s name"
+msgstr "只能访问项目名称"
+
+#: lattice-gpui/src/settings/plugins_pane/view.rs
+msgid "No plugins installed."
+msgstr "未安装插件。"
+
+#: lattice-gpui/src/shell/palette/plugin_view.rs
+msgid "No problems found"
+msgstr "未发现问题"
+
+#: lattice-gpui/src/shell/palette/plugin_view.rs
+msgid "Nothing found"
+msgstr "未找到内容"
+
+#: lattice-gpui/src/settings/plugins_pane/view.rs
+msgid "Not saved"
+msgstr "未保存"
+
+#: lattice-gpui/src/shell/plugin_actions.rs
+msgid "Open a LaTeX file to insert a citation"
+msgstr "请先打开一个 LaTeX 文件再插入引用"
+
+#: lattice-gpui/src/shell/palette/plugin_view.rs
+msgid "Open Settings"
+msgstr "打开设置"
+
+#: lattice-gpui/src/settings/plugins_pane.rs
+msgid "Paste the value"
+msgstr "粘贴该值"
+
+#: lattice-gpui/src/settings/search.rs
+msgid "Plugins"
+msgstr "插件"
+
+#: lattice-gpui/src/settings/plugins_pane/view.rs
+msgid "Plugins add commands to the command palette (⌘K). Each runs in a sandbox and can reach only what you allow when you turn it on."
+msgstr "插件会向命令面板（⌘K）添加命令。每个命令都在沙箱中运行，只能访问你启用时允许的内容。"
+
+#: lattice-gpui/src/settings/plugins_pane/view.rs
+msgid "Plugins run only on macOS for now. They are listed here, but can’t be turned on."
+msgstr "目前插件只能在 macOS 上运行。此处会列出插件，但无法启用。"
+
+#: lattice-gpui/src/plugins/text.rs
+msgid "Plugins run only on macOS for now."
+msgstr "目前插件只能在 macOS 上运行。"
+
+#: lattice-gpui/src/plugins/text.rs
+msgid "Read the open file, selection and cursor"
+msgstr "读取打开的文件、选区和光标位置"
+
+#: lattice-gpui/src/plugins/text.rs
+msgid "Read the project’s bibliography"
+msgstr "读取项目的参考文献"
+
+#: lattice-gpui/src/settings/plugins_pane/view.rs
+msgid "Review…"
+msgstr "审核…"
+
+#: lattice-gpui/src/plugins/text.rs
+msgid "Running {title}…"
+msgstr "正在运行 {title}…"
+
+#: lattice-gpui/src/plugins/actions.rs
+msgid "There is no entry “{key}” to update any more."
+msgstr "已没有可供更新的“{key}”条目。"
+
+#: lattice-gpui/src/shell/plugin_actions.rs
+msgid "The bibliography can’t be read, so nothing was changed."
+msgstr "无法读取参考文献，因此未做任何更改。"
+
+#: lattice-gpui/src/shell/plugin_actions.rs
+msgid "There is no entry “{key}” in {file}."
+msgstr "{file} 中没有“{key}”条目。"
+
+#: lattice-gpui/src/shell/plugin_actions.rs
+msgid "This project has no bibliography to add to."
+msgstr "此项目没有可添加条目的参考文献。"
+
+#: lattice-gpui/src/plugins/text.rs
+msgid "Send requests to {origin}"
+msgstr "向 {origin} 发送请求"
+
+#: lattice-gpui/src/settings/plugins_pane.rs
+msgid "SHA-256 (64 hexadecimal characters)"
+msgstr "SHA-256（64 位十六进制字符）"
+
+#: lattice-gpui/src/plugins/text.rs
+msgid "The plugin didn’t finish within 2 minutes."
+msgstr "插件在 2 分钟内未能完成。"
+
+#: lattice-gpui/src/plugins/text.rs
+msgid "The plugin failed."
+msgstr "插件运行失败。"
+
+#: lattice-gpui/src/plugins/text.rs
+msgid "The plugin is broken: {detail}"
+msgstr "插件损坏：{detail}"
+
+#: lattice-gpui/src/plugins/text.rs
+msgid "The plugin sent something Lattice couldn’t read: {detail}"
+msgstr "插件返回了 Lattice 无法读取的内容：{detail}"
+
+#: lattice-gpui/src/plugins/text.rs
+msgid "The plugin stopped without an answer."
+msgstr "插件未返回结果便已停止。"
+
+#: lattice-gpui/src/settings/plugins_pane.rs
+msgid "Turn on {name}?"
+msgstr "启用 {name}？"
+
+#: lattice-gpui/src/settings/plugins_pane.rs
+msgid "Turn on"
+msgstr "启用"
+
+#: lattice-gpui/src/plugins/text.rs
+msgid "This plugin asks for new permissions. Review them in Settings › Plugins."
+msgstr "此插件请求新的权限。请在“设置 › 插件”中审核。"
+
+#: lattice-gpui/src/plugins/text.rs
+msgid "This plugin is no longer installed."
+msgstr "此插件已不再安装。"
+
+#: lattice-gpui/src/plugins/text.rs
+msgid "This plugin is turned off. Turn it on in Settings › Plugins."
+msgstr "此插件已关闭。请在“设置 › 插件”中启用。"
+
+#: lattice-gpui/src/plugins/text.rs
+msgid "This plugin needs plugin API level {level}, which this Lattice doesn’t support."
+msgstr "此插件需要插件 API {level} 级别，当前 Lattice 不支持。"
+
+#: lattice-gpui/src/plugins/text.rs
+msgid "This plugin no longer has this command."
+msgstr "此插件已不再提供此命令。"
+
+#: lattice-gpui/src/plugins/text.rs
+msgid "This plugin is broken."
+msgstr "此插件已损坏。"
+
+#: lattice-gpui/src/plugins/text.rs
+msgid "This plugin is not installed."
+msgstr "此插件未安装。"
+
+#: lattice-gpui/src/plugins/text.rs
+msgid "This plugin is not enabled."
+msgstr "此插件未启用。"
+
+#: lattice-gpui/src/shell/palette/plugin_view.rs
+msgid "Update entry"
+msgstr "更新条目"
+
+#: lattice-gpui/src/shell/plugin_actions.rs
+msgid "Update “{key}” in {file}?"
+msgstr "更新 {file} 中的“{key}”？"
+
+#: lattice-gpui/src/plugins/text.rs
+msgid "Use the saved secret “{name}”"
+msgstr "使用已保存的密钥“{name}”"

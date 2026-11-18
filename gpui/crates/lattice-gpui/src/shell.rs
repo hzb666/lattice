@@ -70,6 +70,7 @@ mod pdf_figure;
 mod pdf_notes;
 mod pdf_sync;
 mod pdfs;
+pub(crate) mod plugin_actions;
 mod preview_viewport;
 pub(crate) mod project_tab_drag;
 mod references_flow;
@@ -691,7 +692,10 @@ impl Shell {
             return None;
         }
         let path = path.canonicalize().unwrap_or(path);
-        if path.extension().is_some_and(|extension| extension.eq_ignore_ascii_case("tldr")) {
+        if path
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("tldr"))
+        {
             let root = self.root(cx)?;
             let root = root.canonicalize().unwrap_or(root);
             let relative = crate::project::relative_path(&root, &path).ok()?;
