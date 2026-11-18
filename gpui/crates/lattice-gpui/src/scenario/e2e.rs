@@ -111,6 +111,7 @@ impl Run {
                 && rows.iter().any(|row| row == "chapters"),
             json!({ "root": root, "main": main_document, "rows": rows }),
         );
+        steps.check("LATA-16 throwaway: a deliberately failing step", false, json!({}));
 
         let (built, took) = self.build(cx).await?;
         self.pause(cx, Duration::from_millis(800)).await;
