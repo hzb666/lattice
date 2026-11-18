@@ -698,7 +698,7 @@ impl Shell {
         {
             let root = self.root(cx)?;
             let root = root.canonicalize().unwrap_or(root);
-            let relative = crate::project::relative_path(&root, &path).ok()?;
+            let relative = crate::project::relative_path(&root, &path)?;
             match lattice_core::project::convert_tldr_board(&root, &relative) {
                 Ok(board) => return self.open_path(root.join(board), line, window, cx),
                 Err(error) => {

@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import {
   executeAgentProjectDocumentToolRequest,
   parseAgentProjectDocumentToolRequest,
+  rejectAgentProjectDocumentToolRequest,
   replaceAgentProjectText,
   SYNARA_PROJECT_DOCUMENT_TOOL_REQUEST,
   type AgentProjectDocumentToolRequest,
@@ -25,7 +26,7 @@ function request(
 
 describe("agent project document host protocol", () => {
   it("strictly parses normalized board and spreadsheet requests", () => {
-    const board = request("figures/model.tldr", "board");
+    const board = request("figures/model.excalidraw", "board");
     const spreadsheet = request("data/results.lattice-sheet", "spreadsheet");
     expect(parseAgentProjectDocumentToolRequest(board)).toEqual(board);
     expect(parseAgentProjectDocumentToolRequest(spreadsheet)).toEqual(spreadsheet);
@@ -34,6 +35,17 @@ describe("agent project document host protocol", () => {
     expect(parseAgentProjectDocumentToolRequest(request("../model.tldr", "board"))).toBeNull();
     expect(parseAgentProjectDocumentToolRequest(request("model.lattice-sheet", "board"))).toBeNull();
     expect(parseAgentProjectDocumentToolRequest(request("model.tldr", "spreadsheet"))).toBeNull();
+  });
+
+  it("normalizes a legacy board name and replies to invalid requests", async () => {
+    expect(parseAgentProjectDocumentToolRequest(request("figures/plan.TLDR", "board"))?.args.path)
+      .toBe("figures/plan.excalidraw");
+    await expect(rejectAgentProjectDocumentToolRequest(request("plan.pdf", "board"))).resolves.toMatchObject({
+      id: "request-1",
+      ok: false,
+      error: { code: "project_document_invalid_arguments" },
+    });
+    expect(rejectAgentProjectDocumentToolRequest({ type: "synara:canvas-tool-request", version: 1, id: "x", expiresAt: 1 })).toBeNull();
   });
 
   it("creates and reports an opened document through the registered host callback", async () => {

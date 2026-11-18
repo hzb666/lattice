@@ -2,14 +2,14 @@
 //! asked from the Agent island's page as its own modules ask
 //! (`gpui/islands/agent/documents.ts`), on the tutorial's board and sheet:
 //!
-//! - a canvas tool call goes to the board shown in front, where the Tauri
-//!   app's tldraw adapter runs it: its listing is the board's shapes, and a
-//!   shape it deletes leaves the panel's text;
+//! - a canvas tool call goes to the board shown in front, where the native
+//!   board runs it with the Tauri app's adapter semantics: its listing is the
+//!   board's shapes, and a shape it deletes leaves the panel's text;
 //! - a range read goes to the open sheet it names and is read from its open
 //!   document; one naming a sheet that is not open is the page's to run
 //!   (`local`);
 //! - a board the Agent creates is created, opened, and answered with its path
-//!   once its editor has registered with the canvas tools;
+//!   once its board is there;
 //! - the page reads the project's papers (`list_papers`) and annotations
 //!   (`list_annotations`) through its owner.
 
@@ -24,8 +24,26 @@ use serde_json::{Value, json};
 
 use super::{
     Run, Steps,
-    structured::{BOARD, SHEET, shape_count},
+    structured::{BOARD, SHEET},
 };
+
+/// A bound text element is part of its container's shape in canvas tools.
+fn agent_shape_count(text: &str) -> usize {
+    serde_json::from_str::<Value>(text)
+        .ok()
+        .and_then(|file| {
+            file["elements"].as_array().map(|elements| {
+                elements
+                    .iter()
+                    .filter(|element| {
+                        element["isDeleted"] != true
+                            && !(element["type"] == "text" && element["containerId"].is_string())
+                    })
+                    .count()
+            })
+        })
+        .unwrap_or(0)
+}
 
 impl Run {
     /// Run `call`, a promise expression in the Agent's page, and wait at most
@@ -87,9 +105,18 @@ impl Run {
         // A canvas call on the board in front.
         let board_path = root.join("e2e-agent-map.tldr");
         std::fs::write(&board_path, BOARD)?;
-        let board = self
-            .open_structured(cx, &board_path, Duration::from_secs(40))
-            .await?;
+        let board = Some(self.open(cx, &board_path, None)?);
+        let original_count = agent_shape_count(&std::fs::read_to_string(
+            board_path.with_extension("excalidraw"),
+        )?);
+        let board = board.filter(|panel| {
+            cx.update(|cx| {
+                panel
+                    .read(cx)
+                    .structured()
+                    .is_some_and(|document| document.read(cx).board().is_some())
+            })
+        });
         let listing = self
             .agent_call(
                 cx,
@@ -109,11 +136,11 @@ impl Run {
                 && envelope["type"] == "lattice:canvas-tool-result"
                 && envelope["id"] == "e2e-list"
                 && envelope["ok"] == true
-                && envelope["result"]["total"].as_u64() == Some(shape_count(BOARD) as u64)
+                && envelope["result"]["total"].as_u64() == Some(original_count as u64)
                 && !shapes.is_empty(),
             json!({ "opened": board.is_some(), "answer": listing }),
         );
-        if let (Some((panel, _)), Some(first)) = (
+        if let (Some(panel), Some(first)) = (
             &board,
             shapes.first().and_then(|shape| shape["id"].as_str()),
         ) {
@@ -128,8 +155,8 @@ impl Run {
             let panel = panel.clone();
             let left = self
                 .wait_for(cx, Duration::from_secs(5), |_, cx| {
-                    shape_count(&panel.read(cx).editor().read(cx).text(cx))
-                        == shape_count(BOARD) - 1
+                    agent_shape_count(&panel.read(cx).editor().read(cx).text(cx))
+                        == original_count - 1
                 })
                 .await;
             steps.check(
@@ -185,12 +212,12 @@ impl Run {
             .agent_call(
                 cx,
                 agent,
-                "window.latticeHost.request('agent:create-document', { path: 'e2e-agent-made.tldr', \
+                "window.latticeHost.request('agent:create-document', { path: 'e2e-agent-made.excalidraw', \
                  documentType: 'board', expiresAt: Date.now() + 30000 })",
                 Duration::from_secs(35),
             )
             .await;
-        let made = root.join("e2e-agent-made.tldr");
+        let made = root.join("e2e-agent-made.excalidraw");
         let front = cx.update(|cx| self.shell.read(cx).active_editor_path(cx));
         let refused = self
             .agent_call(
@@ -203,9 +230,9 @@ impl Run {
             .await;
         steps.check(
             "a board the Agent creates is created, opened in front, and answered with its path once its editor has registered; anything but a board or sheet is refused",
-            created["ok"] == "e2e-agent-made.tldr"
+            created["ok"] == "e2e-agent-made.excalidraw"
                 && made.is_file()
-                && front.as_deref().is_some_and(|path| path.ends_with("e2e-agent-made.tldr"))
+                && front.as_deref().is_some_and(|path| path.ends_with("e2e-agent-made.excalidraw"))
                 && refused["error"].is_string()
                 && !root.join("e2e-agent.tex").exists(),
             json!({ "created": created, "front": front, "refused": refused }),

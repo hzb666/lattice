@@ -37,13 +37,12 @@ pub(super) fn document_request(id: u64, kind: &str, payload: &Value) -> Option<S
         "agent:create-document" => {
             let path = payload.get("path")?.as_str()?.trim();
             let document_type = payload.get("documentType")?.as_str()?;
-            // The Tauri app's closed set (`agent-project-document-tools.ts`).
             let extension = match document_type {
-                "board" => ".tldr",
+                "board" => ".excalidraw",
                 "spreadsheet" => ".lattice-sheet",
                 _ => return None,
             };
-            if path.is_empty() || !path.to_lowercase().ends_with(extension) {
+            if path.is_empty() || !path.to_ascii_lowercase().ends_with(extension) {
                 return None;
             }
             Some(SurfaceEvent::CreateDocument {
@@ -158,14 +157,15 @@ mod tests {
             )
         };
         assert_eq!(
-            create("notes/plan.tldr", "board"),
+            create("notes/plan.excalidraw", "board"),
             Some(SurfaceEvent::CreateDocument {
                 id: 3,
-                path: "notes/plan.tldr".into(),
+                path: "notes/plan.excalidraw".into(),
                 expires_at: 10.
             })
         );
         assert!(create("results.lattice-sheet", "spreadsheet").is_some());
+        assert_eq!(create("notes/plan.tldr", "board"), None);
         // A sheet's name for a board, a TeX file, another kind: refused.
         assert_eq!(create("results.lattice-sheet", "board"), None);
         assert_eq!(create("main.tex", "spreadsheet"), None);
