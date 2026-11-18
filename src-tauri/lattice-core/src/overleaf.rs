@@ -69,7 +69,7 @@ pub use files::{
     agreed_text, checkpoint_realtime_text, is_conflict_copy, restore_set_aside, RealtimeCheckpoint,
 };
 pub use link::{
-    adopt_project, clone_project, clone_target, download_folder, project_link, publish_project,
+    adopt_project, clone_project, clone_target, download_folders, project_link, publish_project,
     realtime_config, record_relocation, reopen_local_copy, set_paused, set_permission,
     set_realtime_metadata, CloneTarget, OverleafLink,
 };
