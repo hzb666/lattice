@@ -1,3 +1,4 @@
+// LATA-16 throwaway: a Rust-only change.
 //! The native surfaces that follow Lattice's own interface language rather
 //! than the web UI: the macOS menu bar, and the language AppKit and WebKit
 //! pick for the panels and context menus they draw themselves.
