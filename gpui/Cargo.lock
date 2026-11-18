@@ -8896,6 +8896,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "lattice-theme"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "lattice-typst"
 version = "0.1.0"
 dependencies = [

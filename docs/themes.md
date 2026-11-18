@@ -108,6 +108,12 @@ show their reason. File-installed themes are not subject to the registry's
 block list.
 
 Settings › Appearance › Theme files › Browse themes searches the verified
+listing and shows cached results while refreshing. Verification failures
+disable installs; themes download only after the writer chooses Install or
+Update. GPUI loads the listing off the main thread and applies the registry's
+kill switch before drawing the selected theme.
+
+Settings › Appearance › Theme files › Browse themes searches the verified
 listing and shows cached results while refreshing. Theme files are downloaded
 only after the writer chooses Install or Update.
 

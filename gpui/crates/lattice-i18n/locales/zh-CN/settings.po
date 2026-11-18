@@ -2,9 +2,25 @@
 msgid "Agent font size"
 msgstr "AI 助手字号"
 
+#: lattice-gpui/src/settings/theme_browse.rs
+msgid "Blocked"
+msgstr "已屏蔽"
+
+#: lattice-gpui/src/settings/theme_browse.rs
+msgid "Browse themes"
+msgstr "浏览主题"
+
+#: lattice-gpui/src/settings/theme_files.rs
+msgid "Browse themes…"
+msgstr "浏览主题…"
+
 #: lattice-gpui/src/settings/editor_pane.rs
 msgid "Could not save the setting"
 msgstr "设置没保存成功"
+
+#: lattice-gpui/src/settings/theme_browse.rs
+msgid "Couldn't verify the theme list. Nothing new can be installed."
+msgstr "无法验证主题列表，暂时不能安装新主题。"
 
 #: lattice-gpui/src/settings/agent_display_pane.rs
 msgid "Display"
@@ -14,9 +30,29 @@ msgstr "显示"
 msgid "Download again"
 msgstr "重新下载"
 
+#: lattice-gpui/src/settings/theme_files.rs
+msgid "Install from file…"
+msgstr "从文件安装…"
+
+#: lattice-gpui/src/settings/theme_browse.rs
+msgid "Installed"
+msgstr "已安装"
+
 #: lattice-gpui/src/settings/editor_pane.rs
 msgid "Installed ({size} MB). Typst documents compile in Lattice."
 msgstr "已安装（{size} MB）。Typst 文档可在 Lattice 中编译。"
+
+#: lattice-gpui/src/settings/theme_browse.rs
+msgid "Learn more"
+msgstr "了解更多"
+
+#: lattice-gpui/src/settings/theme_files.rs
+msgid "Remove {name}?"
+msgstr "移除 {name}？"
+
+#: lattice-gpui/src/settings/theme_browse.rs
+msgid "No themes match"
+msgstr "没有匹配的主题"
 
 #: lattice-gpui/src/settings/editor_pane.rs
 msgid "Not available on this computer."
@@ -25,6 +61,18 @@ msgstr "此电脑不可用。"
 #: lattice-gpui/src/settings/editor_pane.rs
 msgid "Not installed. The first Typst build asks to download it."
 msgstr "未安装。首次编译 Typst 时会询问是否下载。"
+
+#: lattice-gpui/src/settings/theme_browse.rs
+msgid "Offline. The theme list can't be reached."
+msgstr "离线，无法获取主题列表。"
+
+#: lattice-gpui/src/settings/theme_browse.rs
+msgid "Offline: showing the list from {date}"
+msgstr "离线：显示 {date} 的列表"
+
+#: lattice-gpui/src/settings/theme_browse.rs
+msgid "Search by name, description or author"
+msgstr "按名称、描述或作者搜索"
 
 #: lattice-gpui/src/settings/agent_display_pane.rs
 msgid "The Agent’s conversation and composer, in the panel and in its own window. The editors keep their own size."
@@ -38,6 +86,22 @@ msgstr "此次运行不保留日志文件夹。"
 msgid "Typst support"
 msgstr "Typst 支持"
 
+#: lattice-gpui/src/settings/theme_browse.rs
+msgid "Update to {next}"
+msgstr "更新到 {next}"
+
+#: lattice-gpui/src/settings/theme_browse.rs
+msgid "Updated {when}"
+msgstr "更新于 {when}"
+
 #: lattice-gpui/src/settings/agent_display_pane.rs
 msgid "text size zoom larger smaller chat"
 msgstr "文字大小 字体 缩放 放大 缩小 对话"
+
+#: lattice-gpui/src/settings/theme_browse.rs
+msgid "{name} has a warning: {reason}"
+msgstr "{name} 有一条警告：{reason}"
+
+#: lattice-gpui/src/settings/theme_browse.rs
+msgid "{name} was turned off: {reason}"
+msgstr "{name} 已被停用：{reason}"
