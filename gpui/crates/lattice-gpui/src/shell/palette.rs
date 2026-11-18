@@ -23,7 +23,7 @@ use gpui_kit::component::input::{Input, InputEvent, InputState};
 use lattice_i18n::t;
 use lattice_ui::{
     ActiveLattice as _, Elevation, GlyphKind, Icon, TextRole, TextRoleStyle as _,
-    components::{Keycap, rise_in},
+    components::{Keycap, TrapFocus as _, rise_in},
     fluid_hover::FluidHover,
     icons::{ICON, file_glyph},
     scrollbar::FluidScrollbar,
@@ -562,7 +562,7 @@ impl Render for CommandPaletteView {
             .pt(window.viewport_size().height * 0.18)
             .bg(palette.scrim)
             .occlude()
-            .track_focus(&self.focus)
+            .trap_focus("command-palette-trap", &self.focus)
             .capture_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
                 match event.keystroke.key.as_str() {
                     "up" => this.step(-1, cx),
