@@ -6,7 +6,9 @@
 use std::rc::Rc;
 
 use gpui::{
-    App, AppContext as _, Context, Entity, Global, IntoElement, Render, SharedString, Window, div,
+    App, AppContext as _, Context, Entity, FocusHandle, Global, InteractiveElement as _,
+    IntoElement, KeyDownEvent, ParentElement as _, Render, SharedString, Styled as _, Window, div,
+    px,
 };
 use lattice_i18n::{t, tc};
 use lattice_ui::{
@@ -17,6 +19,13 @@ use lattice_ui::{
 type Answer = Rc<dyn Fn(&mut Window, &mut App)>;
 type Dismissal = Box<dyn FnOnce(&mut App)>;
 
+/// Over the window's deferred overlays (the palette and Settings, at 10, in
+/// `shell/layers.rs`), which a question can be asked from (Settings ›
+/// Plugins and Overleaf ask theirs there), and under the notices (50).
+/// Priority orders the paint only: hit-testing follows nesting first, so
+/// the shell draws this host inside a deferred layer of its own, as deep as
+/// the dialogs it is asked from (`Shell::window_overlays`).
+const PRIORITY: usize = 20;
 pub struct Confirm {
     title: SharedString,
     body: Option<SharedString>,
@@ -97,6 +106,10 @@ pub struct ConfirmHost {
     pending: Option<Confirm>,
     /// Bumped per question, so each one's dialog enters afresh.
     serial: usize,
+    /// The dialog's own focus, where it starts: Return there answers as
+    /// Cancel does, as the Tauri app's dialog starts on Cancel
+    /// (`confirm-action-dialog.tsx`).
+    focus: FocusHandle,
 }
 
 struct ConfirmCenter(Entity<ConfirmHost>);
@@ -108,9 +121,10 @@ pub fn install(cx: &mut App) -> Entity<ConfirmHost> {
     if let Some(center) = cx.try_global::<ConfirmCenter>() {
         return center.0.clone();
     }
-    let host = cx.new(|_| ConfirmHost {
+    let host = cx.new(|cx| ConfirmHost {
         pending: None,
         serial: 0,
+        focus: cx.focus_handle(),
     });
     cx.set_global(ConfirmCenter(host.clone()));
     host
@@ -195,6 +209,7 @@ impl Render for ConfirmHost {
         )
         // Each answer plays the dialog's exit before it runs, as the
         // app's dialog leaves (`ModalLayer::closing`).
+        .parity("confirm/answer")
         .on_click(ModalLayer::closing(
             ("confirm", self.serial),
             cx,
@@ -226,6 +241,7 @@ impl Render for ConfirmHost {
                     .unwrap_or_else(|| t!("Cancel").into()),
             )
             .ghost()
+            .parity("confirm/cancel")
             .on_click(ModalLayer::closing(
                 ("confirm", self.serial),
                 cx,
@@ -247,15 +263,32 @@ impl Render for ConfirmHost {
             });
         }
         let card = card.action(confirm);
+        let keys = div()
+            .id(("confirm-keys", self.serial))
+            .track_focus(&self.focus)
+            .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                // A focused button takes its own Return (a keyboard click).
+                if event.keystroke.key != "enter" || !this.focus.is_focused(window) {
+                    return;
+                }
+                cx.stop_propagation();
+                let view = cx.entity().downgrade();
+                ModalLayer::leave(("confirm", this.serial), window, cx, move |_, cx| {
+                    view.update(cx, |this, cx| this.close(cx)).ok();
+                });
+            }))
+            .child(card);
         let view = cx.entity().downgrade();
         ModalLayer::new(
             ("confirm", self.serial),
             LayerPlacement::Center,
-            card,
+            keys,
             move |_, cx| {
                 view.update(cx, |this, cx| this.close(cx)).ok();
             },
         )
+        .initial_focus(self.focus.clone())
+        .priority(PRIORITY)
         .into_any_element()
     }
 }
