@@ -18,6 +18,14 @@ use lattice_ui::{
 type Answer = Rc<dyn Fn(&mut Window, &mut App)>;
 type Dismissal = Box<dyn FnOnce(&mut App)>;
 
+/// Over the window's deferred overlays (the palette and Settings, at 10, in
+/// `shell/layers.rs`), which a question can be asked from (Settings ›
+/// Plugins and Overleaf ask theirs there), and under the notices (50).
+/// Priority orders the paint only: hit-testing follows nesting first, so
+/// the shell draws this host inside a deferred layer of its own, as deep as
+/// the dialogs it is asked from (`Shell::window_overlays`).
+const PRIORITY: usize = 20;
+
 pub struct Confirm {
     title: SharedString,
     body: Option<SharedString>,
@@ -299,6 +307,7 @@ impl Render for ConfirmHost {
             },
         )
         .initial_focus(self.focus.clone())
+        .priority(PRIORITY)
         .into_any_element()
     }
 }
