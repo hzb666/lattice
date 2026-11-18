@@ -58,7 +58,7 @@ async function renderIcons() {
   const require = createRequire(join(ROOT, "package.json"));
   const React = require("react");
   const { renderToStaticMarkup } = require("react-dom/server");
-  const { createServer } = await import(join(ROOT, "node_modules/vite/dist/node/index.js"));
+  const { createServer } = await import("vite");
   const server = await createServer({
     root: ROOT, configFile: false, appType: "custom", logLevel: "error",
     server: { middlewareMode: true }, ssr: { external: true },

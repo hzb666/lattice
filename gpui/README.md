@@ -1,9 +1,7 @@
 # Lattice on GPUI (preview)
 
-A native GPUI version of Lattice's LaTeX writing flow, growing beside the Tauri app in this repository.
-The Tauri app in `../src` and `../src-tauri` keeps shipping; nothing here is built, tested or released with it, and `gpui/` is its own Cargo workspace.
-
-Its backend is the Tauri app's own: `lattice-core` (`../src-tauri/lattice-core`), the crate both apps share.
+A native GPUI version of Lattice's LaTeX writing flow. This checkout keeps the GPUI application and its dependencies; the independent Tauri host has been removed.
+`gpui/` is its own Cargo workspace. `../src` holds shared WebView modules and resources, and `../src-tauri` keeps `lattice-core`, templates, identity metadata and runtime inputs used by GPUI. Their paths stay stable to avoid a migration.
 What it does so far, and nothing more, one line per feature, each with its own page under [`docs/`](docs/):
 
 - [Agent](docs/agent.md): runs the Agent as the Tauri app embeds it, with its Git workspace and its document tools.
@@ -67,9 +65,11 @@ Everything outside `gpui/`, the Tauri app and the backend crate the two apps sha
 ## Running it
 
 ```sh
-cd gpui
-script/fetch-pdfium                      # PDFium chromium/8125, SHA-256 checked, into vendor/
-cargo run --release -- path/to/project   # opens main.tex (or the .tex with \documentclass)
+pnpm install --frozen-lockfile
+pnpm build:islands
+node scripts/gpui-build.mjs -- build --release --locked
+# Windows: gpui/target/release/lattice-gpui.exe path/to/project
+# macOS:   gpui/target/release/lattice-gpui path/to/project
 ```
 
 Requirements:
@@ -123,17 +123,7 @@ On every platform, Vim's normal and visual modes keep ⌃M as their next-line st
 
 ## CI
 
-Pull requests do not run `.github/workflows/gpui.yml`; it runs for a release tag, weekly on main and by hand.
-`pnpm signoff` (`../scripts/signoff.mjs`) checks a change locally when it touches `gpui/**`, `lattice-core` (`../src-tauri/lattice-core/**`, which the app builds on), one of the design-system exports `crates/lattice-ui` generates from (`../design-system/tokens.json`, `../design-system/code-themes.json` and what that is generated from), the scene staging the parity report uses (`../design-system/screens/`), or the Tauri code the island pages are built from (the editors in `../src/editor/spreadsheet/`, `../src/editor/board/` and `../src/editor/presentation/`, and the Agent page's `../src/agent/`, `../src/app/use-synara-host.ts`, `../src/settings/synara-settings-pane.tsx` and the other Tauri files it imports: `../src/trellis/trellis-agent-surface.tsx`, `../src/trellis/trellis.css`, `../src/app/git-workspace-frames.tsx`, `../src/app/git-repository-url.ts`, `../src/app/use-app-commands.ts`, `../src/app/key-combos.ts`, `../src/app/app-synara-embed.ts`, `../src/app/annotation-rounds.ts`, `../src/app/use-agent-spreadsheet-resolver.ts`, `../src/app/use-editor-comments.ts`, `../src/app/notify.ts`, `../src/hooks/use-latest-ref.ts`, `../src/app-types.ts`, `../src/components/icon-tip.tsx` and `../src/components/ui/motion` and `scroll-area` (`.tsx` and `.css`)): rustfmt, the release build with `offscreen-shots`, the unit tests, and the `e2e` scenario through `script/e2e`, which copies `fixtures/e2e` and runs the app with a scratch `HOME` and, as CI's macOS e2e step does, `GPUI_LAB_IGNORE_OCCLUSION` set, so a window the scenario opens is laid out on a locked or covered display, and with `GPUI_LAB_ASSUME_KEY` set, so runs side by side queue for the machine-wide input lock only for the steps that need the real key window (`crates/lattice-gpui/src/scenario/input_lock.rs`).
-Its release build and unit tests run through `../scripts/gpui-build.mjs`, in one build tree the machine shares: it mirrors the checkout there, builds under a machine-wide lock (a second worktree's build waits for it), and copies `target/release/lattice-gpui` back.
-Every worktree builds from the same paths there, so only what changed since the last build compiles; a plain `cargo build --release` in a new worktree starts cold, since sccache keys Rust compiles on the checkout's paths.
-In a no-mistakes run worktree plain cargo that compiles is refused outright: the pipeline's prepare step installs `../scripts/run-worktree-cargo-guard.mjs` in the run worktree and in the directory holding every run worktree (so the next run is guarded before its review step compiles), which fails such a command within a second and prints the same command through `../scripts/gpui-build.mjs` ([`docs/agent-validation.md`](../docs/agent-validation.md)).
-Elsewhere, `target/` stays per checkout on purpose: Cargo judges freshness by mtime, so checkouts sharing one `CARGO_TARGET_DIR` can reuse each other's artifacts for files that differ, and the shared tree's mirror is what makes sharing safe.
-Its `code-themes` job fails while `code-themes.json` is stale (`node design-system/code-themes.mjs --check`), and its `patches` job while `patches/` is not upstream plus its diffs (`script/check-patches`). A separate workflow, `.github/workflows/gpui-patches.yml`, run by hand for a change to `patches/`, it applies the diffs to gpui-fast at the pin and runs the tests they add (element scale, letter spacing).
-On macOS and Windows it builds the app (release profile), runs the unit tests and the `e2e` scenario on `fixtures/e2e`; on macOS it then writes the parity report (below), which does not fail the job and is skipped for a release tag. `lattice-core`'s own tests run with the Tauri app's (`ci.yml`).
-macOS builds with TeX Live and TexLab (so the e2e scenario checks TexLab's diagnostics); Windows builds with MiKTeX and no TexLab, where that step reports itself skipped.
-The macOS e2e step, like `script/e2e`, sets `GPUI_LAB_IGNORE_OCCLUSION`, so the window keeps drawing the editor's carets, gutter marks and cards even when the runner's display stops compositing it.
-The Chinese input method (Microsoft Pinyin on Windows) and MiKTeX's own package-install prompts are checked by hand; CI cannot drive them.
+The GPUI workflows build the native application, run native tests, build island pages and run the e2e scenario. Use the focused commands in `../docs/agent-validation.md` locally. The comparison against the removed Tauri host is no longer part of CI.
 
 ## How it is put together
 
@@ -346,23 +336,6 @@ Each section prints how long it held the lock, and the result's `foreground` lis
 The app becoming active outside a section fails the `e2e` scenario's last step, which names the step it followed: that step would take the key window from a run in its section, so it belongs in one.
 A new step that needs the window key goes in a section (`let _front = self.foreground(cx, "what for").await?;`), kept as short as the step allows; one that only sends native input or dispatches actions stays outside.
 The input lock is separate from the build lock, so one worktree's build runs alongside another's `e2e` run.
-
-## Parity harness
-
-`parity/` renders the same scene in the Tauri app's frontend and in this app, and diffs them region by region:
-
-```sh
-node ../scripts/gpui-build.mjs                                   # release build with offscreen-shots (or cargo build --release, on an unlocked screen)
-node parity/run.mjs --out /tmp/lattice-parity                    # from gpui/; --theme light,dark --screen mainWindow,html,sheet,board,welcome,settings,history,historyCompare,todos,checklist,arxivExport,overleafPicker,settingsOverleaf,settingsModelEndpoint,settingsEnvironment,settingsLiterature,settingsAcknowledgements,whatsNew,logs
-```
-
-- The reference is the Tauri frontend on the mock-backend page (`pnpm perf:bench --serve`, which `run.mjs` starts unless given `--bench-url`), staged by the functions that draw Paper's App screens (`../design-system/screens/scenes.mjs`), at the GPUI window's size and scale (1440×900 @2x on a Retina Mac). Every run also saves the page as `serialize.js` draws it into Paper, its layers named after the regions.
-- The GPUI side is `--scenario parity` on a copy of the tutorial project. Both apps show the tutorial's PDF as the web demo ships it (`../tools/web-demo/content/compiled/main.pdf`).
-- The regions are listed per screen in `parity/regions.mjs`, as a selector in the Tauri app's DOM; this app records the same names with `lattice_ui::parity` probes (the components take `.parity(name)`), and each run of text in a region with a text probe. The probes are not even added to the tree outside a parity run.
-- Checks, per screen and theme: each region's bounds within ±1 px; each run of text's family, size (after the face's `size-adjust`), weight and line height, the two apps' runs in a region matched by their text, then in order; each chrome region's ground colour within ΔE2000 1; and the share of pixels that differ visibly (ΔE2000 > 2.3) outside text, the PDF pages and what changed between the reference's two runs, within three times that run-to-run noise (at least 0.1%). What changed between the GPUI app's two runs is reported on its own line and stays in the comparison.
-- It writes `report.md` and `report.json`, and per screen and theme a side-by-side image (reference, GPUI, heatmap) and the full-resolution heatmap; the captures are under `runs/`. It exits 0 once the report is written, whatever it found.
-
-CI's macos job writes the report after the e2e scenario and uploads it as the `gpui-parity-macos` artifact; it does not fail the job yet. The runner's screen shrinks the window to about 1015 px wide, so CI compares the two apps at that width. The Main window, the Welcome screen, Settings (and its Overleaf, Model endpoint, Environment, Literature services and Acknowledgements pages), Open from Overleaf, History (its timeline and its comparison), the TODOs panel, the submission checklist, the arXiv export sheet, What's new, Settings › Logs, an HTML file's Preview and the tutorial's spreadsheet and board (`LATTICE_PARITY_SCREEN=html`, `sheet`, `board`; the islands themselves are left out of the pixel budget, since the offscreen capture does not include them) are ported so far (`LATTICE_PARITY_SCREEN=settings` opens Settings over the window in the scenario); the other App screens follow in `parity/regions.mjs`.
 
 ## Reference projects
 

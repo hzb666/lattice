@@ -10,9 +10,7 @@
  * the whole e2e on main to show they were pre-existing. This runs those
  * checks once per merge instead, in a checkout of main:
  *
- *   1. `pnpm gate:changed --base <sha>`, which on main itself runs the stages
- *      that always run (lint with the warning cap, knip, typecheck and the
- *      invariant tests);
+ *   1. `pnpm check`, the GPUI WebView typecheck and island unit tests;
  *   2. the release build with `offscreen-shots` through
  *      `scripts/gpui-build.mjs`, under the machine-wide build lock;
  *   3. the full `e2e` scenario through `gpui/script/e2e`, on a scratch copy of
@@ -162,8 +160,8 @@ async function main() {
   const started = new Date();
   console.log(`gpui-main-baseline: ${sha.slice(0, 9)} ${git("log", "-1", "--format=%s", sha)} -> ${out}`);
 
-  const gateRun = await run("pnpm", ["gate:changed", "--base", sha], { log: path.join(logs, "gate.log"), timeoutMs: 45 * 60_000 });
-  const stages = parseGate(gateRun.output);
+  const gateRun = await run("pnpm", ["check"], { log: path.join(logs, "gate.log"), timeoutMs: 45 * 60_000 });
+  const stages = [{ name: "check", verdict: gateRun.status === 0 ? "ok" : "failed" }];
   const gate = { status: gateRun.status, seconds: gateRun.seconds, failing: stages.filter((stage) => stage.verdict === "failed").map((stage) => stage.name), stages };
 
   const buildRun = await run("node", ["scripts/gpui-build.mjs"], { log: path.join(logs, "build.log"), timeoutMs: 90 * 60_000 });

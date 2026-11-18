@@ -26,10 +26,7 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true
   },
-  // `tools/` holds development-only code (the interaction benchmark's page)
-  // that is never a build input. It still imports app modules, so it is
-  // typechecked here — otherwise a rename in src/ could silently break it.
-  "include": ["src", "tools"],
+  "include": ["src"],
   "exclude": [
     // Runs the compiler-report script through node:child_process; needs node
     // types the browser-targeted app tsconfig does not load. Vitest still
@@ -37,5 +34,5 @@
     // nothing typechecks this file.
     "src/platform/react-compiler-guard.test.ts"
   ],
-  "references": [{ "path": "./tsconfig.node.json" }]
+  "references": []
 }

@@ -32,30 +32,11 @@
  *   4. after a `cargo build` of the GPUI workspace, copies `lattice-gpui` back
  *      into this checkout.
  *
- * Validation runs (the no-mistakes pipeline's run worktrees, `pnpm signoff`)
- * send every cargo command that compiles through here, whether build, check,
- * clippy or test, for the Tauri crates as well as for gpui/. A worktree's own
- * `cargo test` or `cargo clippy` in gpui/ wrote an 8-10 GB gpui/target, and
- * one in src-tauri/ a 2-3 GB src-tauri/target, from cold, in every run
- * worktree; through here the run worktree keeps only the copied-back binary
- * (about 200 MB) and the shared tree's targets are the only ones that grow.
- * A `--manifest-path` (relative to where this was started) is rewritten to the
- * same file in the shared tree, so `-- clippy --manifest-path
- * src-tauri/Cargo.toml` checks the Tauri crates there, in their own
- * src-tauri/target. In a run worktree a plain compiling cargo command is
- * refused (scripts/run-worktree-cargo-guard.mjs, installed by the pipeline's
- * prepare command) with the matching command for this script; the guard's
- * .cargo/config.toml is git-ignored, so it is never mirrored here. Pointing
- * every checkout at one CARGO_TARGET_DIR instead would be unsafe: Cargo judges
- * freshness by mtime, so a checkout whose files predate another checkout's
- * build reuses artifacts built from different content; the mirror below gives
- * every changed file a new mtime, which is what makes one shared tree safe.
- * Since Cargo.toml paths are the shared tree's, every
- * checkout's build of a crate lands on the same artifacts; the lock keeps a
- * second checkout from mirroring its sources over a build still running, and
- * each run compiles exactly the sources it mirrored. The Tauri crates need
- * only a stub for the bundled Synara runtime (docs/synara-runtime.md), which
- * this creates in the shared tree.
+ * Send compiling Cargo commands through here to reuse the shared tree.
+ * A --manifest-path is mapped to the same file there, including the shared
+ * backend at src-tauri/lattice-core/Cargo.toml. Keep target/ local to this
+ * mirror: sharing only CARGO_TARGET_DIR can reuse a different checkout's
+ * source because Cargo judges freshness by mtime.
  *
  * The shared tree is `$LATTICE_GPUI_BUILD_DIR/lattice` (default
  * ~/Library/Caches/lattice-gpui-build on macOS, ~/.cache/lattice-gpui-build
@@ -66,11 +47,10 @@
  *   node scripts/gpui-build.mjs -- test --release --locked --workspace \
  *     --features lattice-gpui/offscreen-shots -- --include-ignored
  *                                                any other cargo command there
- *   node scripts/gpui-build.mjs -- clippy --manifest-path src-tauri/Cargo.toml \
- *     --all-targets -- -D warnings                the Tauri crates, there
+ *   node scripts/gpui-build.mjs -- clippy --all-targets -- -D warnings
  */
 import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, renameSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, renameSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -202,16 +182,11 @@ async function main() {
     console.log(`gpui-build: mirrored ${repo} into ${tree} (${written} written, ${deleted} deleted, ${seconds(started)})`);
 
     const gpui = path.join(tree, "gpui");
-    const fetched = spawnSync(path.join(gpui, "script", "fetch-pdfium"), [], { cwd: gpui, stdio: "inherit" });
+    const windows = process.platform === "win32";
+    const fetchCommand = windows ? "pwsh.exe" : path.join(gpui, "script", "fetch-pdfium");
+    const fetchArgs = windows ? ["-NoProfile", "-NonInteractive", "-File", path.join(gpui, "script", "fetch-pdfium.ps1")] : [];
+    const fetched = spawnSync(fetchCommand, fetchArgs, { cwd: gpui, stdio: "inherit" });
     if (fetched.status !== 0) throw new Error("gpui/script/fetch-pdfium failed in the shared tree");
-    // Ignored, so the mirror never writes or deletes it; Tauri's resource
-    // manifest only needs the directory to exist.
-    const synara = path.join(tree, "src-tauri", "synara-runtime");
-    if (!existsSync(synara)) {
-      mkdirSync(synara, { recursive: true });
-      writeFileSync(path.join(synara, "placeholder.txt"), "");
-    }
-
     // The shared tree's own target/, whatever this shell points Cargo at.
     const env = { ...process.env, CARGO_BUILD_JOBS: process.env.CARGO_BUILD_JOBS ?? "4" };
     delete env.CARGO_TARGET_DIR;
@@ -228,9 +203,10 @@ async function main() {
 
     if ((cargoArgs[0] === "build" || cargoArgs[0] === "b") && !elsewhere) {
       const profile = profileDir(cargoArgs);
-      const built = path.join(gpui, "target", profile, "lattice-gpui");
+      const binary = windows ? "lattice-gpui.exe" : "lattice-gpui";
+      const built = path.join(gpui, "target", profile, binary);
       if (!existsSync(built)) throw new Error(`${built} is missing after the build`);
-      const dest = path.join(repo, "gpui", "target", profile, "lattice-gpui");
+      const dest = path.join(repo, "gpui", "target", profile, binary);
       mkdirSync(path.dirname(dest), { recursive: true });
       // Through a temporary name: a running copy of the old binary keeps its
       // file, and nothing ever sees a half-copied one.
