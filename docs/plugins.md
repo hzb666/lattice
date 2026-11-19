@@ -80,8 +80,11 @@ Settings › Plugins:
 Then turn the plugin on, which shows what it asks for. Its commands appear in
 the command palette (⌘K) as "<Plugin>: <Command>".
 
-A public registry (`leo1oel/lattice-plugins`: reviewed index of versions and
-hashes, a remote block list, signed releases) comes later (decision D4).
+Settings › Plugins › Browse installs reviewed plugins from the registry
+(`lattice-writer/lattice-plugins`: a signed index of versions and hashes and a
+remote block list). Lattice reads the signed files from
+`lattice-writer.github.io/lattice-plugins` first and falls back to the previous
+`leo1oel.github.io/lattice-plugins` address.
 
 ## Writing a plugin
 

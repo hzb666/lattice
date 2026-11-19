@@ -12,7 +12,7 @@ permission and works on every platform.
 
 ```json
 {
-  "$schema": "https://leo1oel.github.io/lattice-plugins/schema/theme-1.json",
+  "$schema": "https://lattice-writer.github.io/lattice-plugins/schema/theme-1.json",
   "schema": 1,
   "id": "dev.example.my-theme",
   "name": "My theme",
@@ -93,11 +93,14 @@ folder installs or selects a theme.
 ## Theme market
 
 `lattice-core::registry` fetches the signed index and block list from the
-Lattice registry. Each signature must verify against one of the pinned
-minisign keys and bind the file name and serial. Both files must share a
-serial; refreshes reject invalid signatures and rollback to an older list.
-The last verified pair is cached in `<app data>/registry/cache.json`, verified
-again on read, and served offline.
+[`lattice-writer/lattice-plugins`](https://github.com/lattice-writer/lattice-plugins).
+It tries `https://lattice-writer.github.io/lattice-plugins` first and falls
+back to `https://leo1oel.github.io/lattice-plugins`, the previous address.
+Each signature must verify against one of the pinned minisign keys and bind
+the file name and serial. Both files must share a serial; refreshes reject
+invalid signatures and rollback to an older list. The last verified pair is
+cached in `<app data>/registry/cache.json`, verified again on read, and served
+offline. Trust comes from the signatures, not which address served the files.
 
 Theme downloads require HTTPS and must match the signed size, SHA-256, id and
 version before install. `<app data>/registry/installed.json` records the
