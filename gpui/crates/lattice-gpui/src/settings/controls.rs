@@ -213,6 +213,9 @@ pub struct Row {
     pub roomy: bool,
     /// The row Settings search revealed, washed for a moment.
     pub revealed: f32,
+    /// The control wraps its own parts to keep the copy 160px wide
+    /// (Theme files' buttons).
+    pub shrinks: bool,
 }
 
 impl Row {
@@ -225,6 +228,7 @@ impl Row {
             wrap: Wrap::Right,
             roomy: false,
             revealed: 0.,
+            shrinks: false,
         }
     }
 
@@ -261,6 +265,11 @@ impl Row {
         self
     }
 
+    pub fn shrinks(mut self) -> Self {
+        self.shrinks = true;
+        self
+    }
+
     pub fn revealed(mut self, amount: f32) -> Self {
         self.revealed = amount;
         self
@@ -271,8 +280,8 @@ impl Row {
         let wraps = width.wraps() && self.wrap != Wrap::Never && self.control.is_some();
         let copy = div()
             .min_w_0()
-            .when(wraps, |this| this.flex_1().min_w(px(160.)))
-            .when(!wraps, |this| this.flex_1())
+            .when(wraps || self.shrinks, |this| this.flex_1().min_w(px(160.)))
+            .when(!wraps && !self.shrinks, |this| this.flex_1())
             .child(
                 div().flex().child(
                     div()
@@ -293,7 +302,10 @@ impl Row {
         let control = self.control.map(|control| {
             div()
                 .flex()
-                .flex_none()
+                .when(self.shrinks, |this| {
+                    this.flex_grow_0().flex_shrink_1().min_w_0()
+                })
+                .when(!self.shrinks, |this| this.flex_none())
                 .items_center()
                 .justify_end()
                 .gap(px(8.))
