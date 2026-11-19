@@ -142,6 +142,8 @@ pub fn host(cx: &mut App) -> Arc<PluginHost> {
         return plugins.host.clone();
     }
     let mut host = make_host(crate::settings::scripted(cx));
+    // The plugin market's list and its block list, from the registry the
+    // theme marketplace reads (the same signed files and cache).
     host.set_registry(Arc::new(crate::settings::registry()));
     let host = Arc::new(host);
     cx.set_global(Plugins {

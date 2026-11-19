@@ -19211,3 +19211,192 @@ msgstr "Unknown `project-read` value `{value}`."
 #: src/platform/host-errors-plugins.ts
 msgid "Unsupported path {path}"
 msgstr "Unsupported path {path}"
+
+msgid "A plugin’s .zip release over https, checked against the SHA-256 its author publishes."
+msgstr "A plugin’s .zip release over https, checked against the SHA-256 its author publishes."
+
+msgid "Access"
+msgstr "Access"
+
+msgid "Allow and update"
+msgstr "Allow and update"
+
+msgid "Asks for new permissions"
+msgstr "Asks for new permissions"
+
+msgid "Blocked"
+msgstr "Blocked"
+
+msgid "Browse"
+msgstr "Browse"
+
+msgid "Choose folder…"
+msgstr "Choose folder…"
+
+msgid "Commands it adds"
+msgstr "Commands it adds"
+
+msgid "Couldn't verify the plugin list. Nothing new can be installed."
+msgstr "Couldn't verify the plugin list. Nothing new can be installed."
+
+msgid "Developer"
+msgstr "Developer"
+
+msgid "Enter a replacement"
+msgstr "Enter a replacement"
+
+msgid "Folder {source}"
+msgstr "Folder {source}"
+
+msgid "For developing a plugin: Lattice runs the folder in place, so your edits apply on the next run."
+msgstr "For developing a plugin: Lattice runs the folder in place, so your edits apply on the next run."
+
+msgid "From {source}"
+msgstr "From {source}"
+
+msgid "Install and turn on"
+msgstr "Install and turn on"
+
+msgid "Install from URL…"
+msgstr "Install from URL…"
+
+msgid "Install from folder…"
+msgstr "Install from folder…"
+
+msgid "Install only"
+msgstr "Install only"
+
+msgid "Install plugin"
+msgstr "Install plugin"
+
+msgid "Installed"
+msgstr "Installed"
+
+msgid "Install…"
+msgstr "Install…"
+
+msgid "It can’t read other files, use your API keys or environment, or write files without asking you."
+msgstr "It can’t read other files, use your API keys or environment, or write files without asking you."
+
+msgid "It will be able to:"
+msgstr "It will be able to:"
+
+msgid "Its commands leave the palette, and its data and saved secrets are deleted."
+msgstr "Its commands leave the palette, and its data and saved secrets are deleted."
+
+msgid "Keep {current}"
+msgstr "Keep {current}"
+
+msgid "Learn more"
+msgstr "Learn more"
+
+msgid "Licence: {license}"
+msgstr "Licence: {license}"
+
+msgid "Link to the .zip (https://…)"
+msgstr "Link to the .zip (https://…)"
+
+msgid "Most downloaded"
+msgstr "Most downloaded"
+
+msgid "No installed plugins match"
+msgstr "No installed plugins match"
+
+msgid "No plugins are listed yet."
+msgstr "No plugins are listed yet."
+
+msgid "No plugins installed."
+msgstr "No plugins installed."
+
+msgid "No plugins match"
+msgstr "No plugins match"
+
+msgid "Not reviewed"
+msgstr "Not reviewed"
+
+msgid "Not saved"
+msgstr "Not saved"
+
+msgid "Offline. The plugin list can't be reached."
+msgstr "Offline. The plugin list can't be reached."
+
+msgid "Offline: showing the list from {date}"
+msgstr "Offline: showing the list from {date}"
+
+msgid "Paste the value"
+msgstr "Paste the value"
+
+msgid "Plugins"
+msgstr "Plugins"
+
+msgid "Plugins add commands to the command palette (⌘K). Each runs in a sandbox and can reach only what you allow when you turn it on."
+msgstr "Plugins add commands to the command palette (⌘K). Each runs in a sandbox and can reach only what you allow when you turn it on."
+
+msgid "Plugins run only on macOS for now."
+msgstr "Plugins run only on macOS for now."
+
+msgid "Plugins run only on macOS for now. They are listed here, but can’t be turned on."
+msgstr "Plugins run only on macOS for now. They are listed here, but can’t be turned on."
+
+msgid "Recently updated"
+msgstr "Recently updated"
+
+msgid "Remove {name}?"
+msgstr "Remove {name}?"
+
+msgid "Reviewed"
+msgstr "Reviewed"
+
+msgid "Review…"
+msgstr "Review…"
+
+msgid "SHA-256 (64 hexadecimal characters)"
+msgstr "SHA-256 (64 hexadecimal characters)"
+
+msgid "Search by name, description or author"
+msgstr "Search by name, description or author"
+
+msgid "Search installed plugins"
+msgstr "Search installed plugins"
+
+msgid "Source code"
+msgstr "Source code"
+
+msgid "This plugin can"
+msgstr "This plugin can"
+
+msgid "This plugin has a warning: {reason}"
+msgstr "This plugin has a warning: {reason}"
+
+msgid "Turn on"
+msgstr "Turn on"
+
+msgid "Turn on {name}?"
+msgstr "Turn on {name}?"
+
+msgid "Update all"
+msgstr "Update all"
+
+msgid "Update to {next}"
+msgstr "Update to {next}"
+
+msgid "Update to {version}"
+msgstr "Update to {version}"
+
+msgid "Updated {updated}"
+msgstr "Updated {updated}"
+
+msgid "Updated {when}"
+msgstr "Updated {when}"
+
+msgid "Update…"
+msgstr "Update…"
+
+msgid "Version {next} is available"
+msgstr "Version {next} is available"
+
+msgid "Version {version} also wants:"
+msgstr "Version {version} also wants:"
+
+msgid "{downloads} downloads"
+msgstr "{downloads} downloads"

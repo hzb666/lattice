@@ -19211,3 +19211,192 @@ msgstr "未知的 `project-read` 值 `{value}`。"
 #: src/platform/host-errors-plugins.ts
 msgid "Unsupported path {path}"
 msgstr "不支持的路径 {path}"
+
+msgid "A plugin’s .zip release over https, checked against the SHA-256 its author publishes."
+msgstr "通过 https 下载插件的 .zip 发布包，并用作者公布的 SHA-256 校验。"
+
+msgid "Access"
+msgstr "权限"
+
+msgid "Allow and update"
+msgstr "允许并更新"
+
+msgid "Asks for new permissions"
+msgstr "请求了新的权限"
+
+msgid "Blocked"
+msgstr "已屏蔽"
+
+msgid "Browse"
+msgstr "浏览"
+
+msgid "Choose folder…"
+msgstr "选择文件夹…"
+
+msgid "Commands it adds"
+msgstr "新增的命令"
+
+msgid "Couldn't verify the plugin list. Nothing new can be installed."
+msgstr "无法验证插件列表，暂时不能安装新插件。"
+
+msgid "Developer"
+msgstr "开发者"
+
+msgid "Enter a replacement"
+msgstr "输入新值以替换"
+
+msgid "Folder {source}"
+msgstr "文件夹 {source}"
+
+msgid "For developing a plugin: Lattice runs the folder in place, so your edits apply on the next run."
+msgstr "用于开发插件：Lattice 直接运行该文件夹，修改会在下次运行时生效。"
+
+msgid "From {source}"
+msgstr "来自 {source}"
+
+msgid "Install and turn on"
+msgstr "安装并启用"
+
+msgid "Install from URL…"
+msgstr "从 URL 安装…"
+
+msgid "Install from folder…"
+msgstr "从文件夹安装…"
+
+msgid "Install only"
+msgstr "仅安装"
+
+msgid "Install plugin"
+msgstr "安装插件"
+
+msgid "Installed"
+msgstr "已安装"
+
+msgid "Install…"
+msgstr "安装…"
+
+msgid "It can’t read other files, use your API keys or environment, or write files without asking you."
+msgstr "它不能读取其他文件，不能使用你的 API 密钥或环境变量，也不能未经你同意写入文件。"
+
+msgid "It will be able to:"
+msgstr "它将能够："
+
+msgid "Its commands leave the palette, and its data and saved secrets are deleted."
+msgstr "它的命令会从命令面板中移除，其数据和已保存的密钥也会被删除。"
+
+msgid "Keep {current}"
+msgstr "保留 {current}"
+
+msgid "Learn more"
+msgstr "了解更多"
+
+msgid "Licence: {license}"
+msgstr "许可证：{license}"
+
+msgid "Link to the .zip (https://…)"
+msgstr "指向 .zip 的链接（https://…）"
+
+msgid "Most downloaded"
+msgstr "下载最多"
+
+msgid "No installed plugins match"
+msgstr "没有匹配的已安装插件"
+
+msgid "No plugins are listed yet."
+msgstr "插件列表里还没有插件。"
+
+msgid "No plugins installed."
+msgstr "尚未安装插件。"
+
+msgid "No plugins match"
+msgstr "没有匹配的插件"
+
+msgid "Not reviewed"
+msgstr "未经审核"
+
+msgid "Not saved"
+msgstr "未保存"
+
+msgid "Offline. The plugin list can't be reached."
+msgstr "离线，无法获取插件列表。"
+
+msgid "Offline: showing the list from {date}"
+msgstr "离线：显示 {date} 的列表"
+
+msgid "Paste the value"
+msgstr "粘贴值"
+
+msgid "Plugins"
+msgstr "插件"
+
+msgid "Plugins add commands to the command palette (⌘K). Each runs in a sandbox and can reach only what you allow when you turn it on."
+msgstr "插件会向命令面板（⌘K）添加命令。每个插件都在沙盒中运行，只能访问你在启用时允许的内容。"
+
+msgid "Plugins run only on macOS for now."
+msgstr "插件目前仅能在 macOS 上运行。"
+
+msgid "Plugins run only on macOS for now. They are listed here, but can’t be turned on."
+msgstr "插件目前仅能在 macOS 上运行。它们会列在这里，但无法启用。"
+
+msgid "Recently updated"
+msgstr "最近更新"
+
+msgid "Remove {name}?"
+msgstr "移除 {name}？"
+
+msgid "Reviewed"
+msgstr "已审核"
+
+msgid "Review…"
+msgstr "查看…"
+
+msgid "SHA-256 (64 hexadecimal characters)"
+msgstr "SHA-256（64 位十六进制字符）"
+
+msgid "Search by name, description or author"
+msgstr "按名称、描述或作者搜索"
+
+msgid "Search installed plugins"
+msgstr "搜索已安装的插件"
+
+msgid "Source code"
+msgstr "源代码"
+
+msgid "This plugin can"
+msgstr "此插件可以"
+
+msgid "This plugin has a warning: {reason}"
+msgstr "此插件有一条警告：{reason}"
+
+msgid "Turn on"
+msgstr "启用"
+
+msgid "Turn on {name}?"
+msgstr "启用 {name}？"
+
+msgid "Update all"
+msgstr "全部更新"
+
+msgid "Update to {next}"
+msgstr "更新到 {next}"
+
+msgid "Update to {version}"
+msgstr "更新到 {version}"
+
+msgid "Updated {updated}"
+msgstr "更新于 {updated}"
+
+msgid "Updated {when}"
+msgstr "更新于 {when}"
+
+msgid "Update…"
+msgstr "更新…"
+
+msgid "Version {next} is available"
+msgstr "版本 {next} 可用"
+
+msgid "Version {version} also wants:"
+msgstr "版本 {version} 还需要："
+
+msgid "{downloads} downloads"
+msgstr "{downloads} 次下载"
