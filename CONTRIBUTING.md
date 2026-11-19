@@ -15,15 +15,16 @@ Do not automatically clean translation messages by scanning only the retained Ty
 This fork is `hzb666/lattice` (`origin`); `leo1oel/lattice` is `upstream`.
 The native GPUI checkout is the product baseline:
 
-- `main` tracks `origin/gpui` and contains the maintained GPUI baseline.
+- `main` tracks `origin/main` and contains the maintained GPUI baseline.
 - `chemex` tracks `origin/chemex` and contains the chemistry work. Short-lived
   `feature/<name>` branches start here and return through a pull request.
-- `tauri-main` tracks the old `origin/main` Tauri line for historical access; it
+- `tauri-main` tracks the old Tauri line for historical access; it
   is not a base for GPUI or Chemex work.
 
-Do not merge `origin/main` into `main` or `chemex`. It is a separate product
-line. Preserve shared source paths so upstream GPUI patches remain easy to
-apply.
+Do not merge `tauri-main` into `main` or `chemex`. It is the retained historical
+Tauri product line. `upstream/main` is the original author's line; review it
+commit by commit rather than merging it wholesale. Preserve shared source paths
+so upstream GPUI patches remain easy to apply.
 
 Fetch and review upstream changes before selecting commits:
 
@@ -34,7 +35,7 @@ git show <upstream-commit>
 git cherry-pick -x <upstream-commit>
 ```
 
-`git cherry` marks an equivalent patch already present with `-`. Review each remaining `+` for dependencies and changes to removed files; it is not a list to apply blindly. Keep the original commit reference with `-x`, run the relevant checks, then push `main` (which tracks the remote GPUI branch). Whole-branch merges need a separate review because they can restore the removed application.
+`git cherry` marks an equivalent patch already present with `-`. Review each remaining `+` for dependencies and changes to removed files; it is not a list to apply blindly. Keep the original commit reference with `-x`, run the relevant checks, then push `main`. Whole-branch merges need a separate review because they can restore the removed application.
 
 Apply accepted upstream commits to `main`, verify them, then merge `main` into
 `chemex`. Do not cherry-pick upstream commits directly into `chemex` unless the
