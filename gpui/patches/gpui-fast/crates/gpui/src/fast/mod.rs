@@ -23,6 +23,7 @@ pub(crate) mod dynamic_textures;
 pub(crate) mod em_metrics;
 pub(crate) mod global_id;
 pub(crate) mod glyphs;
+pub(crate) mod ime_bindings;
 pub(crate) mod interactive_text;
 pub(crate) mod interface_zoom;
 pub(crate) mod interactivity;
