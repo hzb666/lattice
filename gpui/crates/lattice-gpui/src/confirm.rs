@@ -8,7 +8,6 @@ use std::rc::Rc;
 use gpui::{
     App, AppContext as _, Context, Entity, FocusHandle, Global, InteractiveElement as _,
     IntoElement, KeyDownEvent, ParentElement as _, Render, SharedString, Styled as _, Window, div,
-    px,
 };
 use lattice_i18n::{t, tc};
 use lattice_ui::{
@@ -19,16 +18,10 @@ use lattice_ui::{
 type Answer = Rc<dyn Fn(&mut Window, &mut App)>;
 type Dismissal = Box<dyn FnOnce(&mut App)>;
 
-/// Over the window's deferred overlays (the palette and Settings, at 10, in
-/// `shell/layers.rs`), which a question can be asked from (Settings ›
-/// Plugins and Overleaf ask theirs there), and under the notices (50).
-/// Priority orders the paint only: hit-testing follows nesting first, so
-/// the shell draws this host inside a deferred layer of its own, as deep as
-/// the dialogs it is asked from (`Shell::window_overlays`).
-const PRIORITY: usize = 20;
 pub struct Confirm {
     title: SharedString,
     body: Option<SharedString>,
+    list: Vec<SharedString>,
     confirm_label: SharedString,
     /// The other answer's words, when not "Cancel": a question whose two
     /// answers both act names what each does.
@@ -49,6 +42,7 @@ impl Confirm {
         Self {
             title: title.into(),
             body: None,
+            list: Vec::new(),
             confirm_label: tc!("dialog button", "OK").into(),
             cancel_label: None,
             destructive: false,
@@ -60,6 +54,11 @@ impl Confirm {
 
     pub fn body(mut self, body: impl Into<SharedString>) -> Self {
         self.body = Some(body.into());
+        self
+    }
+
+    pub fn list(mut self, items: impl IntoIterator<Item = impl Into<SharedString>>) -> Self {
+        self.list = items.into_iter().map(Into::into).collect();
         self
     }
 
@@ -232,6 +231,18 @@ impl Render for ConfirmHost {
         if let Some(body) = &question.body {
             card = card.body(body.clone());
         }
+        if !question.list.is_empty() {
+            card = card.field(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(gpui::px(4.))
+                    .children(question.list.iter().enumerate().map(|(index, item)| {
+                        div().id(("confirm-list-item", index)).child(item.clone())
+                    }))
+                    .into_any_element(),
+            );
+        }
         let mut card = card.action(
             Button::new(
                 ("confirm-cancel", self.serial),
@@ -288,7 +299,6 @@ impl Render for ConfirmHost {
             },
         )
         .initial_focus(self.focus.clone())
-        .priority(PRIORITY)
         .into_any_element()
     }
 }
