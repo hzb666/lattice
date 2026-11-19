@@ -120,6 +120,7 @@ pub fn settings_from_items(items: &BTreeMap<String, String>) -> Settings {
         grammar: crate::model::Grammar::from_value(json("lattice.grammar.v1").as_ref()),
         // Stored as "true" or "false" (`save-full-text-setting.ts`).
         save_full_text: item("lattice.papers.save-full-text.v1") == Some("true"),
+        texlive_root: defaults.texlive_root,
     }
 }
 
@@ -364,6 +365,13 @@ mod tests {
         assert_eq!(settings.appearance.tint.tag(), "dusk");
         assert_eq!(settings.author_name, "Grace");
         assert_eq!(settings.auto_build_mode, AutoBuildMode::Automatic);
+    }
+
+    #[test]
+    fn importing_legacy_settings_leaves_texlive_root_unset() {
+        let settings = settings_from_items(&BTreeMap::new());
+
+        assert_eq!(None, settings.texlive_root);
     }
 
     #[test]

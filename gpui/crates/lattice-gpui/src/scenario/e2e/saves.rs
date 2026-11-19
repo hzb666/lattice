@@ -146,9 +146,26 @@ impl Run {
         second.type_text(cx, typed).await?;
         let unsaved = second.unsaved(cx, &editor, &file, typed);
         let native = second.native(cx)?;
+        #[cfg(target_os = "windows")]
+        let close = second.with_window(cx, |_, window, _| {
+            gpui::point(
+                window.viewport_size().width - gpui_kit::component::TITLE_BAR_HEIGHT / 2.,
+                gpui::px(16.),
+            )
+        })?;
         // Only the window holds its shell and editors now, as in a real run.
         drop((editor, second));
+        #[cfg(target_os = "windows")]
+        let close_requested = native::click_window_control(
+            native,
+            close,
+            native::WindowControl::Close,
+        )
+        .is_ok();
+        #[cfg(target_os = "macos")]
         native::request_close(native);
+        #[cfg(target_os = "macos")]
+        let close_requested = true;
         let id = window.window_id();
         let closed = self
             .wait_for(cx, Duration::from_secs(8), |_, cx| {
@@ -158,7 +175,7 @@ impl Run {
             .await;
         steps.check(
             "closing a window within the autosave pause saves what was typed, then closes it",
-            unsaved && closed,
+            unsaved && close_requested && closed,
             json!({ "unsaved_before": unsaved, "disk": std::fs::read_to_string(&file).ok() }),
         );
         std::fs::remove_file(&file).ok();

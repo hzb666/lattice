@@ -463,7 +463,8 @@ impl Render for Welcome {
                     .flex()
                     .justify_end()
                     .items_center()
-                    .px(px(14.))
+                    .pl(px(14.))
+                    .pr(px(if cfg!(target_os = "windows") { 0. } else { 14. }))
                     .window_control_area(WindowControlArea::Drag)
                     .on_double_click(|_, window, _| window.titlebar_double_click())
                     .child(
@@ -479,7 +480,8 @@ impl Render for Welcome {
                                         cx.listener(|_, _, _, cx| cx.emit(WelcomeEvent::Settings)),
                                     ),
                             ),
-                    ),
+                    )
+                    .children(crate::titlebar::windows_controls()),
             )
     }
 }

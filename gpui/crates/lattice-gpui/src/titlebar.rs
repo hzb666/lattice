@@ -336,6 +336,7 @@ pub fn render(shell: &Shell, window: &mut Window, cx: &mut Context<Shell>) -> im
     bar.child(project)
         .child(main)
         .children(search_inline)
+        .children(windows_controls())
         .into_any_element()
 }
 
@@ -347,4 +348,8 @@ pub(super) fn controls(child: impl IntoElement) -> gpui::Div {
     div()
         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .child(child)
+}
+
+pub(crate) fn windows_controls() -> Option<impl IntoElement> {
+    cfg!(target_os = "windows").then(gpui_kit::component::TitleBar::window_controls)
 }

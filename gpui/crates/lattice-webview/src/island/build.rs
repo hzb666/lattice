@@ -7,6 +7,8 @@ use anyhow::{Context as _, Result};
 use futures::{StreamExt as _, channel::mpsc};
 use gpui::{AppContext as _, Context, Focusable as _, Rgba, Window};
 use gpui_webview::WebView;
+#[cfg(target_os = "windows")]
+use wry::WebViewBuilderExtWindows as _;
 
 use super::{DRAWN_POLL, Island, IslandState};
 use crate::{
@@ -137,6 +139,10 @@ impl Island {
             .with_hotkeys_zoom(false)
             .with_back_forward_navigation_gestures(false)
             .with_devtools(cfg!(debug_assertions));
+        #[cfg(target_os = "windows")]
+        {
+            builder = builder.with_https_scheme(true);
+        }
         builder = self.take_file_drops(builder, window, cx);
         if let Some(ground) = self.config.ground {
             let rgba = Rgba::from(ground);

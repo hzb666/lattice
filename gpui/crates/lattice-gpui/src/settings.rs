@@ -329,6 +329,9 @@ pub fn code_theme_variant(variant: CodeThemeVariant) -> Option<Appearance> {
 /// Apply the settings, all of them (`before` is `None`) or what changed.
 fn apply(before: Option<&Settings>, cx: &mut App) {
     let now = get(cx).clone();
+    lattice_core::commands::set_texlive_root(
+        now.texlive_root.as_deref().map(std::path::PathBuf::from),
+    );
     let scripted = cx.global::<AppSettings>().scripted;
     let changed =
         |same: fn(&Settings, &Settings) -> bool| before.is_none_or(|was| !same(was, &now));

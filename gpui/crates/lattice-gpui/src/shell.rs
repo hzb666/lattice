@@ -29,6 +29,7 @@ mod build;
 mod build_repair;
 mod build_tools;
 mod build_watch;
+mod chemistry;
 pub mod commands;
 mod documents;
 mod drawing_drop;
@@ -110,6 +111,7 @@ use trellis::{TrellisWorkspace, model::LayoutDocument};
 
 pub use annotations_flow::{CommentsView, ShowAnnotations};
 use build::BuildRequest;
+pub use chemistry::{ToggleChemDraw, ToggleChemistry};
 pub use commands::{
     Build, CleanBuildFiles, CleanRebuild, ForwardSync, InstallLatexTools, NextProblem,
     OpenTexDoctor, PreviousProblem, Save, StopBuild, ToggleVimMode,

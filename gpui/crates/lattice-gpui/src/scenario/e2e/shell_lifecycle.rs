@@ -45,10 +45,125 @@ impl Run {
         root: &Path,
     ) -> Result<()> {
         self.minimum_size(cx, steps)?;
+        #[cfg(target_os = "windows")]
+        {
+            self.window_controls(cx, steps).await?;
+            self.with_window(cx, |shell, window, cx| {
+                shell.update(cx, |shell, cx| shell.set_focus_mode(true, window, cx))
+            })?;
+            self.pause(cx, Duration::from_millis(300)).await;
+            self.window_controls(cx, steps).await?;
+            self.with_window(cx, |shell, window, cx| {
+                shell.update(cx, |shell, cx| shell.set_focus_mode(false, window, cx))
+            })?;
+            let (handle, shell) = cx.update(|cx| crate::shell::Shell::open_window(None, cx))?;
+            let welcome = self.for_window(shell, handle);
+            welcome.pause(cx, Duration::from_millis(500)).await;
+            let checked = welcome.window_controls(cx, steps).await;
+            crate::native::request_close(welcome.native(cx)?);
+            checked?;
+        }
         self.errors_reach_the_log(cx, steps).await;
         self.crash_save(cx, steps, root).await?;
         self.crash_notice(cx, steps);
         self.menu_bar(cx, steps).await;
+        Ok(())
+    }
+
+    #[cfg(target_os = "windows")]
+    async fn window_controls(&self, cx: &mut AsyncApp, steps: &mut Steps) -> Result<()> {
+        use crate::native::{self, WindowControl};
+        use gpui::{point, px};
+        use gpui_kit::component::TITLE_BAR_HEIGHT;
+
+        let (native, window, initially_maximized) = self.with_window(cx, |_, window, _| {
+            (
+                native::native(window),
+                window.window_handle(),
+                window.is_maximized(),
+            )
+        })?;
+        let native = native?;
+        let surface = cx.update(|cx| {
+            let shell = self.shell.read(cx);
+            if shell.welcome().is_some() {
+                "welcome"
+            } else if shell.in_focus_mode() {
+                "focus"
+            } else {
+                "project"
+            }
+        });
+        let maximize_position = |cx: &mut AsyncApp| {
+            self.with_window(cx, |_, window, _| {
+                point(window.viewport_size().width - TITLE_BAR_HEIGHT * 1.5, px(16.))
+            })
+        };
+        let maximize_hit = native::click_window_control(
+            native,
+            maximize_position(cx)?,
+            WindowControl::Maximize,
+        )
+        .is_ok();
+        let maximized = self
+            .wait_for(cx, Duration::from_secs(3), |_, cx| {
+                window
+                    .update(cx, |_, window, _| window.is_maximized())
+                    .is_ok_and(|maximized| maximized != initially_maximized)
+            })
+            .await;
+        let restore_hit = native::click_window_control(
+            native,
+            maximize_position(cx)?,
+            WindowControl::Maximize,
+        )
+        .is_ok();
+        let restored = self
+            .wait_for(cx, Duration::from_secs(3), |_, cx| {
+                window
+                    .update(cx, |_, window, _| window.is_maximized())
+                    .is_ok_and(|maximized| maximized == initially_maximized)
+            })
+            .await;
+        let minimize_position = self.with_window(cx, |_, window, _| {
+            point(window.viewport_size().width - TITLE_BAR_HEIGHT * 2.5, px(16.))
+        })?;
+        let minimize_hit = native::click_window_control(
+            native,
+            minimize_position,
+            WindowControl::Minimize,
+        )
+        .is_ok();
+        let minimized = self
+            .wait_for(cx, Duration::from_secs(3), |_, _| {
+                native::is_minimized(native)
+            })
+            .await;
+        native::restore_minimized(native);
+        let restored_from_minimize = self
+            .wait_for(cx, Duration::from_secs(3), |_, _| {
+                !native::is_minimized(native)
+            })
+            .await;
+        steps.check(
+            &format!("the Windows {surface} titlebar minimizes, maximizes, and restores its window"),
+            maximize_hit
+                && maximized
+                && restore_hit
+                && restored
+                && minimize_hit
+                && minimized
+                && restored_from_minimize,
+            json!({
+                "maximize_hit": maximize_hit,
+                "maximized": maximized,
+                "restore_hit": restore_hit,
+                "restored": restored,
+                "minimize_hit": minimize_hit,
+                "minimized": minimized,
+                "restored_from_minimize": restored_from_minimize,
+            }),
+        );
         Ok(())
     }
 

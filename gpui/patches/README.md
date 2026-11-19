@@ -61,10 +61,11 @@ The vendored copies cannot run their own tests where they sit (the gpui crate's 
   The frame and its offset are scaled by the window's interface zoom, and the page is zoomed with the interface (on top of `WebView::set_zoom`'s own zoom), so it keeps the island's size in its own pixels, as the Tauri app's interface zoom zooms its pages.
   This is macOS with `gpui-fast` only; elsewhere the crate behaves as upstream.
   The `e2e` scenario checks the page's frame and viewport at 120% and 90%.
-- **`gpui-component-lattice-hooks.diff`**: two seams for Lattice's design system, each inert until the app uses it.
+- **`gpui-component-lattice-hooks.diff`**: seams for Lattice's design system.
   - *A host-drawn menu highlight*: with a `GlobalMenuHighlight` installed, a `PopupMenu`'s rows draw no hover or selection fill of their own; the menu records each row's bounds, section (rows between two separators or labels) and whether it can be highlighted as it is laid out, and hands them with its highlighted item to the host's `MenuHighlight::paint`, behind the rows.
     Lattice draws the fluid hover there (`lattice_ui::fluid_hover::KitMenuGlide`): one fill gliding between rows, as the Tauri app's menus have it.
     Without the global the menu is upstream's.
+  - *`TitleBar::window_controls()`*: Lattice embeds the Kit's standard buttons in its own titlebar. On Windows the buttons take precedence over an enclosing drag area in hit testing.
   - *`Tree::scrollbar(false)`*: the tree leaves out its own scrollbar, so a host can draw one over `TreeState::scroll_handle` (Lattice's hover-revealed scrollbar, `lattice_ui::scrollbar`).
     The default draws it, as upstream.
 - **`gpui-component-overlays.diff`**: GPUI Kit's notification and sheet layers are drawn `deferred`, as its dialogs already are. gpui-fast composes native views (a webview island) between a window's base content and its overlay surface, and only deferred draws reach the overlay surface, so without this a toast or a Kit sheet is covered by any webview under it.

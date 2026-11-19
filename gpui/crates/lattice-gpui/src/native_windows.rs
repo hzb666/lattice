@@ -29,9 +29,10 @@ use windows::Win32::{
             VK_ESCAPE, VK_LCONTROL, VK_LSHIFT, VK_RETURN, VK_RIGHT, VK_SHIFT, VkKeyScanW,
         },
         WindowsAndMessaging::{
-            PostMessageW, SendMessageW, SetForegroundWindow, WM_CLOSE, WM_KEYDOWN, WM_KEYUP,
-            WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_RBUTTONDOWN,
-            WM_RBUTTONUP,
+            HTCLOSE, HTMAXBUTTON, HTMINBUTTON, IsIconic, PostMessageW, SW_RESTORE, SendMessageW,
+            SetForegroundWindow, ShowWindowAsync, WM_CLOSE, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN,
+            WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCHITTEST, WM_NCLBUTTONDOWN,
+            WM_NCLBUTTONUP, WM_RBUTTONDOWN, WM_RBUTTONUP,
         },
     },
 };
@@ -53,6 +54,13 @@ const KEY_DOWN_STATE: u8 = 0x80;
 pub struct Native {
     hwnd: HWND,
     scale: f32,
+}
+
+#[derive(Clone, Copy)]
+pub enum WindowControl {
+    Minimize,
+    Maximize,
+    Close,
 }
 
 pub fn native(window: &Window) -> Result<Native> {
@@ -209,6 +217,60 @@ pub fn send_click(native: Native, position: Point<Pixels>) -> Result<()> {
 /// the window's client handler, as everywhere else, so this is a plain click.
 pub fn send_titlebar_click(native: Native, position: Point<Pixels>) -> Result<()> {
     send_click(native, position)
+}
+
+/// Click a GPUI window-control hitbox through its Win32 non-client messages.
+pub fn click_window_control(
+    native: Native,
+    position: Point<Pixels>,
+    control: WindowControl,
+) -> Result<()> {
+    send_mouse(native, Mouse::Moved, position)?;
+    let mut screen = POINT {
+        x: (f32::from(position.x) * native.scale).round() as i32,
+        y: (f32::from(position.y) * native.scale).round() as i32,
+    };
+    // The HWND belongs to this run and the point lives through the call.
+    unsafe { ClientToScreen(native.hwnd, &mut screen).ok()? };
+    let screen_position =
+        LPARAM(screen.x as i16 as u16 as isize | ((screen.y as i16 as u16 as isize) << 16));
+    let expected = match control {
+        WindowControl::Minimize => HTMINBUTTON,
+        WindowControl::Maximize => HTMAXBUTTON,
+        WindowControl::Close => HTCLOSE,
+    };
+    let hit = unsafe { SendMessageW(native.hwnd, WM_NCHITTEST, None, Some(screen_position)) };
+    if hit.0 != expected as isize {
+        return Err(anyhow!(
+            "window control hit-test returned {}, expected {expected}",
+            hit.0
+        ));
+    }
+    unsafe {
+        SendMessageW(
+            native.hwnd,
+            WM_NCLBUTTONDOWN,
+            Some(WPARAM(expected as usize)),
+            Some(screen_position),
+        );
+        SendMessageW(
+            native.hwnd,
+            WM_NCLBUTTONUP,
+            Some(WPARAM(expected as usize)),
+            Some(screen_position),
+        );
+    }
+    Ok(())
+}
+
+pub fn is_minimized(native: Native) -> bool {
+    unsafe { IsIconic(native.hwnd).as_bool() }
+}
+
+pub fn restore_minimized(native: Native) {
+    unsafe {
+        let _ = ShowWindowAsync(native.hwnd, SW_RESTORE);
+    }
 }
 
 /// A right click at `position`, which opens a context menu.

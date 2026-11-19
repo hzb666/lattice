@@ -495,6 +495,8 @@ pub struct Settings {
     /// only its citation (`lattice.papers.save-full-text.v1`); off until the
     /// writer turns it on.
     pub save_full_text: bool,
+    /// A user-selected TeX Live version root, containing its `bin` directory.
+    pub texlive_root: Option<String>,
 }
 
 impl Settings {
@@ -553,6 +555,10 @@ impl Settings {
             build_output_docked: field("buildOutputDocked").and_then(Value::as_bool),
             grammar: Grammar::from_value(field("grammar")),
             save_full_text: field("saveFullText") == Some(&Value::Bool(true)),
+            texlive_root: field("texliveRoot")
+                .and_then(Value::as_str)
+                .filter(|path| !path.trim().is_empty())
+                .map(str::to_owned),
         }
     }
 
@@ -677,11 +683,13 @@ mod tests {
         settings.settings_tab = SettingsTab::Editor;
         settings.live_preview.insert("/papers/thesis".into(), false);
         settings.live_preview_removed = true;
+        settings.texlive_root = Some(r"D:\Software\texlive\2022".into());
         let value = settings.to_value();
         assert_eq!(value["livePreview"]["/papers/thesis"], json!(false));
         assert_eq!(value["version"], json!(1));
         assert_eq!(value["appearance"]["accent"], json!("teal"));
         assert_eq!(value["hiddenBuildFiles"], json!(true));
+        assert_eq!(value["texliveRoot"], json!(r"D:\Software\texlive\2022"));
         assert_eq!(value["appearance"]["interfaceLanguage"], json!("system"));
         assert_eq!(Settings::from_value(&value), settings);
     }

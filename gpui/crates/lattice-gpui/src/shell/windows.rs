@@ -770,8 +770,12 @@ pub(super) fn titlebar_options() -> Option<gpui::TitlebarOptions> {
     })
 }
 
-/// Elsewhere the system keeps its title bar, and Lattice's sits under it.
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "windows")]
+pub(super) fn titlebar_options() -> Option<gpui::TitlebarOptions> {
+    Some(gpui_kit::component::TitleBar::title_bar_options())
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 pub(super) fn titlebar_options() -> Option<gpui::TitlebarOptions> {
     None
 }

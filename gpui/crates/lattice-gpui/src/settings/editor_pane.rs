@@ -9,8 +9,8 @@
 //! grammar choices (`grammar_group.rs`); and the app's version.
 
 use gpui::{
-    AnyElement, App, ClickEvent, Context, Entity, IntoElement, ParentElement as _, Styled as _,
-    Window, div, px,
+    AnyElement, App, ClickEvent, Context, Entity, IntoElement, ParentElement as _,
+    PathPromptOptions, Styled as _, Window, div, px,
 };
 use lattice_core::project::{self, ManifestSettings};
 use lattice_i18n::t;
@@ -309,7 +309,73 @@ fn builds(
     .compact()
     .disabled(!has_project || cleaning || building)
     .on_click(move |_, _, cx| this.update(cx, |dialog, cx| dialog.clean(cx)));
+    let selected_texlive = settings.texlive_root.clone();
+    let choose_texlive = cx.entity();
+    let texlive_button = Button::new("texlive-directory", t!("Choose"))
+        .compact()
+        .on_click(move |_, window, cx| {
+            let picked = cx.prompt_for_paths(PathPromptOptions {
+                files: false,
+                directories: true,
+                multiple: false,
+                prompt: Some(t!("Choose TeX Live root folder").into()),
+            });
+            let choose_texlive = choose_texlive.clone();
+            window
+                .spawn(cx, async move |cx| {
+                    let selected = match picked.await {
+                        Ok(Ok(Some(paths))) => paths.into_iter().next(),
+                        _ => None,
+                    };
+                    if let Some(path) = selected {
+                        let valid = lattice_core::commands::valid_texlive_root(&path);
+                        choose_texlive.update(cx, |_, cx| {
+                            if valid {
+                                super::update(cx, |settings| {
+                                    settings.texlive_root =
+                                        Some(path.to_string_lossy().into_owned());
+                                });
+                            } else {
+                                crate::notices::error(
+                                    t!("Not a TeX Live folder"),
+                                    t!("Choose a TeX Live folder containing its version folders"),
+                                    cx,
+                                );
+                            }
+                        });
+                    }
+                })
+                .detach();
+        });
+    let clear_texlive = Button::new("texlive-directory-auto", t!("Automatic"))
+        .compact()
+        .disabled(settings.texlive_root.is_none())
+        .on_click(|_, _, cx| super::update(cx, |settings| settings.texlive_root = None));
+    let texlive_control = div()
+        .w(controls::CONTROL_WIDTH)
+        .flex()
+        .gap(px(6.))
+        .justify_end()
+        .child(texlive_button);
+    let texlive_control = texlive_control.child(clear_texlive);
     let mut rows = vec![
+        row(
+            dialog,
+            Row::new("texlive-directory", t!("TeX Live folder"))
+                .description(
+                    selected_texlive.map_or_else(|| {
+                        t!("Choose the texlive folder; the newest installed year is used")
+                            .to_string()
+                    }, |path| {
+                        format!("{} ({})", path, t!("newest installed year first"))
+                    }
+                    ),
+                    cx,
+                )
+                .control(texlive_control),
+            width,
+            cx,
+        ),
         row(
             dialog,
             Row::new("auto-build", t!("Automatic build")).control(auto),

@@ -9,7 +9,7 @@ use lattice_ui::{
 };
 
 use crate::shell::{
-    Shell,
+    Shell, ToggleChemDraw, ToggleChemistry,
     commands::{
         ResetLayout, ToggleAgentPanel, ToggleFocusMode, ToggleMaximize, TogglePapersPanel,
         TogglePdfPanel, ToggleProjectPanel,
@@ -27,10 +27,18 @@ pub(super) fn panels_menu(
     label_shown: bool,
     cx: &mut Context<Shell>,
 ) -> impl IntoElement {
-    let on_screen: Vec<bool> = ["project", "papers", "agent", "pdf", "terminal"]
-        .iter()
-        .map(|kind| shell.view_on_screen(kind, cx))
-        .collect();
+    let on_screen: Vec<bool> = [
+        "project",
+        "papers",
+        "agent",
+        "pdf",
+        "terminal",
+        "chemistry",
+        "chemdraw",
+    ]
+    .iter()
+    .map(|kind| shell.view_on_screen(kind, cx))
+    .collect();
     let workspaces: Vec<(String, String)> = Workspaces::global(cx)
         .list()
         .iter()
@@ -79,6 +87,18 @@ pub(super) fn panels_menu(
                     Icon::SQUARE_TERMINAL,
                     on_screen[4],
                     Box::new(ToggleTerminalPanel),
+                ))
+                .item(toggle_item(
+                    t!("Chemistry"),
+                    Icon::SPARKLES,
+                    on_screen[5],
+                    Box::new(ToggleChemistry),
+                ))
+                .item(toggle_item(
+                    t!("ChemDraw"),
+                    Icon::FILE_TEXT,
+                    on_screen[6],
+                    Box::new(ToggleChemDraw),
                 ))
                 .separator()
                 .label(t!("Layout"));

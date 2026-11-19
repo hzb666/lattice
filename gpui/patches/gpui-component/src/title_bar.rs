@@ -91,6 +91,13 @@ impl TitleBar {
         }
     }
 
+    /// Renders the standard window controls for an application-owned title bar.
+    pub fn window_controls() -> impl IntoElement {
+        WindowControls {
+            on_close_window: None,
+        }
+    }
+
     /// Add custom for close window event, default is None, then click X button will call `window.remove_window()`.
     /// Linux only, this will do nothing on other platforms.
     pub fn on_close_window(
@@ -161,6 +168,15 @@ impl ControlIcon {
         }
     }
 
+    fn accessibility_label(&self) -> &'static str {
+        match self {
+            Self::Minimize => "Minimize",
+            Self::Restore => "Restore",
+            Self::Maximize => "Maximize",
+            Self::Close { .. } => "Close Window",
+        }
+    }
+
     fn is_close(&self) -> bool {
         matches!(self, Self::Close { .. })
     }
@@ -208,6 +224,8 @@ impl RenderOnce for ControlIcon {
 
         div()
             .id(self.id())
+            .role(gpui::Role::Button)
+            .aria_label(self.accessibility_label())
             .test_support()
             .flex()
             .w(TITLE_BAR_HEIGHT)
@@ -220,7 +238,7 @@ impl RenderOnce for ControlIcon {
             .hover(|style| style.bg(hover_bg).text_color(hover_fg))
             .active(|style| style.bg(active_bg).text_color(hover_fg))
             .when(is_windows, |this| {
-                this.window_control_area(self.window_control_area())
+                this.occlude().window_control_area(self.window_control_area())
             })
             .when(is_linux, |this| {
                 this.on_mouse_down(MouseButton::Left, move |_, window, cx| {

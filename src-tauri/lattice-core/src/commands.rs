@@ -13,6 +13,7 @@ use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
+use std::sync::{OnceLock, RwLock};
 
 #[cfg(target_os = "linux")]
 mod appimage;
@@ -40,6 +41,48 @@ pub(crate) const KILL_SIGNAL: libc::c_int = 9;
 pub(crate) const TERM_SIGNAL: libc::c_int = 15;
 
 pub const MANAGED_UV_VERSION: &str = "0.12.3";
+
+static TEXLIVE_ROOT: OnceLock<RwLock<Option<PathBuf>>> = OnceLock::new();
+
+pub fn set_texlive_root(root: Option<PathBuf>) {
+    *TEXLIVE_ROOT
+        .get_or_init(|| RwLock::new(None))
+        .write()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = root;
+}
+
+pub fn valid_texlive_root(root: &Path) -> bool {
+    let contains_tools = |bin: PathBuf| {
+        fs::read_dir(bin).into_iter().flatten().flatten().any(|architecture| {
+            let bin = architecture.path();
+            ["latexmk.exe", "kpsewhich.exe", "tlmgr.bat"]
+                .iter()
+                .any(|tool| bin.join(tool).is_file())
+        })
+    };
+    contains_tools(root.join("bin"))
+        || fs::read_dir(root)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .any(|version| contains_tools(version.path().join("bin")))
+}
+
+pub fn texlive_bins(root: &Path) -> Vec<PathBuf> {
+    let mut versions = discover_texlive_bins(root);
+    if versions.is_empty() && root.join("bin").is_dir() {
+        let mut architectures: Vec<_> = fs::read_dir(root.join("bin"))
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|entry| entry.path())
+            .filter(|path| path.is_dir())
+            .collect();
+        architectures.sort_by(|left, right| right.cmp(left));
+        versions = architectures;
+    }
+    versions
+}
 
 pub fn command(name: &str) -> Command {
     with_child_path(Command::new(resolve(name)))
@@ -378,7 +421,20 @@ pub(crate) fn tex_directories() -> Vec<PathBuf> {
 /// `env` reads the environment, so a test can describe any machine.
 #[cfg(windows)]
 fn windows_tex_directories_in(env: &dyn Fn(&str) -> Option<OsString>) -> Vec<PathBuf> {
+    windows_tex_directories(env, configured_texlive_root())
+}
+
+#[cfg(windows)]
+fn configured_texlive_root() -> Option<PathBuf> {
+    TEXLIVE_ROOT.get().and_then(|root| root.read().ok()?.clone())
+}
+
+#[cfg(windows)]
+fn windows_tex_directories(
+    env: &dyn Fn(&str) -> Option<OsString>, texlive_root: Option<PathBuf>,
+) -> Vec<PathBuf> {
     let mut directories = Vec::new();
+    directories.extend(texlive_root.into_iter().flat_map(|root| texlive_bins(&root)));
     if let Some(root) = env("LOCALAPPDATA") {
         directories.extend(discover_texlive_bins(&PathBuf::from(root).join("Programs/texlive")));
     }
@@ -560,5 +616,20 @@ mod tests {
         let old_bin = old_shared.parent().unwrap();
         assert_eq!(position(per_user_bin), 0, "the per-user TeX Live comes first");
         assert!(position(&miktex) < position(old_bin), "MiKTeX stays ahead of a shared TeX Live");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn selected_texlive_root_adds_its_bin_architecture_first() {
+        use crate::test_support::TempDir;
+        let machine = TempDir::new("selected-texlive");
+        let root = machine.write("texlive/2022/bin/win32/latexmk.exe", "");
+        let root = root.ancestors().nth(3).unwrap().to_path_buf();
+        machine.write("texlive/2022/bin/win32/kpsewhich.exe", "");
+        machine.write("texlive/2025/bin/win32/latexmk.exe", "");
+        assert!(valid_texlive_root(&root));
+        let directories = windows_tex_directories(&|_| None, Some(root));
+        assert_eq!(directories[0], machine.join("texlive/2025/bin/win32"));
+        assert_eq!(directories[1], machine.join("texlive/2022/bin/win32"));
     }
 }

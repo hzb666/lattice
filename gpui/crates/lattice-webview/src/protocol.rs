@@ -8,9 +8,9 @@
 //! `asset/<project-relative path>`.
 //!
 //! The scheme's URLs differ by platform, as Wry maps them: `lattice://island/…`
-//! on macOS and Linux, `http://lattice.island/…` on Windows (WebView2 serves
-//! custom schemes as a host under `http`). [`url`] and [`origin`] give the
-//! right one; nothing else in the app spells either out.
+//! on macOS and Linux, `https://lattice.island/…` on Windows. WebView2 uses
+//! HTTPS for the secure context that island scripts need for `crypto.randomUUID`.
+//! [`url`] and [`origin`] give the right one.
 //!
 //! What a page may read is only what was granted ([`Grants`]): the HTML viewer
 //! grants exactly the images and frames its document names, as the Tauri app
@@ -33,7 +33,7 @@ const HOST: &str = "island";
 /// The origin pages served by this protocol have.
 pub fn origin() -> String {
     if cfg!(target_os = "windows") {
-        format!("http://{SCHEME}.{HOST}")
+        format!("https://{SCHEME}.{HOST}")
     } else {
         format!("{SCHEME}://{HOST}")
     }
@@ -307,11 +307,17 @@ mod tests {
             Some(Route::Bundle("html-preview/index.html".into()))
         );
         assert_eq!(
-            route("http://lattice.island/asset/figures/a%20b.png?v=3#x"),
+            route("https://lattice.island/asset/figures/a%20b.png?v=3#x"),
             Some(Route::Asset("figures/a b.png".into()))
         );
         assert_eq!(route("https://example.com/asset/x.png"), None);
         assert_eq!(route("lattice://island/other/x"), None);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_islands_use_a_secure_origin() {
+        assert_eq!("https://lattice.island", origin());
     }
 
     #[test]

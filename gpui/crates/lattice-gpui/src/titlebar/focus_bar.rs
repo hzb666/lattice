@@ -187,17 +187,20 @@ pub(super) fn focus_bar(
         .items_center()
         .justify_end()
         .h_full()
-        .px(px(16.))
+        .pl(px(16.))
+        .pr(px(if cfg!(target_os = "windows") { 0. } else { 16. }))
         .child(controls(
             div()
                 .relative()
                 .flex()
                 .items_center()
                 .gap(px(8.))
+                .pr(px(if cfg!(target_os = "windows") { 14. } else { 0. }))
                 .children(views)
                 .child(pdf_toggle)
                 .child(exit),
         ))
+        .children(super::windows_controls())
         .with_animation(
             "focus-bar-in",
             Animation::new(Motion::Fast.duration()),

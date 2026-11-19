@@ -72,6 +72,8 @@ gpui-webview = { version = "=0.9.1", features = ["gpui-fast"] }
 anyhow = "1"
 dirs = "6"
 codebook-tree-sitter-latex = "0.6.1"
+chemex-cdxml = { path = "../../chemex/crates/chemex-cdxml" }
+chemex-chemdraw = { path = "../../chemex/crates/chemex-chemdraw" }
 # Markdown source highlighting: the block and inline grammars at the revision
 # Zed pins (its fork of tree-sitter-grammars/tree-sitter-markdown, MIT, with a
 # serialize() overflow fix).

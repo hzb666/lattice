@@ -100,6 +100,8 @@ impl Shell {
             .update(cx, |history, cx| history.set_project(project.clone(), cx));
         self.agent_project(Some(root.clone()), cx);
         self.tools_project_opened(&project, &root, window, cx);
+        let files = project.read(cx).files().to_vec();
+        self.chemistry_project_opened(&root, &files, cx);
         let terminal_moved = self.terminal_follows(root.clone(), cx);
         self._project_git = Some(cx.subscribe(&project, |this, _, event, cx| match event {
             crate::project::ProjectEvent::GitChanged => this.notice_conflicts(cx),
@@ -110,6 +112,12 @@ impl Shell {
                 this.agent_files_changed(paths.as_deref(), cx);
                 this.overleaf
                     .update(cx, |bridge, cx| bridge.files_changed(paths.as_deref(), cx));
+            }
+            crate::project::ProjectEvent::TreeChanged => {
+                if let (Some(project), Some(root)) = (&this.project, this.root(cx)) {
+                    let files = project.read(cx).files().to_vec();
+                    this.chemistry_project_opened(&root, &files, cx);
+                }
             }
             _ => {}
         }));

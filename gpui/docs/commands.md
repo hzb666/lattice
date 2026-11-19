@@ -38,9 +38,11 @@ View ▸ Enter Full Screen reads Exit Full Screen while the window in front is i
 A window's minimum is its layout's, never below 640×680 and grown by the interface size, as the Tauri app's is; on macOS the app goes on once its last window closes, until ⌘Q, and the Dock icon opens a window again, reopening the project used last.
 A launch's reopen that takes longer than a second shows the welcome screen while it goes on.
 
+On Windows the project titlebar, focus bar and welcome screen keep Minimize, Maximize/Restore and Close at their right edge. Their hitboxes use GPUI's native Windows control areas and take precedence over the surrounding drag area. Close runs the window's existing save-before-close handler.
+
 ## In the e2e scenario
 
-`scenario/e2e/shell_lifecycle.rs`: the window's minimum following its layout's, and the menu bar's menus and their items.
+`scenario/e2e/shell_lifecycle.rs`: the window's minimum following its layout's, the menu bar's menus and their items, and Windows control hit-testing and minimize/maximize/restore in the project, focus and welcome bars. `scenario/e2e/saves.rs` clicks Windows' Close hitbox with unsaved edits and checks that the save lands before the window closes.
 `scenario/e2e/palette.rs`: the palette's leading groups, a command run from it leading the next opening, What's new's detail, a Settings row found and opened, a paper found by its year or a run inside its title but never one only cited, the Find in project fallback, and the keyboard back in the document afterwards.
 `scenario/e2e/palette_rows.rs`: a Markdown file's view rows and one switching it, Dark or Light PDF pages flipping the pages, the PDF window and Project panel rows, and no theme already in use.
 `scenario/e2e/project_tab_drag.rs` (macOS): a click on the active project tab opening its menu; a press moved 3px staying a click and 9px lifting the tab, the line at the end and the order changing only on release with no switch; Escape putting a lifted tab back; a tab let go over no window getting a window of its own, and its lone project let go over no window staying there; and that project let go over this window's strip moving here in front, before the tab under it, with its editor's caret, its window closing.
