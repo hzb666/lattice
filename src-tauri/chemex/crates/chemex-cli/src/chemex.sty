@@ -1,0 +1,175 @@
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{chemex}[2026/11/19 ChemDraw compound references]
+\RequirePackage{graphicx}
+\makeatletter
+
+\newif\ifchemex@discovery
+\newif\ifchemex@numbering
+\newif\ifchemex@prepared
+\newcommand{\ChemexDiscoveryMode}{\chemex@discoverytrue}
+\newcommand{\ChemexNumberingMode}{\chemex@numberingtrue}
+\newcommand{\ChemexFinalMode}{\chemex@discoveryfalse\chemex@numberingfalse}
+\newcommand{\ChemexPreparedMode}{\chemex@preparedtrue}
+\InputIfFileExists{chemex-mode.tex}{}{}
+
+\graphicspath{{./}{\@currdir}}%
+\newcounter{chemex@drawing}
+\newbox\chemex@fieldbox
+\ifchemex@prepared\else
+\newwrite\chemex@drawings
+\immediate\openout\chemex@drawings=chemex-drawings.dat
+\AtEndDocument{\immediate\closeout\chemex@drawings}
+\fi
+
+\newcommand{\chemex@register}[4]{%
+  \expandafter\def\csname chemex@counter@#1\endcsname{#2}%
+  \expandafter\def\csname chemex@fields@#1\endcsname{#3}%
+  \expandafter\def\csname chemex@asset@#1\endcsname{#4}%
+}
+
+\newcommand{\chemex@claim}[2]{%
+  \@ifundefined{c@#1}{%
+    \PackageError{chemex}{Unknown LaTeX counter `#1'}{Define it with \\newcounter before using \\chemex.}%
+  }{}%
+  \ifcsname chemex@labelcounter@#2\endcsname
+    \edef\chemex@labelcounter{\csname chemex@labelcounter@#2\endcsname}%
+    \edef\chemex@requestedcounter{#1}%
+    \ifx\chemex@labelcounter\chemex@requestedcounter\else
+      \PackageError{chemex}{Compound key `#2' uses multiple LaTeX counters}{Use a new key when switching counters.}%
+    \fi
+  \else
+    \expandafter\xdef\csname chemex@labelcounter@#2\endcsname{#1}%
+  \fi
+}
+\newcommand{\chemex@assignfield}[2]{%
+  \chemex@claim{#1}{#2}%
+  \ifcsname chemex@label@#2\endcsname
+    \chemex@checknumber{#2}%
+  \else
+    \refstepcounter{#1}%
+    \expandafter\xdef\csname chemex@label@#2\endcsname{\csname the#1\endcsname}%
+    \ifchemex@numbering
+      \immediate\write\chemex@numbers{\string\chemex@number{#2}{\csname chemex@label@#2\endcsname}}%
+    \fi
+    \chemex@checknumber{#2}%
+  \fi
+}
+\newcommand{\chemex@assign}[2]{%
+  \chemex@claim{#1}{#2}%
+  \ifcsname chemex@label@#2\endcsname\else
+    \refstepcounter{#1}%
+    \expandafter\xdef\csname chemex@label@#2\endcsname{\csname the#1\endcsname}%
+    \ifchemex@numbering
+      \immediate\write\chemex@numbers{\string\chemex@number{#2}{\csname chemex@label@#2\endcsname}}%
+    \else
+      \chemex@checknumber{#2}%
+    \fi
+  \fi
+}
+
+\newcommand{\chemex@expected}[2]{\expandafter\gdef\csname chemex@expected@#1\endcsname{#2}}
+\ifchemex@discovery\else
+  \InputIfFileExists{chemex-register.tex}{}{}
+\fi
+\newcommand{\chemex@checknumber}[1]{%
+  \ifcsname chemex@expected@#1\endcsname
+    \edef\chemex@actual{\csname chemex@label@#1\endcsname}%
+    \edef\chemex@expectedlabel{\csname chemex@expected@#1\endcsname}%
+    \edef\chemex@actual{\expandafter\detokenize\expandafter{\chemex@actual}}%
+    \edef\chemex@expectedlabel{\expandafter\detokenize\expandafter{\chemex@expectedlabel}}%
+    \ifx\chemex@actual\chemex@expectedlabel\else
+      \PackageError{chemex}{Compound number for `#1' changed between build passes}{Run the Chemex build again.}%
+    \fi
+  \fi
+}
+
+\def\chemex@default{compound}
+\DeclareRobustCommand{\chemex}{\@ifnextchar[{\chemex@reference}{\chemex@reference[compound]}}
+\def\chemex@reference[#1]#2{%
+  \ifchemex@discovery\else
+    \edef\chemex@requestedcounter{#1}%
+    \ifchemex@numbering
+      \ifx\chemex@requestedcounter\chemex@default
+        \chemex@claim{#1}{#2}%
+        \ifcsname chemex@expected@#2\endcsname
+          \csname chemex@expected@#2\endcsname%
+        \else
+          \ifcsname chemex@label@#2\endcsname
+            \csname chemex@label@#2\endcsname%
+          \else
+            ??%
+          \fi
+        \fi
+      \else
+        \chemex@assign{#1}{#2}%
+        \csname chemex@label@#2\endcsname%
+      \fi
+    \else
+      \ifx\chemex@requestedcounter\chemex@default
+        \ifcsname chemex@expected@#2\endcsname
+          \chemex@claim{#1}{#2}%
+          \csname chemex@expected@#2\endcsname%
+        \else
+          \chemex@assign{#1}{#2}%
+          \csname chemex@label@#2\endcsname%
+        \fi
+      \else
+        \chemex@assign{#1}{#2}%
+        \csname chemex@label@#2\endcsname%
+      \fi
+    \fi
+  \fi
+}
+
+\ifchemex@numbering
+  \newwrite\chemex@numbers
+  \immediate\openout\chemex@numbers=chemex-numbers.dat
+  \AtEndDocument{\immediate\closeout\chemex@numbers}
+\fi
+
+\newcommand{\chemexdrawing}{\@ifnextchar[{\chemex@legacydrawing}{\chemex@legacydrawing[compound]}}
+\def\chemex@legacydrawing[#1]#2{\chemex@drawing{#1}{#2}\includegraphics}
+\def\chemex@drawing#1#2#3{%
+  \stepcounter{chemex@drawing}%
+  \ifchemex@prepared\else
+    \immediate\write\chemex@drawings{\string\chemex@drawrequest{#1}{\unexpanded{#2}}}%
+  \fi
+  \ifchemex@discovery\else
+    \edef\chemex@index{\arabic{chemex@drawing}}%
+    \ifchemex@numbering
+      \ifcsname chemex@fields@\chemex@index\endcsname
+        \setbox\chemex@fieldbox=\hbox{\csname chemex@fields@\chemex@index\endcsname}%
+      \else
+        \PackageError{chemex}{Drawing registration is missing}{Run the Chemex build from the manuscript source.}%
+      \fi
+    \else
+      \ifcsname chemex@counter@\chemex@index\endcsname
+        \edef\chemex@requested{#1}%
+        \edef\chemex@registered{\csname chemex@counter@\chemex@index\endcsname}%
+        \ifx\chemex@requested\chemex@registered\else
+          \PackageError{chemex}{Drawing counter changed between build passes}{Keep CDXML references and their counters consistent.}%
+        \fi
+        \ifcsname chemex@fields@\chemex@index\endcsname
+          \setbox\chemex@fieldbox=\hbox{\csname chemex@fields@\chemex@index\endcsname}%
+        \else
+          \PackageError{chemex}{Drawing registration is missing}{Run the Chemex build from the manuscript source.}%
+        \fi
+        #3{\csname chemex@asset@\chemex@index\endcsname}%
+      \else
+        \PackageError{chemex}{Drawing registration is missing}{Run the Chemex build from the manuscript source.}%
+      \fi
+    \fi
+  \fi
+}
+
+\let\chemex@originalgraphics\Ginclude@graphics
+\ExplSyntaxOn
+\cs_set_protected:Npn \Ginclude@graphics #1
+  {
+    \exp_args:Nne \regex_match:nnTF { \.[cC][dD][xX][mM][lL] "? \Z } { \tl_to_str:n {#1} }
+      { \chemex@drawing{compound}{#1}\chemex@originalgraphics }
+      { \chemex@originalgraphics{#1} }
+  }
+\ExplSyntaxOff
+
+\makeatother

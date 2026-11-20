@@ -23,9 +23,9 @@ test-support = []
 cc = "1"
 
 [dependencies]
-chemex-cdxml = { path = "../../../chemex/crates/chemex-cdxml" }
-chemex-chemdraw = { path = "../../../chemex/crates/chemex-chemdraw" }
-chemex-cli = { path = "../../../chemex/crates/chemex-cli" }
+chemex-cdxml = { path = "../chemex/crates/chemex-cdxml" }
+chemex-chemdraw = { path = "../chemex/crates/chemex-chemdraw" }
+chemex-cli = { path = "../chemex/crates/chemex-cli" }
 tempfile = "3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

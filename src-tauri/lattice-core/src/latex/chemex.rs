@@ -118,7 +118,7 @@ impl Preparation<'_> {
             return Err("The LaTeX project contains no CDXML references".into());
         }
         let mut registrations = drawings.registrations();
-        let values = self.number(&namespace, &drawings, &registrations)?;
+        let (values, numbers) = self.number(&namespace, &drawings, &registrations)?;
         let mut assets = Vec::with_capacity(drawings.requests.len());
         for (index, (request, drawing)) in drawings.iter().enumerate() {
             let rendered = drawing.render_fields(&values).map_err(err)?;
@@ -141,7 +141,7 @@ impl Preparation<'_> {
             registrations[index].asset = asset;
         }
         let folder = self.pass_folder(&namespace, "final", b"\\ChemexPreparedMode\n")?;
-        let registration = tex::registrations(&registrations);
+        let registration = tex::prepared_registrations(&registrations, &numbers).map_err(err)?;
         chemistry::write_if_changed(&folder.join(REGISTER), registration.as_bytes())?;
         let inputs = Inputs { folder, assets: assets_folder(self.root)? };
         if self.fingerprint(&manifest)? != key {
@@ -216,11 +216,11 @@ impl Preparation<'_> {
 
     fn number(
         &self, namespace: &str, drawings: &Drawings, registrations: &[DrawingRegistration],
-    ) -> Result<FieldValues, String> {
+    ) -> Result<(FieldValues, BTreeMap<String, String>), String> {
         let fields: Vec<_> =
             registrations.iter().flat_map(|drawing| drawing.fields.iter().cloned()).collect();
         if fields.is_empty() {
-            return Ok(FieldValues::new());
+            return Ok((FieldValues::new(), BTreeMap::new()));
         }
         let folder = self.pass_folder(namespace, "number", b"\\ChemexNumberingMode\n")?;
         write_registrations(&folder, registrations)?;
@@ -228,7 +228,8 @@ impl Preparation<'_> {
         let numbered = tex::read_drawings(&folder.join(REQUESTS)).map_err(err)?;
         tex::validate_drawings(&drawings.requests, &numbered, "numbering").map_err(err)?;
         let numbers = tex::read_numbers(&folder.join(NUMBERS)).map_err(err)?;
-        tex::field_values(&fields, &numbers).map_err(err)
+        let values = tex::field_values(&fields, &numbers).map_err(err)?;
+        Ok((values, numbers))
     }
 
     fn pass(&self, name: &str, folder: &Path) -> Result<(), String> {

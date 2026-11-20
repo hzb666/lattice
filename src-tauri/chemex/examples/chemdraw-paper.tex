@@ -1,0 +1,25 @@
+\documentclass{article}
+\usepackage[T1]{fontenc}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage[margin=25mm]{geometry}
+\usepackage{chemex}
+\newcounter{compound}
+\renewcommand{\thecompound}{\arabic{compound}}
+\newfloat{scheme}{htbp}{los}
+\floatname{scheme}{Scheme}
+\begin{document}
+\section*{ChemDraw and LaTeX integration}
+Compound \chemex{compound-001} was converted to compound
+\chemex{compound-002}, as shown in Scheme~\ref{sch:example}.
+
+\begin{scheme}
+  \centering
+  \includegraphics[width=0.85\linewidth]{../test.cdxml}
+  \caption{Complete native ChemDraw drawing, including compound
+  \chemex{compound-001} and compound \chemex{compound-002}.}
+  \label{sch:example}
+\end{scheme}
+
+Both the drawing labels and the references above share the LaTeX compound counter.
+\end{document}

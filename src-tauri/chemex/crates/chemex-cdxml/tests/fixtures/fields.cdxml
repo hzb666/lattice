@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE CDXML SYSTEM "http://www.camsoft.com/xml/cdxml.dtd">
+<!-- Synthetic regression fixture; not a ChemDraw export. -->
+<CDXML CreationProgram="Chemex test fixture" BondLength="14.4" CaptionFont="3">
+  <fonttable><font id="3" charset="utf-8" name="Arial"/></fonttable>
+  <colortable><color r="0" g="0" b="0"/><color r="0.8" g="0" b="0"/></colortable>
+  <page id="1" BoundingBox="0 0 640 480">
+    <group id="2" BoundingBox="10 10 300 200">
+      <fragment id="3">
+        <objecttag id="30" Name="com.chemex.compound-id" TagType="String" Value="compound-001"/>
+        <n id="4" p="20 30" Element="6" Isotope="13"/>
+        <n id="5" p="40 30" Element="8" Charge="-1">
+          <t id="6" p="42 30"><s font="3" size="10" face="96">O</s></t>
+        </n>
+        <b id="7" B="4" E="5" Order="1" Display="WedgeBegin"/>
+      </fragment>
+      <t id="8" p="24 58" BoundingBox="24 48 180 60" CaptionJustification="Center" Justification="Center">
+        <s font="3" size="10" face="1">[[@compound-001]]</s>
+      </t>
+      <t id="9" p="150 58" RotationAngle="0">
+        <s font="3" size="10" color="3">产物 &#38; </s><s font="3" size="10" face="1">[[@compound-</s><s font="3" size="10" face="1">002]]</s>
+      </t>
+      <graphic id="10" GraphicType="Line" ArrowType="FullHead" BoundingBox="60 30 130 30"/>
+      <t id="11" p="70 20"><s font="3" size="10">THF, 0 °C, 85%</s></t>
+      <curve id="12" CurvePoints="0 0 10 20 30 40" CurveType="Bezier"/>
+      <vendorobject id="13" custom="[[@do-not-touch]]"><payload>unknown drawing payload</payload></vendorobject>
+    </group>
+  </page>
+  <page id="20" BoundingBox="0 0 640 480">
+    <t id="21" p="24 58" BoundingBox="-31 48 79 60" CaptionJustification="Center" Justification="Center"><s font="3" size="10">[[@compound-001]]</s></t>
+  </page>
+</CDXML>
