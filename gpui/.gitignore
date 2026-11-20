@@ -5,3 +5,4 @@
 /patches/*/Cargo.lock
 # The island pages, built by script/build-islands from ../src.
 /islands/dist
+/fixtures
