@@ -41,6 +41,29 @@ pub(super) fn check_svg_links(root: &Path, folder: &str, svg: &[u8]) -> Result<(
     check_document(root, folder, svg, 0, &mut seen)
 }
 
+pub(crate) fn check_embedded_svg(svg: &[u8]) -> Result<(), String> {
+    let xml = plain_xml(svg)?;
+    if !xml.contains("<svg") {
+        return Err(NOT_PLAIN.to_string());
+    }
+    for link in links_of(xml)? {
+        let target = link.trim();
+        if !target.is_empty()
+            && !target.starts_with('#')
+            && !embedded_image(&target.to_ascii_lowercase())
+        {
+            return Err(OUTSIDE.to_string());
+        }
+    }
+    Ok(())
+}
+
+fn embedded_image(link: &str) -> bool {
+    link.strip_prefix("data:image/")
+        .and_then(|rest| rest.split_once([';', ',']))
+        .is_some_and(|(kind, _)| EMBEDDED_IMAGES.contains(&kind))
+}
+
 fn check_document(
     root: &Path, folder: &str, svg: &[u8], depth: usize, seen: &mut BTreeSet<PathBuf>,
 ) -> Result<(), String> {
@@ -229,13 +252,8 @@ fn resolve(root: &Path, folder: &str, link: &str) -> Target {
         return Target::Harmless;
     }
     let lower: String = link.to_ascii_lowercase().split_whitespace().collect();
-    if let Some(data) = lower.strip_prefix("data:") {
-        let embedded = EMBEDDED_IMAGES.iter().any(|kind| {
-            data.strip_prefix("image/")
-                .and_then(|rest| rest.strip_prefix(kind))
-                .is_some_and(|rest| rest.starts_with([';', ',']))
-        });
-        return if embedded { Target::Harmless } else { Target::Outside };
+    if lower.starts_with("data:") {
+        return if embedded_image(&lower) { Target::Harmless } else { Target::Outside };
     }
     // A scheme, a drive, an absolute or home path, or an escape the program
     // would decode into one of those.

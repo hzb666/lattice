@@ -109,6 +109,7 @@ impl Shell {
             // a sync's own writes apart).
             crate::project::ProjectEvent::FilesChanged(paths) => {
                 let paths = paths.clone();
+                this.chemistry_files_changed(paths.as_deref(), cx);
                 this.agent_files_changed(paths.as_deref(), cx);
                 this.overleaf
                     .update(cx, |bridge, cx| bridge.files_changed(paths.as_deref(), cx));
@@ -117,6 +118,7 @@ impl Shell {
                 if let (Some(project), Some(root)) = (&this.project, this.root(cx)) {
                     let files = project.read(cx).files().to_vec();
                     this.chemistry_project_opened(&root, &files, cx);
+                    this.sync_chemistry_preview(cx);
                 }
             }
             _ => {}
@@ -148,6 +150,7 @@ impl Shell {
         self.pdf
             .update(cx, |panel, cx| panel.show_project(root, pdf, window, cx));
         self.watch_builds(&project, window, cx);
+        self.sync_chemistry_preview(cx);
         cx.notify();
     }
 }

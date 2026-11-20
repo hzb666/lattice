@@ -135,6 +135,7 @@ impl Shell {
         let keyboard_hidden = self.keyboard_in_hidden_view(&doc, window, cx);
         self.last_document = doc;
         self.sync_views(window, cx);
+        self.sync_chemistry_preview(cx);
         self.forget_closed_pdfs(cx);
         self.forget_closed_assets();
         self.refresh_dirty(cx);

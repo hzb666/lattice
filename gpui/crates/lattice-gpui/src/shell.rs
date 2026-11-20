@@ -111,7 +111,7 @@ use trellis::{TrellisWorkspace, model::LayoutDocument};
 
 pub use annotations_flow::{CommentsView, ShowAnnotations};
 use build::BuildRequest;
-pub use chemistry::{ToggleChemDraw, ToggleChemistry};
+pub(crate) use chemistry::{ChemistryPanel, ToggleChemistry};
 pub use commands::{
     Build, CleanBuildFiles, CleanRebuild, ForwardSync, InstallLatexTools, NextProblem,
     OpenTexDoctor, PreviousProblem, Save, StopBuild, ToggleVimMode,

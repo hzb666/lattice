@@ -3,44 +3,16 @@ msgid "Annotate selection"
 msgstr "评论所选内容"
 
 #: lattice-gpui/src/shell/chemistry.rs
-msgid "ChemDraw"
-msgstr "ChemDraw"
-
-#: lattice-gpui/src/shell/chemistry.rs
 msgid "Chemistry"
 msgstr "化学"
-
-#: lattice-gpui/src/shell/chemistry.rs
-msgid "Could not parse this ChemDraw file"
-msgstr "无法解析此 ChemDraw 文件"
-
-#: lattice-gpui/src/shell/chemistry.rs
-msgid "No .cdxml source is available in this project."
-msgstr "此项目中没有可用的 .cdxml 源文件。"
-
-#: lattice-gpui/src/shell/chemistry.rs
-msgid "Open source with the system's ChemDraw association"
-msgstr "使用系统关联的 ChemDraw 打开源文件"
 
 #: lattice-gpui/src/shell/chemistry.rs
 msgid "Show Chemistry panel"
 msgstr "显示化学面板"
 
 #: lattice-gpui/src/shell/chemistry.rs
-msgid "Show ChemDraw panel"
-msgstr "显示 ChemDraw 面板"
-
-#: lattice-gpui/src/shell/chemistry.rs
-msgid "ChemDraw preview export is supported on Windows"
-msgstr "ChemDraw 预览导出目前仅支持 Windows"
-
-#: lattice-gpui/src/shell/chemistry.rs
 msgid "Exporting with ChemDraw…"
 msgstr "正在使用 ChemDraw 导出…"
-
-#: lattice-gpui/src/shell/chemistry.rs
-msgid "No numbered ChemDraw group is available"
-msgstr "没有可预览的编号结构组"
 
 #: lattice-gpui/src/shell/chemistry.rs
 msgid "No CDXML files in this project"
@@ -49,14 +21,6 @@ msgstr "此项目中没有 CDXML 文件"
 #: lattice-gpui/src/shell/chemistry.rs
 msgid "Choose a CDXML file to preview"
 msgstr "选择一个 CDXML 文件进行预览"
-
-#: lattice-gpui/src/shell/chemistry.rs
-msgid "Choose a CDXML file to inspect compound numbers"
-msgstr "选择一个 CDXML 文件查看化合物编号"
-
-#: lattice-gpui/src/shell/chemistry.rs
-msgid "The selected compound group is unavailable"
-msgstr "所选化合物分组不可用"
 
 #: lattice-gpui/src/shell/commands.rs
 msgid "Bibliography layout"

@@ -48,7 +48,7 @@ pub(crate) fn in_package_cache_folder(relative: &str) -> bool {
 }
 
 /// Lowercase hex SHA-256 of `bytes`.
-pub(crate) fn sha256_hex(bytes: impl AsRef<[u8]>) -> String {
+pub fn sha256_hex(bytes: impl AsRef<[u8]>) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
 

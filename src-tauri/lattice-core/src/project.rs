@@ -92,6 +92,7 @@ pub use editable_figure::{
     ImportedFigure,
 };
 pub use entries::{create_entry, create_open_slide_deck, delete_entry, move_entry, rename_entry};
+pub(crate) use figure_converters::check_embedded_svg;
 pub use figure_converters::{
     clipboard_file_path, import_drawing_file, import_drawing_path, install_figure_refresh,
     make_editable_figure, prepare_figure_refresh, FigureRefresh, RefreshPlan,

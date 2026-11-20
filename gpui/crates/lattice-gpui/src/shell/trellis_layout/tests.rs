@@ -274,6 +274,51 @@ fn writing_with_nothing_open_shows_the_project_panel_beside_the_pdf() {
 }
 
 #[test]
+fn migrates_the_saved_chemdraw_view_into_chemistry() {
+    let mut doc = default_layout();
+    doc.views.insert("chemdraw".into(), record("chemdraw"));
+    let project = find_panel(&mut doc, "panel-project");
+    project.views.push("chemdraw".into());
+    project.selected = "chemdraw".into();
+
+    let migrated = tidy(&doc);
+
+    assert_eq!(
+        docked(&migrated, "panel-project").unwrap(),
+        PanelNode {
+            id: "panel-project".into(),
+            views: strings(&["project", "agent", "chemistry"]),
+            selected: "chemistry".into(),
+        }
+    );
+    assert!(!migrated.views.contains_key("chemdraw"));
+    assert_eq!(migrated.views["chemistry"].kind, "chemistry");
+}
+
+#[test]
+fn merges_a_legacy_chemdraw_tab_into_the_existing_chemistry_panel() {
+    let mut doc = default_layout();
+    doc.views.insert("chemistry".into(), record("chemistry"));
+    doc.views.insert("chemdraw".into(), record("chemdraw"));
+    let project = find_panel(&mut doc, "panel-project");
+    project.views.extend(strings(&["chemistry", "chemdraw"]));
+    project.selected = "chemdraw".into();
+
+    let migrated = tidy(&doc);
+
+    assert_eq!(
+        docked(&migrated, "panel-project").unwrap(),
+        PanelNode {
+            id: "panel-project".into(),
+            views: strings(&["project", "agent", "chemistry"]),
+            selected: "chemistry".into(),
+        }
+    );
+    assert_eq!(migrated.views["chemistry"].kind, "chemistry");
+    assert!(!migrated.views.contains_key("chemdraw"));
+}
+
+#[test]
 fn returns_to_the_writers_layout_with_surviving_documents_new_ones_joined_and_closed_ones_gone() {
     let open = open_tabs();
     let previous = workspace_with(KEYS);

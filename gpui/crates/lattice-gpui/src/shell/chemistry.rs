@@ -1,7 +1,8 @@
-//! ChemDraw file browsing and numbered chemistry previews.
+//! CDXML browsing and numbered chemistry previews.
 
-use std::{any::Any, fs, io::Read, path::Path, path::PathBuf, sync::Arc, time::Duration};
+use std::{any::Any, path::Path, path::PathBuf, sync::Arc};
 
+use chemex_cdxml::DrawingDocument;
 use gpui::{
     App, AppContext as _, Context, Entity, FocusHandle, Focusable, ImageSource,
     InteractiveElement as _, IntoElement, ParentElement as _, Render, RenderImage, ScrollHandle,
@@ -13,7 +14,7 @@ use gpui_kit::component::{
     dock::{BasePanel, Panel, PanelEvent, panel_handle},
     v_flex,
 };
-use lattice_core::models::FileNode;
+use lattice_core::{chemistry, models::FileNode, project};
 use lattice_i18n::t;
 use lattice_ui::{ActiveLattice as _, components::Button};
 
@@ -23,25 +24,25 @@ use super::{
     parts::{Part, View},
 };
 
-actions!(
-    lattice,
-    [OpenChemistry, OpenChemDraw, ToggleChemistry, ToggleChemDraw]
-);
+mod preview_cache;
+mod warmup;
+use preview_cache::PreviewCache;
+use warmup::Warmup;
 
-#[derive(Default)]
-struct Chemistry {
-    chemistry: Option<Entity<ChemistryPanel>>,
-    chemdraw: Option<Entity<ChemDrawPanel>>,
-}
+actions!(lattice, [OpenChemistry, ToggleChemistry]);
 
-struct ChemistryPanel {
+pub(crate) struct ChemistryPanel {
     focus_handle: FocusHandle,
     root: Option<PathBuf>,
+    paper: Option<String>,
     files: Vec<String>,
     selected_file: Option<String>,
+    document: Option<Arc<DrawingDocument>>,
     groups: Vec<String>,
+    warmup: Warmup,
     compound_id: Option<String>,
     preview: Option<Arc<RenderImage>>,
+    cache: Arc<PreviewCache>,
     error: Option<String>,
     loading: bool,
     generation: u64,
@@ -50,171 +51,35 @@ struct ChemistryPanel {
     _load: Option<Task<()>>,
 }
 
-struct ChemDrawPanel {
-    focus_handle: FocusHandle,
-    root: Option<PathBuf>,
-    files: Vec<String>,
-    selected_file: Option<String>,
-    preview: Option<Arc<RenderImage>>,
-    error: Option<String>,
-    loading: bool,
-    generation: u64,
-    files_scroll: UniformListScrollHandle,
-    preview_scroll: ScrollHandle,
-    _load: Option<Task<()>>,
-}
+impl gpui::EventEmitter<PanelEvent> for ChemistryPanel {}
 
-macro_rules! impl_panel {
-    ($type:ty, $name:literal, $title:literal) => {
-        impl gpui::EventEmitter<PanelEvent> for $type {}
-
-        impl Focusable for $type {
-            fn focus_handle(&self, _: &App) -> FocusHandle {
-                self.focus_handle.clone()
-            }
-        }
-
-        impl BasePanel for $type {
-            fn panel_name(&self) -> &'static str {
-                $name
-            }
-
-            fn closable(&self, _: &App) -> bool {
-                true
-            }
-        }
-
-        impl Panel for $type {
-            fn tab_name(&self, _: &App) -> Option<SharedString> {
-                Some(t!($title).into())
-            }
-
-            fn title(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-                t!($title)
-            }
-
-            fn inner_padding(&self, _: &App) -> bool {
-                false
-            }
-        }
-    };
-}
-
-impl_panel!(ChemistryPanel, "ChemistryPanel", "Chemistry");
-impl_panel!(ChemDrawPanel, "ChemDrawPanel", "ChemDraw");
-
-impl Render for ChemDrawPanel {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let palette = cx.palette().clone();
-        let files = render_file_list(
-            "chemdraw-files",
-            &self.files,
-            self.selected_file.as_deref(),
-            &self.files_scroll,
-            cx,
-            |this, path, cx| this.select_file(path, cx),
-        );
-        let stage = preview_stage(
-            "chemdraw-preview-stage",
-            self.preview.as_ref(),
-            self.error.as_deref(),
-            self.loading,
-            if self.files.is_empty() {
-                t!("No CDXML files in this project")
-            } else {
-                t!("Choose a CDXML file to preview")
-            },
-            &self.preview_scroll,
-            palette.clone(),
-        );
-        workspace(
-            &self.focus_handle,
-            palette.clone(),
-            "chemdraw-file-browser",
-            files,
-            stage,
-        )
+impl Focusable for ChemistryPanel {
+    fn focus_handle(&self, _: &App) -> FocusHandle {
+        self.focus_handle.clone()
     }
 }
 
-impl ChemDrawPanel {
-    fn new(cx: &mut Context<Self>) -> Self {
-        Self {
-            focus_handle: cx.focus_handle(),
-            root: None,
-            files: Vec::new(),
-            selected_file: None,
-            preview: None,
-            error: None,
-            loading: false,
-            generation: 0,
-            files_scroll: UniformListScrollHandle::new(),
-            preview_scroll: ScrollHandle::new(),
-            _load: None,
-        }
+impl BasePanel for ChemistryPanel {
+    fn panel_name(&self) -> &'static str {
+        "ChemistryPanel"
     }
 
-    fn set_project(&mut self, root: &Path, files: &[String], cx: &mut Context<Self>) {
-        if self.root.as_deref() == Some(root) && self.files == files {
-            return;
-        }
-        self.root = Some(root.to_path_buf());
-        self.files.clear();
-        self.files.extend_from_slice(files);
-        self.selected_file = None;
-        self.preview = None;
-        self.error = None;
-        self.cancel_load();
-        cx.notify();
+    fn closable(&self, _: &App) -> bool {
+        true
+    }
+}
+
+impl Panel for ChemistryPanel {
+    fn tab_name(&self, _: &App) -> Option<SharedString> {
+        Some(t!("Chemistry").into())
     }
 
-    fn select_file(&mut self, relative: &str, cx: &mut Context<Self>) {
-        if !self.files.iter().any(|file| file == relative)
-            || self.selected_file.as_deref() == Some(relative)
-            || self.loading
-        {
-            return;
-        }
-        let Some(root) = self.root.clone() else {
-            return;
-        };
-        self.selected_file = Some(relative.to_owned());
-        self.preview = None;
-        self.error = None;
-        self.load_file(root.join(relative), relative.to_owned(), cx);
+    fn title(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        t!("Chemistry")
     }
 
-    fn load_file(&mut self, path: PathBuf, relative: String, cx: &mut Context<Self>) {
-        self.cancel_load();
-        let generation = self.generation;
-        let renderer = cx.svg_renderer();
-        self.loading = true;
-        self._load = Some(cx.spawn(async move |this, cx| {
-            let result = cx
-                .background_spawn(async move { render_file(&path, &renderer) })
-                .await;
-            this.update(cx, |this, cx| {
-                if this.generation != generation
-                    || this.selected_file.as_deref() != Some(relative.as_str())
-                {
-                    return;
-                }
-                this.loading = false;
-                match result {
-                    Ok(preview) => this.preview = Some(preview),
-                    Err(error) => this.error = Some(error),
-                }
-                cx.notify();
-            })
-            .ok();
-        }));
-        cx.notify();
-    }
-
-    fn cancel_load(&mut self) {
-        self._load = None;
-        self.loading = false;
-        self.generation = self.generation.wrapping_add(1);
+    fn inner_padding(&self, _: &App) -> bool {
+        false
     }
 }
 
@@ -229,48 +94,54 @@ impl Render for ChemistryPanel {
             cx,
             |this, path, cx| this.select_file(path, cx),
         );
-        let compounds = self.groups.iter().enumerate().map(|(index, compound_id)| {
+        let all = Button::new("chemistry-compound-all", t!("All"))
+            .compact()
+            .selected(self.compound_id.is_none())
+            .on_click(cx.listener(|this, _, _, cx| this.select_compound(None, cx)));
+        let compounds = self.groups.iter().map(|compound_id| {
             let id = compound_id.clone();
-            Button::new(("chemistry-compound", index), id.clone())
+            Button::new(format!("chemistry-compound:{id}"), id.clone())
                 .compact()
                 .selected(self.compound_id.as_deref() == Some(id.as_str()))
-                .on_click(cx.listener(move |this, _, _, cx| this.select_compound(&id, cx)))
+                .on_click(cx.listener(move |this, _, _, cx| this.select_compound(Some(&id), cx)))
         });
-        let mut stage = preview_stage(
+        let stage = preview_stage(
             "chemistry-preview-stage",
             self.preview.as_ref(),
             self.error.as_deref(),
             self.loading,
             if self.files.is_empty() {
                 t!("No CDXML files in this project")
-            } else if self.selected_file.is_some() {
-                t!("No numbered ChemDraw group is available")
             } else {
-                t!("Choose a CDXML file to inspect compound numbers")
+                t!("Choose a CDXML file to preview")
             },
             &self.preview_scroll,
             palette.clone(),
         );
-        if !self.groups.is_empty() {
-            stage = stage.child(
-                div()
-                    .id("chemistry-compounds")
-                    .absolute()
-                    .top(px(8.))
-                    .left(px(8.))
-                    .right(px(8.))
-                    .flex()
-                    .flex_wrap()
-                    .gap(px(4.))
-                    .children(compounds),
-            );
-        }
+        let preview = v_flex()
+            .flex_1()
+            .min_w_0()
+            .min_h_0()
+            .when(!self.groups.is_empty(), |preview| {
+                preview.child(
+                    div()
+                        .id("chemistry-compounds")
+                        .flex()
+                        .items_center()
+                        .gap(px(4.))
+                        .p(px(8.))
+                        .overflow_x_scroll()
+                        .child(all)
+                        .children(compounds),
+                )
+            })
+            .child(stage);
         workspace(
             &self.focus_handle,
             palette,
             "chemistry-file-browser",
             files,
-            stage,
+            preview,
         )
     }
 }
@@ -280,11 +151,15 @@ impl ChemistryPanel {
         Self {
             focus_handle: cx.focus_handle(),
             root: None,
+            paper: None,
             files: Vec::new(),
             selected_file: None,
+            document: None,
             groups: Vec::new(),
+            warmup: Warmup::default(),
             compound_id: None,
             preview: None,
+            cache: Arc::default(),
             error: None,
             loading: false,
             generation: 0,
@@ -295,149 +170,150 @@ impl ChemistryPanel {
     }
 
     fn set_project(&mut self, root: &Path, files: &[String], cx: &mut Context<Self>) {
-        if self.root.as_deref() == Some(root) && self.files == files {
-            return;
+        if self.root.as_deref() == Some(root) {
+            if self.files == files {
+                return;
+            }
+            self.files = files.to_vec();
+            if self
+                .selected_file
+                .as_ref()
+                .is_some_and(|file| self.files.contains(file))
+            {
+                cx.notify();
+                return;
+            }
+        } else {
+            self.root = Some(root.to_path_buf());
+            self.paper = None;
+            self.files = files.to_vec();
         }
-        self.root = Some(root.to_path_buf());
-        self.files.clear();
-        self.files.extend_from_slice(files);
-        self.selected_file = None;
+        self.selected_file = self.files.first().cloned();
+        self.reset_drawing();
+        cx.notify();
+    }
+
+    fn reset_drawing(&mut self) {
+        self.document = None;
         self.groups.clear();
         self.compound_id = None;
+        self.warmup.reset();
+        self.invalidate();
+    }
+
+    fn invalidate(&mut self) {
+        self.cancel_load();
         self.preview = None;
         self.error = None;
-        self.cancel_load();
-        if let Some(first) = self.files.first().cloned() {
-            self.select_file(&first, cx);
-        }
-        cx.notify();
     }
 
     fn select_file(&mut self, relative: &str, cx: &mut Context<Self>) {
-        if !self.files.iter().any(|file| file == relative)
-            || self.selected_file.as_deref() == Some(relative)
-        {
+        if !self.files.iter().any(|file| file == relative) {
             return;
         }
-        let Some(root) = self.root.clone() else {
+        if self.selected_file.as_deref() == Some(relative) {
+            if self.compound_id.is_some() || (!self.loading && self.preview.is_none()) {
+                self.select_compound(None, cx);
+            }
             return;
-        };
+        }
         self.selected_file = Some(relative.to_owned());
-        self.groups.clear();
-        self.compound_id = None;
-        self.preview = None;
-        self.error = None;
-        self.cancel_load();
-        let generation = self.generation;
-        let path = relative.to_owned();
-        let source = root.join(relative);
-        let renderer = cx.svg_renderer();
-        self.loading = true;
-        self._load = Some(cx.spawn(async move |this, cx| {
-            let result = cx
-                .background_spawn(async move {
-                    let document = read_document(&source)?;
-                    let groups = compound_groups(&document);
-                    let preview = groups
-                        .first()
-                        .map(|compound_id| {
-                            let source = document
-                                .compound_group_source(compound_id)
-                                .map_err(|error| error.to_string())?;
-                            render_cdxml(&source, &renderer)
-                        })
-                        .transpose()?;
-                    Ok::<_, String>((groups, preview))
-                })
-                .await;
-            this.update(cx, |this, cx| {
-                if this.generation != generation
-                    || this.selected_file.as_deref() != Some(path.as_str())
-                {
-                    return;
-                }
-                this.loading = false;
-                match result {
-                    Ok((groups, preview)) => {
-                        this.compound_id = groups.first().cloned();
-                        this.groups = groups;
-                        this.preview = preview;
-                    }
-                    Err(error) => this.error = Some(error),
-                }
-                cx.notify();
-            })
-            .ok();
-        }));
-        cx.notify();
+        self.reset_drawing();
+        self.load_preview(None, cx);
     }
 
-    fn select_compound(&mut self, compound_id: &str, cx: &mut Context<Self>) {
-        let Some(id) = self
-            .groups
-            .iter()
-            .find(|id| id.as_str() == compound_id)
-            .cloned()
-        else {
-            return;
-        };
-        if self.compound_id.as_deref() == Some(compound_id) || self.loading {
+    fn select_compound(&mut self, compound_id: Option<&str>, cx: &mut Context<Self>) {
+        if compound_id.is_some_and(|id| !self.groups.iter().any(|group| group == id)) {
             return;
         }
-        let generation = self.next_generation();
-        let task_id = id.clone();
-        let expected_id = id.clone();
-        let selected_file = self.selected_file.clone();
+        if self.compound_id.as_deref() == compound_id && (self.loading || self.preview.is_some()) {
+            return;
+        }
+        self.load_preview(compound_id.map(str::to_owned), cx);
+    }
+
+    fn load_preview(&mut self, compound_id: Option<String>, cx: &mut Context<Self>) {
         let Some(root) = self.root.clone() else {
             return;
         };
-        let Some(file) = selected_file.as_ref() else {
+        let Some(file) = self.selected_file.clone() else {
             return;
         };
-        let path = root.join(file);
+        let paper = self.paper.clone();
+        let cache = self.cache.clone();
+        let document = self.document.clone();
+        self.cancel_load();
+        self.warmup.pause();
+        let generation = self.generation;
         let renderer = cx.svg_renderer();
-        self.compound_id = Some(id.clone());
+        self.compound_id = compound_id.clone();
         self.preview = None;
         self.error = None;
         self.loading = true;
         self._load = Some(cx.spawn(async move |this, cx| {
             let result = cx
                 .background_spawn(async move {
-                    let document = read_document(&path)?;
-                    let source = document
-                        .compound_group_source(&task_id)
-                        .map_err(|error| error.to_string())?;
-                    render_cdxml(&source, &renderer)
+                    let (document, parsed) = match document {
+                        Some(document) => (document, None),
+                        None => {
+                            let path = project::safe_path(&root, &file)?;
+                            let document = Arc::new(chemistry::read_document(&path)?);
+                            let groups = compound_groups(&document);
+                            (document.clone(), Some((document, groups)))
+                        }
+                    };
+                    let svg = match compound_id.as_deref() {
+                        Some(id) => chemistry::preview_group_svg(&root, &document, id),
+                        None => paper
+                            .as_deref()
+                            .and_then(|paper| {
+                                chemistry::built_preview_svg(&root, paper, document.source())
+                            })
+                            .map_or_else(|| chemistry::preview_svg(&root, document.source()), Ok),
+                    };
+                    let preview = svg.and_then(|svg| cache.render(&svg, &renderer));
+                    Ok::<_, String>((parsed, preview))
                 })
                 .await;
             this.update(cx, |this, cx| {
-                if this.generation != generation
-                    || this.selected_file != selected_file
-                    || this.compound_id.as_deref() != Some(expected_id.as_str())
-                {
+                if this.generation != generation {
                     return;
                 }
                 this.loading = false;
+                let result = result.and_then(|(parsed, preview)| {
+                    if let Some((document, groups)) = parsed {
+                        this.document = Some(document);
+                        this.groups = groups;
+                    }
+                    preview
+                });
                 match result {
                     Ok(preview) => this.preview = Some(preview),
                     Err(error) => this.error = Some(error),
                 }
                 cx.notify();
+                this.warm_groups(cx);
             })
             .ok();
         }));
         cx.notify();
     }
 
-    fn next_generation(&mut self) -> u64 {
-        self.generation = self.generation.wrapping_add(1);
-        self.generation
+    fn warm_groups(&mut self, cx: &mut Context<Self>) {
+        if self.loading || !self.warmup.allowed {
+            return;
+        }
+        if let Some(root) = self.root.clone()
+            && let Some(document) = self.document.clone()
+        {
+            self.warmup.start((root, document, self.groups.clone()), cx);
+        }
     }
 
     fn cancel_load(&mut self) {
         self._load = None;
         self.loading = false;
-        self.next_generation();
+        self.generation = self.generation.wrapping_add(1);
     }
 }
 
@@ -569,17 +445,6 @@ fn preview_stage(
     stage
 }
 
-fn read_document(source: &Path) -> Result<chemex_cdxml::DrawingDocument, String> {
-    let mut content = String::new();
-    fs::File::open(source)
-        .and_then(|file| {
-            file.take((chemex_cdxml::MAX_SOURCE_BYTES + 1) as u64)
-                .read_to_string(&mut content)
-        })
-        .map_err(|error| error.to_string())?;
-    chemex_cdxml::DrawingDocument::parse(content).map_err(|error| error.to_string())
-}
-
 fn compound_groups(document: &chemex_cdxml::DrawingDocument) -> Vec<String> {
     let mut groups = Vec::new();
     for compound_id in document
@@ -590,38 +455,11 @@ fn compound_groups(document: &chemex_cdxml::DrawingDocument) -> Vec<String> {
         if groups.iter().any(|key| key == compound_id) {
             continue;
         }
-        if document.compound_group_source(compound_id).is_ok() {
+        if document.compound_group(compound_id).is_ok() {
             groups.push(compound_id.to_owned());
         }
     }
     groups
-}
-
-fn render_cdxml(source: &str, renderer: &gpui::SvgRenderer) -> Result<Arc<RenderImage>, String> {
-    if !cfg!(windows) {
-        return Err(t!("ChemDraw preview export is supported on Windows").to_string());
-    }
-    let directory = tempfile::tempdir().map_err(|error| error.to_string())?;
-    fs::write(directory.path().join("drawing.cdxml"), source).map_err(|error| error.to_string())?;
-    chemex_chemdraw::export_svg(directory.path(), Duration::from_secs(120))
-        .map_err(|error| error.to_string())?;
-    let bytes =
-        fs::read(directory.path().join("drawing.svg")).map_err(|error| error.to_string())?;
-    renderer
-        .render_single_frame(&bytes, 2.)
-        .map_err(|error| error.to_string())
-}
-
-fn render_document(
-    source: &Path,
-    renderer: &gpui::SvgRenderer,
-) -> Result<Arc<RenderImage>, String> {
-    let document = read_document(source)?;
-    render_cdxml(document.source(), renderer)
-}
-
-fn render_file(source: &Path, renderer: &gpui::SvgRenderer) -> Result<Arc<RenderImage>, String> {
-    render_document(source, renderer)
 }
 
 fn cdxml_files(files: &[FileNode]) -> Vec<String> {
@@ -646,39 +484,23 @@ fn is_cdxml(path: &Path) -> bool {
 }
 
 fn install(_: &mut Window, cx: &mut Context<Shell>) -> Box<dyn Any> {
-    Box::new(Chemistry {
-        chemistry: Some(cx.new(ChemistryPanel::new)),
-        chemdraw: Some(cx.new(ChemDrawPanel::new)),
-    })
+    Box::new(cx.new(ChemistryPanel::new))
 }
 
 pub(super) const PART: Part = Part {
     install,
-    views: &[
-        View {
-            kind: "chemistry",
-            min: (360., 220.),
-            panel: |shell| panel_handle(shell.parts.get::<Chemistry>().chemistry.clone().unwrap()),
-        },
-        View {
-            kind: "chemdraw",
-            min: (360., 220.),
-            panel: |shell| panel_handle(shell.parts.get::<Chemistry>().chemdraw.clone().unwrap()),
-        },
-    ],
+    views: &[View {
+        kind: "chemistry",
+        min: (360., 220.),
+        panel: |shell| panel_handle(shell.parts.get::<Entity<ChemistryPanel>>().clone()),
+    }],
     actions: |element, cx| {
         element
             .on_action(cx.listener(|this, _: &OpenChemistry, window, cx| {
                 this.open_chemistry(window, cx);
             }))
-            .on_action(cx.listener(|this, _: &OpenChemDraw, window, cx| {
-                this.open_chemdraw(window, cx);
-            }))
             .on_action(cx.listener(|this, _: &ToggleChemistry, window, cx| {
                 this.toggle_view("chemistry", window, cx);
-            }))
-            .on_action(cx.listener(|this, _: &ToggleChemDraw, window, cx| {
-                this.toggle_chemdraw(window, cx);
             }))
     },
     commands,
@@ -693,81 +515,106 @@ impl Shell {
     ) {
         let files = cdxml_files(files);
         self.parts
-            .get_mut::<Chemistry>()
-            .chemistry
+            .get::<Entity<ChemistryPanel>>()
+            .update(cx, |panel, cx| panel.set_project(root, &files, cx));
+    }
+
+    pub(super) fn sync_chemistry_preview(&mut self, cx: &mut Context<Self>) {
+        if !self.view_on_screen("chemistry", cx) || self.build_task.is_some() {
+            self.pause_chemistry_warmup(cx);
+            return;
+        }
+        let paper = self
+            .project
             .as_ref()
-            .unwrap()
-            .update(cx, |panel, cx| {
-                panel.set_project(root, &files, cx);
-            });
+            .and_then(|project| project.read(cx).main_document().map(str::to_owned));
         self.parts
-            .get::<Chemistry>()
-            .chemdraw
-            .as_ref()
-            .unwrap()
+            .get::<Entity<ChemistryPanel>>()
             .update(cx, |panel, cx| {
-                panel.set_project(root, &files, cx);
+                if panel.paper != paper && panel.compound_id.is_none() {
+                    panel.invalidate();
+                }
+                panel.paper = paper;
+                panel.warmup.allowed = true;
+                if !panel.loading && panel.preview.is_none() && panel.error.is_none() {
+                    panel.load_preview(panel.compound_id.clone(), cx);
+                } else {
+                    panel.warm_groups(cx);
+                }
             });
+    }
+
+    pub(super) fn pause_chemistry_warmup(&mut self, cx: &mut Context<Self>) {
+        self.parts
+            .get::<Entity<ChemistryPanel>>()
+            .update(cx, |panel, _| {
+                panel.warmup.allowed = false;
+                panel.warmup.pause();
+            });
+    }
+
+    pub(super) fn chemistry_files_changed(
+        &mut self,
+        paths: Option<&[String]>,
+        cx: &mut Context<Self>,
+    ) {
+        let changed = self
+            .parts
+            .get::<Entity<ChemistryPanel>>()
+            .update(cx, |panel, cx| {
+                let changed = panel.selected_file.as_ref().is_some_and(|file| {
+                    paths.is_none_or(|paths| paths.iter().any(|path| path == file))
+                });
+                if changed {
+                    panel.reset_drawing();
+                    cx.notify();
+                }
+                changed
+            });
+        if changed {
+            self.sync_chemistry_preview(cx);
+        }
+    }
+
+    pub(super) fn chemistry_built(&mut self, document: &str, cx: &mut Context<Self>) {
+        if self
+            .project
+            .as_ref()
+            .and_then(|project| project.read(cx).main_document())
+            == Some(document)
+        {
+            self.parts
+                .get::<Entity<ChemistryPanel>>()
+                .update(cx, |panel, cx| {
+                    if panel.compound_id.is_none() {
+                        panel.invalidate();
+                        cx.notify();
+                    }
+                });
+        }
     }
 
     fn open_chemistry(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.root(cx).is_none() {
             return;
         }
-        let panel = self.parts.get::<Chemistry>().chemistry.clone().unwrap();
-        panel.update(cx, |panel, cx| {
-            if panel.selected_file.is_none()
-                && let Some(first) = panel.files.first().cloned()
-            {
-                panel.select_file(&first, cx);
-            }
-        });
         self.show_view("chemistry", true, window, cx);
-    }
-
-    fn open_chemdraw(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let panel = self.parts.get::<Chemistry>().chemdraw.clone().unwrap();
-        panel.update(cx, |panel, cx| {
-            if panel.selected_file.is_none()
-                && let Some(first) = panel.files.first().cloned()
-            {
-                panel.select_file(&first, cx);
-            }
-        });
-        self.show_view("chemdraw", true, window, cx);
-    }
-
-    fn toggle_chemdraw(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.view_on_screen("chemdraw", cx) {
-            self.toggle_view("chemdraw", window, cx);
-        } else {
-            self.open_chemdraw(window, cx);
-        }
+        self.sync_chemistry_preview(cx);
     }
 }
 
 fn commands(context: &CommandContext, out: &mut Vec<Command>) {
-    if !context.in_project {
-        return;
+    if context.in_project {
+        out.push(
+            Command::new(
+                "panel-chemistry",
+                t!("Show Chemistry panel"),
+                Section::Layout,
+                OpenChemistry,
+            )
+            .keywords("chemistry chemdraw cdxml compound number drawing"),
+        );
     }
-    out.push(
-        Command::new(
-            "panel-chemistry",
-            t!("Show Chemistry panel"),
-            Section::Layout,
-            OpenChemistry,
-        )
-        .keywords("chemistry compound number"),
-    );
-    out.push(
-        Command::new(
-            "panel-chemdraw",
-            t!("Show ChemDraw panel"),
-            Section::Layout,
-            OpenChemDraw,
-        )
-        .keywords("chemdraw cdxml drawing"),
-    );
 }
 
 #[cfg(test)]

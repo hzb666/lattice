@@ -2057,7 +2057,7 @@ impl App {
 
     /// Reveals the specified path at the platform level, such as in Finder on macOS.
     pub fn reveal_path(&self, path: &Path) {
-        self.platform.reveal_path(path)
+        self.platform.reveal_path(dunce::simplified(path))
     }
 
     /// Opens the specified path with the system's default application.

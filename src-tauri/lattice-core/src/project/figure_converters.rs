@@ -28,6 +28,7 @@ use std::fs::{self, File};
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+pub(crate) use svg_links::check_embedded_svg;
 use svg_links::check_svg_links;
 use uuid::Uuid;
 

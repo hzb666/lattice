@@ -118,8 +118,6 @@ pub fn engine_options() -> trellis::Options {
         "literature",
         "todos",
         "checklist",
-        "chemistry",
-        "chemdraw",
     ] {
         types.insert(tool.into(), kind(true, min(200., 160.)));
     }

@@ -294,7 +294,7 @@ fn build_passes(
     // The draft passes run pdfLaTeX and BibTeX themselves, beside the
     // document; the hidden folder is left to latexmk, which knows how to run
     // BibTeX there.
-    if layout == AuxFiles::Beside {
+    if layout == AuxFiles::Beside && !uses_chemex(root)? {
         if let Some(cancelled) = prewarm::prewarm_cold_pdf_build(root, force, active, steps)? {
             return Ok((cancelled, layout));
         }
@@ -419,7 +419,21 @@ fn run_latexmk_with(
     if !root_document.exists() {
         return Err(missing_root(&document));
     }
-    let prepared = if use_format {
+    let chemistry = if super::chemex::enabled_project(root, &document)? {
+        Some(
+            super::chemex::Preparation {
+                root,
+                document: &document,
+                engine: &manifest.engine,
+                active,
+                steps,
+            }
+            .run()?,
+        )
+    } else {
+        None
+    };
+    let prepared = if use_format && chemistry.is_none() {
         preamble_format::prepare(root, &manifest, &document, &root_document, active, steps)
     } else {
         Prepared::Plain
@@ -446,6 +460,9 @@ fn run_latexmk_with(
         command.arg("-g");
     }
     search_paths::search_project_folder(&mut command, &document);
+    if let Some(chemistry) = &chemistry {
+        chemistry.configure(&mut command)?;
+    }
     command.arg(&document);
     wide_event::record("engine", manifest.engine.as_str());
     wide_event::add("latexmk_runs", 1);
@@ -525,6 +542,12 @@ fn run_latexmk_with(
         unchanged: false,
         aux_folder: String::new(),
     })
+}
+
+fn uses_chemex(root: &Path) -> Result<bool, String> {
+    let manifest = project::read_manifest(root)?;
+    let document = compiled_document(root, &manifest)?;
+    super::chemex::enabled_project(root, &document)
 }
 
 /// When `path` was last written, and its size: what tells whether a run

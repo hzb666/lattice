@@ -148,6 +148,7 @@ impl Shell {
             self.queued_build = Some(request.merge(self.queued_build.unwrap_or(request)));
             return;
         }
+        self.pause_chemistry_warmup(cx);
         self.agent_build_started();
         // A root document's own tab builds that document.
         let open_document = self
@@ -419,6 +420,9 @@ impl Shell {
                     );
                 }
                 if result.success && !cancelled {
+                    if !result.steps.is_empty() {
+                        self.chemistry_built(&result.root_document, cx);
+                    }
                     notices::dismiss(BUILD_FAILED_NOTICE, cx);
                     self.get_started_built(cx);
                 }
@@ -493,6 +497,7 @@ impl Shell {
                 }
                 self.settle_builds(cx);
                 self.builds_idle(window, cx);
+                self.sync_chemistry_preview(cx);
             }
         }
         cx.notify();

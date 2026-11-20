@@ -237,6 +237,8 @@ lucide! {
 
 impl Icon {
     // The app's own, from `assets/icons`.
+    /// The Chemistry panel's benzene-ring mark.
+    pub const CHEMISTRY: Icon = Icon("lattice/chemistry.svg");
     /// The 1.5-stroke X a panel tab closes with.
     pub const CLOSE: Icon = Icon("lattice/close.svg");
     /// A pinned tab's mark in its close slot (Lucide's pin, as trellis.css
@@ -369,6 +371,7 @@ const BUNDLED: &[(&str, &[u8])] = bundled![
     "tool-history.svg",
     "faders.svg",
     "clipboard-text.svg",
+    "chemistry.svg",
     "sparkle.svg",
     "receipt.svg",
     "robot.svg",

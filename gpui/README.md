@@ -123,6 +123,8 @@ On every platform, Vim's normal and visual modes keep ⌃M as their next-line st
 
 "Vim mode" in an editor's ⋯ menu turns Zed's Vim mode on for every editor; `LATTICE_GPUI_VIM=1` turns it on for that run only, leaving the saved keymap as it is.
 
+The Chemistry panel shows the full CDXML drawing by default; select a numbered compound to preview it alone, or select `All` to restore the full drawing. On Windows, rendered SVGs are reused from `.research/cache/chemex-v1/assets`; when native group export is unavailable, Lattice exports a temporary group copy using ChemDraw's `SaveAs`.
+
 ## CI
 
 The GPUI workflows build the native application, run native tests, build island pages and run the e2e scenario. Use the focused commands in `../docs/agent-validation.md` locally. The comparison against the removed Tauri host is no longer part of CI.

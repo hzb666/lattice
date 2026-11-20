@@ -39,6 +39,7 @@ mod build_log;
 mod build_stall;
 mod build_steps;
 mod changes;
+mod chemex;
 mod cjk_text;
 mod compile_root;
 mod diagnostic_paths;

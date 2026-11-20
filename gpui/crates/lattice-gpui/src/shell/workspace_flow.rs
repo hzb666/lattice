@@ -71,6 +71,7 @@ impl Shell {
         Workspaces::global(cx)
             .get(id)
             .and_then(|entry| entry.arrangement.clone())
+            .map(|arrangement| trellis_layout::tidy(&arrangement))
             .unwrap_or_else(|| arrangement_of(&default_layout()))
     }
 
