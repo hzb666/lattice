@@ -7,27 +7,23 @@ use sha2::{Digest, Sha256};
 
 use crate::{Result, output, tools};
 
-const CACHE_DIRECTORY: &str = ".chem/drawing-cache/v1";
+pub(crate) const CACHE_DIRECTORY: &str = ".chem/drawing-cache/v1";
 
-pub(crate) fn drawings(project: &Path, stage: &Path, drawings: &[PathBuf]) -> Result<()> {
+pub(crate) fn cache_directory(project: &Path) -> Result<PathBuf> {
     let cache = project.join(CACHE_DIRECTORY);
     fs::create_dir_all(&cache)?;
-    let cache = tools::canonicalize(&cache)?;
-    for (index, directory) in drawings.iter().enumerate() {
-        drawing(&cache, directory, convert)?;
-        fs::copy(
-            directory.join("drawing.pdf"),
-            stage.join(format!("drawings/drawing-{:03}.pdf", index + 1)),
-        )?;
-    }
-    Ok(())
+    Ok(tools::canonicalize(&cache)?)
+}
+
+pub(crate) fn drawing_pdf(cache: &Path, directory: &Path) -> Result<PathBuf> {
+    drawing(cache, directory, convert)
 }
 
 fn drawing(
     cache: &Path,
     directory: &Path,
     convert: impl FnOnce(&Path) -> Result<()>,
-) -> Result<()> {
+) -> Result<PathBuf> {
     let hash = Sha256::digest(fs::read(directory.join("drawing.cdxml"))?);
     let svg = cache.join(format!("{hash:x}.svg"));
     let pdf = cache.join(format!("{hash:x}.pdf"));
@@ -35,7 +31,7 @@ fn drawing(
         fs::copy(&svg, directory.join("drawing.svg"))?;
         fs::copy(&pdf, directory.join("drawing.pdf"))?;
         println!("Reused cached CDXML export ({hash:x})");
-        return Ok(());
+        return Ok(directory.join("drawing.pdf"));
     }
 
     convert(directory)?;
@@ -53,7 +49,7 @@ fn drawing(
             .sync_all()?;
         fs::rename(staged, target)?;
     }
-    Ok(())
+    Ok(directory.join("drawing.pdf"))
 }
 
 fn cached_file(result: io::Result<()>) -> io::Result<bool> {

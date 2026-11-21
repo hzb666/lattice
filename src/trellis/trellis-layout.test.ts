@@ -407,6 +407,42 @@ describe("named workspaces", () => {
     expect(new WorkspaceLibrary().list()).toEqual(library.list());
   });
 
+  it("migrates saved Chemistry views and references to the ChemDraw panel", () => {
+    const legacy = defaultLayout();
+    legacy.views.chemistry = {
+      type: "chemistry",
+      params: { legacy: true },
+      title: "Chemistry",
+    };
+    legacy.views.chemdraw = { type: "chemdraw", params: { current: true } };
+    const project = findPanel(legacy.root, "panel-project")!;
+    project.views.push("chemistry", "chemdraw");
+    project.selected = "chemistry";
+    const key = "lattice.trellis-layout.v1:/chemistry";
+    localStorage.setItem(key, JSON.stringify({
+      version: 3,
+      savedAt: 1,
+      document: legacy,
+      preset: { preset: "writing", previous: legacy, supplied: [] },
+      focus: { previous: legacy, supplied: [], pdf: false },
+    }));
+
+    const saved = loadLayout("/chemistry")!;
+    for (const document of [saved.document, saved.preset!.previous, saved.focus!.previous]) {
+      expect(document.views.chemistry).toBeUndefined();
+      expect(document.views.chemdraw).toMatchObject({
+        type: "chemdraw",
+        params: { current: true },
+        title: "Chemistry",
+      });
+      expect(findPanel(document.root, "panel-project")!).toMatchObject({
+        views: ["project", "agent", "chemdraw"],
+        selected: "chemdraw",
+      });
+    }
+    localStorage.removeItem(key);
+  });
+
   it("opens a project as it was left, whatever its workspace saved since", () => {
     const library = new WorkspaceLibrary();
     const id = library.recent();

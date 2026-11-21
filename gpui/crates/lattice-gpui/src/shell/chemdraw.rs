@@ -26,6 +26,7 @@ use gpui_kit::component::{
     v_flex,
 };
 use lattice_core::{chemistry, models::FileNode, project};
+use lattice_core::chemistry::{cdxml_files, is_cdxml};
 use lattice_i18n::t;
 use lattice_ui::{
     ActiveLattice as _, Icon, TextRole, TextRoleStyle as _,
@@ -54,7 +55,7 @@ const GROUPS_WIDTH: f32 = 152.;
 const NARROW_WIDTH: f32 = 520.;
 const WIDE_ASPECT: f32 = 1.5;
 
-actions!(lattice, [OpenChemistry, ToggleChemistry]);
+actions!(lattice, [OpenChemDraw, ToggleChemDraw]);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum AllPreview {
@@ -77,7 +78,7 @@ enum ChemistryLayout {
     Wide,
 }
 
-pub(crate) struct ChemistryPanel {
+pub(crate) struct ChemDrawPanel {
     focus_handle: FocusHandle,
     root: Option<PathBuf>,
     paper: Option<String>,
@@ -105,17 +106,17 @@ pub(crate) struct ChemistryPanel {
     _load: Option<Task<()>>,
 }
 
-impl gpui::EventEmitter<PanelEvent> for ChemistryPanel {}
+impl gpui::EventEmitter<PanelEvent> for ChemDrawPanel {}
 
-impl Focusable for ChemistryPanel {
+impl Focusable for ChemDrawPanel {
     fn focus_handle(&self, _: &App) -> FocusHandle {
         self.focus_handle.clone()
     }
 }
 
-impl BasePanel for ChemistryPanel {
+impl BasePanel for ChemDrawPanel {
     fn panel_name(&self) -> &'static str {
-        "ChemistryPanel"
+        "ChemDrawPanel"
     }
 
     fn closable(&self, _: &App) -> bool {
@@ -123,13 +124,13 @@ impl BasePanel for ChemistryPanel {
     }
 }
 
-impl Panel for ChemistryPanel {
+impl Panel for ChemDrawPanel {
     fn tab_name(&self, _: &App) -> Option<SharedString> {
-        Some(t!("Chemistry").into())
+        Some(t!("ChemDraw").into())
     }
 
     fn title(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        t!("Chemistry")
+        t!("ChemDraw")
     }
 
     fn inner_padding(&self, _: &App) -> bool {
@@ -137,7 +138,7 @@ impl Panel for ChemistryPanel {
     }
 }
 
-impl Render for ChemistryPanel {
+impl Render for ChemDrawPanel {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = cx.palette().clone();
         let root = self.root.clone();
@@ -191,7 +192,7 @@ impl Render for ChemistryPanel {
     }
 }
 
-impl ChemistryPanel {
+impl ChemDrawPanel {
     fn preview_toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let scale = self.display_scale();
         let no_preview = self.preview.is_none();
@@ -471,7 +472,7 @@ impl ChemistryPanel {
 
     fn open_selected(&self, cx: &mut Context<Self>) {
         if let (Some(root), Some(file)) = (&self.root, &self.selected_file) {
-            crate::opener::open_cdxml(root, file, cx);
+            crate::opener::open_project_file(root, file, cx);
         }
     }
 
@@ -631,7 +632,7 @@ where
                                     .icon(Icon::EXTERNAL_LINK.kit())
                                     .on_click(move |_, _, cx| {
                                         if let Some(root) = &menu_root {
-                                            crate::opener::open_cdxml(root, &menu_path, cx);
+                                            crate::opener::open_project_file(root, &menu_path, cx);
                                         }
                                     }),
                             )
@@ -723,7 +724,7 @@ fn file_browser(
         .child(div().flex_1().min_h_0().child(rows))
 }
 
-impl ChemistryPanel {
+impl ChemDrawPanel {
     fn preview_stage(&self, cx: &App) -> impl IntoElement + use<> {
         let bounds = self.preview_stage.clone();
         let content = match (&self.preview, &self.error, self.loading) {
@@ -922,65 +923,44 @@ fn compound_groups(document: &chemex_cdxml::DrawingDocument) -> Vec<String> {
     groups
 }
 
-fn cdxml_files(files: &[FileNode]) -> Vec<String> {
-    let mut result = Vec::new();
-    collect_cdxml_files(files, &mut result);
-    result
-}
-
-fn collect_cdxml_files(files: &[FileNode], result: &mut Vec<String>) {
-    for file in files {
-        if file.kind == "directory" {
-            collect_cdxml_files(&file.children, result);
-        } else if is_cdxml(Path::new(&file.path)) {
-            result.push(file.path.clone());
-        }
-    }
-}
-
-fn is_cdxml(path: &Path) -> bool {
-    path.extension()
-        .is_some_and(|extension| extension.eq_ignore_ascii_case("cdxml"))
-}
-
 fn install(_: &mut Window, cx: &mut Context<Shell>) -> Box<dyn Any> {
-    Box::new(cx.new(ChemistryPanel::new))
+    Box::new(cx.new(ChemDrawPanel::new))
 }
 
 pub(super) const PART: Part = Part {
     install,
     views: &[View {
-        kind: "chemistry",
+        kind: "chemdraw",
         min: (360., 220.),
-        panel: |shell| panel_handle(shell.parts.get::<Entity<ChemistryPanel>>().clone()),
+        panel: |shell| panel_handle(shell.parts.get::<Entity<ChemDrawPanel>>().clone()),
     }],
     actions: |element, cx| {
         element
-            .on_action(cx.listener(|this, _: &OpenChemistry, window, cx| {
-                this.open_chemistry(window, cx);
+            .on_action(cx.listener(|this, _: &OpenChemDraw, window, cx| {
+                this.open_chemdraw(window, cx);
             }))
-            .on_action(cx.listener(|this, _: &ToggleChemistry, window, cx| {
-                this.toggle_view("chemistry", window, cx);
+            .on_action(cx.listener(|this, _: &ToggleChemDraw, window, cx| {
+                this.toggle_view("chemdraw", window, cx);
             }))
     },
     commands,
 };
 
 impl Shell {
-    pub(super) fn chemistry_project_opened(
+    pub(super) fn chemdraw_project_opened(
         &mut self,
         root: &Path,
         files: &[FileNode],
         cx: &mut Context<Self>,
     ) {
-        let files = cdxml_files(files);
+        let files: Vec<_> = cdxml_files(files).map(str::to_owned).collect();
         self.parts
-            .get::<Entity<ChemistryPanel>>()
+            .get::<Entity<ChemDrawPanel>>()
             .update(cx, |panel, cx| panel.set_project(root, &files, cx));
     }
 
-    pub(super) fn sync_chemistry_preview(&mut self, cx: &mut Context<Self>) {
-        if !self.view_on_screen("chemistry", cx) || self.build_task.is_some() {
+    pub(super) fn sync_chemdraw_preview(&mut self, cx: &mut Context<Self>) {
+        if !self.view_on_screen("chemdraw", cx) || self.build_task.is_some() {
             self.pause_chemistry_warmup(cx);
             return;
         }
@@ -989,7 +969,7 @@ impl Shell {
             .as_ref()
             .and_then(|project| project.read(cx).main_document().map(str::to_owned));
         self.parts
-            .get::<Entity<ChemistryPanel>>()
+            .get::<Entity<ChemDrawPanel>>()
             .update(cx, |panel, cx| {
                 let paper_changed = panel.paper != paper;
                 if paper_changed {
@@ -1010,21 +990,21 @@ impl Shell {
 
     pub(super) fn pause_chemistry_warmup(&mut self, cx: &mut Context<Self>) {
         self.parts
-            .get::<Entity<ChemistryPanel>>()
+            .get::<Entity<ChemDrawPanel>>()
             .update(cx, |panel, _| {
                 panel.warmup.allowed = false;
                 panel.warmup.pause();
             });
     }
 
-    pub(super) fn chemistry_files_changed(
+    pub(super) fn chemdraw_files_changed(
         &mut self,
         paths: Option<&[String]>,
         cx: &mut Context<Self>,
     ) {
         let changed = self
             .parts
-            .get::<Entity<ChemistryPanel>>()
+            .get::<Entity<ChemDrawPanel>>()
             .update(cx, |panel, cx| {
                 let changed = panel.selected_file.as_ref().is_some_and(|file| {
                     paths.is_none_or(|paths| paths.iter().any(|path| path == file))
@@ -1036,11 +1016,11 @@ impl Shell {
                 changed
             });
         if changed {
-            self.sync_chemistry_preview(cx);
+            self.sync_chemdraw_preview(cx);
         }
     }
 
-    pub(super) fn chemistry_built(&mut self, document: &str, cx: &mut Context<Self>) {
+    pub(super) fn chemdraw_built(&mut self, document: &str, cx: &mut Context<Self>) {
         if self
             .project
             .as_ref()
@@ -1048,7 +1028,7 @@ impl Shell {
             == Some(document)
         {
             self.parts
-                .get::<Entity<ChemistryPanel>>()
+                .get::<Entity<ChemDrawPanel>>()
                 .update(cx, |panel, cx| {
                     panel.paper = None;
                     panel.numbers = None;
@@ -1059,12 +1039,12 @@ impl Shell {
         }
     }
 
-    fn open_chemistry(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    fn open_chemdraw(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.root(cx).is_none() {
             return;
         }
-        self.show_view("chemistry", true, window, cx);
-        self.sync_chemistry_preview(cx);
+        self.show_view("chemdraw", true, window, cx);
+        self.sync_chemdraw_preview(cx);
     }
 }
 
@@ -1072,10 +1052,10 @@ fn commands(context: &CommandContext, out: &mut Vec<Command>) {
     if context.in_project {
         out.push(
             Command::new(
-                "panel-chemistry",
-                t!("Show Chemistry panel"),
+                "panel-chemdraw",
+                t!("Show ChemDraw panel"),
                 Section::Layout,
-                OpenChemistry,
+                OpenChemDraw,
             )
             .keywords("chemistry chemdraw cdxml compound number drawing"),
         );
@@ -1113,7 +1093,7 @@ mod tests {
         ];
         assert_eq!(
             vec!["figures/first.CDXML", "figures/second.cdxml"],
-            cdxml_files(&files)
+            cdxml_files(&files).collect::<Vec<_>>()
         );
     }
 

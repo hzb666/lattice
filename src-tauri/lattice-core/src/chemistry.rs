@@ -1,27 +1,45 @@
 //! Persistent ChemDraw assets for both the editor and LaTeX.
 
-use crate::project;
+use crate::{models::FileNode, project};
 use crate::util::{err, sha256_hex};
 use chemex_cdxml::{DrawingDocument, FieldValues, MAX_SOURCE_BYTES};
 use std::collections::BTreeMap;
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
+use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, Mutex, OnceLock};
+use std::time::Duration;
 use svg2pdf::usvg;
 
 mod group_preview;
+mod molecules;
 mod prepared;
 #[cfg(windows)]
 mod preview_worker;
 
 pub use group_preview::preview_group_svg;
+pub use molecules::{
+    analyze_project_molecules, MoleculeAnalysisError, MoleculeLocation, ProjectMolecule,
+    ProjectMoleculeReport,
+};
 pub use prepared::built_preview_svg;
-pub(crate) use prepared::{pdf_key, ready_path, Asset};
+pub(crate) use prepared::{pdf_key, ready_path, spectrum_key, Asset};
 
 const CACHE: &str = ".research/cache/chemex-v1";
 static EXPORT: Mutex<()> = Mutex::new(());
+
+pub fn is_cdxml(path: &Path) -> bool {
+    path.extension().is_some_and(|extension| extension.eq_ignore_ascii_case("cdxml"))
+}
+
+pub fn cdxml_files(tree: &[FileNode]) -> impl Iterator<Item = &str> {
+    project::tree_files(tree)
+        .into_iter()
+        .map(|file| file.path.as_str())
+        .filter(|path| is_cdxml(Path::new(path)))
+}
 
 pub fn read_document(path: &Path) -> Result<DrawingDocument, String> {
     let bytes = read_asset(path)?;
@@ -79,15 +97,49 @@ pub fn preview_svg(root: &Path, source: &str) -> Result<Vec<u8>, String> {
 
 /// Export a project CDXML drawing as its cached SVG.
 pub fn drawing_preview_svg(root: &Path, relative: &str) -> Result<Option<Vec<u8>>, String> {
-    if !Path::new(relative)
-        .extension()
-        .is_some_and(|extension| extension.eq_ignore_ascii_case("cdxml"))
-    {
+    if !is_cdxml(Path::new(relative)) {
         return Ok(None);
     }
     let path = project::safe_path(root, relative)?;
     let document = read_document(&path)?;
     preview_svg(root, document.source()).map(Some)
+}
+
+pub fn mnova_preview_pdf(
+    root: &Path, relative: &str, spectrum: NonZeroUsize,
+) -> Result<PathBuf, String> {
+    let source = project::safe_path(root, relative)?;
+    export_spectrum_pdf(root, &source, spectrum, |mut command, directory| {
+        command.current_dir(directory);
+        let output = crate::commands::output_with_timeout(&mut command, Duration::from_secs(120))?;
+        if output.status.success() {
+            Ok(())
+        } else {
+            Err(format!(
+                "MestReNova failed ({}): {}",
+                output.status,
+                crate::commands::combined_output(&output).trim()
+            ))
+        }
+    })
+}
+
+pub(crate) fn export_spectrum_pdf(
+    root: &Path, source: &Path, spectrum: NonZeroUsize,
+    run: impl FnOnce(Command, &Path) -> Result<(), String>,
+) -> Result<PathBuf, String> {
+    let assets = cache_file(root, "assets/.keep")?;
+    let cache = assets.parent().ok_or("Missing Chemex asset directory")?;
+    chemex_cli::export_spectrum_pdf(cache, source, spectrum, run)
+}
+
+pub(crate) fn cached_spectrum_pdf(folder: &Path, name: &str) -> bool {
+    if spectrum_key(name).is_none() {
+        return false;
+    }
+    let path = folder.join(name);
+    path.symlink_metadata().is_ok_and(|metadata| metadata.file_type().is_file())
+        && chemex_cli::is_valid_spectrum_pdf(&path).unwrap_or(false)
 }
 
 /// Export the unique ChemDraw group named by a `\chemex{key}` reference.
@@ -97,12 +149,8 @@ pub fn compound_preview_svg(root: &Path, compound_id: &str) -> Result<Option<Vec
     }
     let tree = project::scan_tree(root, project::TreeView::Project)?;
     let mut matching = None;
-    for file in project::tree_files(&tree).into_iter().filter(|file| {
-        Path::new(&file.path)
-            .extension()
-            .is_some_and(|extension| extension.eq_ignore_ascii_case("cdxml"))
-    }) {
-        let Ok(path) = project::safe_path(root, &file.path) else { continue };
+    for relative in cdxml_files(&tree) {
+        let Ok(path) = project::safe_path(root, relative) else { continue };
         let Ok(document) = read_document(&path) else { continue };
         if !document.fields().iter().any(|field| field.compound_id == compound_id) {
             continue;
@@ -124,8 +172,7 @@ pub fn built_compound_numbers(root: &Path, paper: &str) -> Option<BTreeMap<Strin
 
 /// Render the latest LaTeX compound numbers into a new CDXML source string.
 pub fn render_compound_numbers(
-    document: &DrawingDocument,
-    numbers: &BTreeMap<String, String>,
+    document: &DrawingDocument, numbers: &BTreeMap<String, String>,
 ) -> Result<String, String> {
     let mut values = FieldValues::new();
     for field in document.fields() {

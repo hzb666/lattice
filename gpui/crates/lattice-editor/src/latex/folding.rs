@@ -93,6 +93,16 @@ pub fn fold_range(lines: &(impl Lines + ?Sized), row: u32) -> Option<FoldRange> 
     .or_else(|| comment_fold(lines, row, &raw))
 }
 
+/// The documentclass row to fold on first open, ignoring leading comments.
+pub fn initial_preamble_row(lines: &(impl Lines + ?Sized)) -> Option<u32> {
+    let row = (0..lines.count().min(MAX_FOLD_SCAN_LINES)).find(|row| {
+        let line = lines.line(*row);
+        leading_command(uncommented(&line)).is_some_and(|(name, _)| name == "documentclass")
+    })?;
+    let line = lines.line(row);
+    preamble_fold(lines, row, &line, uncommented(&line)).map(|_| row)
+}
+
 /// `text` without its `%` comment (an escaped `\%` is text).
 pub fn uncommented(text: &str) -> &str {
     let bytes = text.as_bytes();
@@ -396,6 +406,23 @@ mod tests {
         assert_eq!(fold(&lines, 0), Some(((0, 23), (1, 20))));
         // The document environment itself folds too.
         assert_eq!(fold(&lines, 3), Some(((3, 16), (5, 0))));
+    }
+
+    #[test]
+    fn the_initial_preamble_row_skips_leading_comments() {
+        let lines = [
+            r"% \documentclass{ignored}",
+            "% License",
+            "",
+            r"  \documentclass{article}",
+            r"\usepackage{amsmath}",
+            r"\begin{document}",
+            "Hello.",
+        ];
+        let incomplete = [r"\documentclass{article}", "preamble"];
+
+        assert_eq!(initial_preamble_row(&lines[..]), Some(3));
+        assert_eq!(initial_preamble_row(&incomplete[..]), None);
     }
 
     #[test]

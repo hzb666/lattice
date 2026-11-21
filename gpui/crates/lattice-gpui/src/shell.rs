@@ -29,7 +29,8 @@ mod build;
 mod build_repair;
 mod build_tools;
 mod build_watch;
-mod chemistry;
+mod chemdraw;
+mod molecule;
 pub mod commands;
 mod documents;
 mod drawing_drop;
@@ -111,7 +112,8 @@ use trellis::{TrellisWorkspace, model::LayoutDocument};
 
 pub use annotations_flow::{CommentsView, ShowAnnotations};
 use build::BuildRequest;
-pub(crate) use chemistry::{ChemistryPanel, ToggleChemistry};
+pub(crate) use chemdraw::{ChemDrawPanel, ToggleChemDraw};
+pub(crate) use molecule::{MoleculePanel, ToggleMoleculePanel};
 pub use commands::{
     Build, CleanBuildFiles, CleanRebuild, ForwardSync, InstallLatexTools, NextProblem,
     OpenTexDoctor, PreviousProblem, Save, StopBuild, ToggleVimMode,

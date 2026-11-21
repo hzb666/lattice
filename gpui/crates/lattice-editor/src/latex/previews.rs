@@ -16,6 +16,7 @@
 use std::{
     collections::HashMap,
     hash::Hash,
+    num::NonZeroUsize,
     path::{Path, PathBuf},
     rc::Rc,
     sync::{
@@ -104,7 +105,13 @@ pub trait PreviewHost {
         cx: &mut App,
     ) -> Task<anyhow::Result<Option<MathPicture>>>;
     /// The figure at absolute `path`, inside `project_root`.
-    fn figure(&self, project_root: &Path, path: &Path, cx: &mut App) -> Task<Figure>;
+    fn figure(
+        &self,
+        project_root: &Path,
+        path: &Path,
+        spectrum: Option<NonZeroUsize>,
+        cx: &mut App,
+    ) -> Task<Figure>;
     /// The ChemDraw group named by `compound_id`, inside `project_root`.
     fn compound(&self, project_root: &Path, compound_id: &str, cx: &mut App) -> Task<Figure>;
     /// The loader a preview shows while it is read (`InfinityLoader`).
@@ -155,6 +162,7 @@ impl MathKey {
 #[derive(Clone, PartialEq, Eq, Hash)]
 struct FigureKey {
     path: PathBuf,
+    spectrum: Option<NonZeroUsize>,
     modified: Option<SystemTime>,
     len: u64,
 }
@@ -334,6 +342,7 @@ pub fn math_for(
 pub fn figure(
     project_root: &Path,
     path: &Path,
+    spectrum: Option<NonZeroUsize>,
     editor: &WeakEntity<LatticeEditor>,
     cx: &mut App,
 ) -> Option<Preview<Figure>> {
@@ -342,6 +351,7 @@ pub fn figure(
     let metadata = std::fs::metadata(path).ok();
     let key = FigureKey {
         path: path.to_path_buf(),
+        spectrum,
         modified: metadata
             .as_ref()
             .and_then(|metadata| metadata.modified().ok()),
@@ -357,7 +367,7 @@ pub fn figure(
     cx.global_mut::<Previews>()
         .figures
         .start(key.clone(), editor.entity_id());
-    let task = host.figure(project_root, path, cx);
+    let task = host.figure(project_root, path, spectrum, cx);
     cx.spawn(async move |cx| {
         let figure = task.await;
         cx.update(|cx| {

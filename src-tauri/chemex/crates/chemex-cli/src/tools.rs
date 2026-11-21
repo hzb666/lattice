@@ -27,7 +27,28 @@ pub(crate) fn find(variable: &str, name: &str) -> Result<PathBuf> {
             }
         }
     }
+    #[cfg(windows)]
+    if name == "MestReNova"
+        && let Some(path) = running_mestrenova()
+    {
+        return Ok(path.into());
+    }
     Err(format!("cannot find {name}; set {variable} to its executable path").into())
+}
+
+#[cfg(windows)]
+fn running_mestrenova() -> Option<PathBuf> {
+    let output = Command::new("powershell.exe")
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "Get-Process -Name 'MestReNova' -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty Path",
+        ])
+        .output()
+        .ok()?;
+    let path = PathBuf::from(String::from_utf8_lossy(&output.stdout).trim());
+    path.is_file().then(|| canonicalize(&path).ok()).flatten()
 }
 
 pub(crate) fn canonicalize(path: &Path) -> std::io::Result<PathBuf> {

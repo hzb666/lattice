@@ -50,6 +50,40 @@ export type WorkspaceSummary = { id: string; name: string };
 type SavedLibrary = { version: number; workspaces: Workspace[]; recent?: string };
 type Listener = () => void;
 
+export function migrateChemistryPanel(document: LayoutDocument): LayoutDocument {
+  const { chemistry: previous, ...views } = document.views;
+  if (!previous) return document;
+  const current = views.chemdraw;
+  views.chemdraw = {
+    ...previous,
+    ...current,
+    params: current?.params ?? previous.params,
+    title: current?.title ?? previous.title,
+    type: "chemdraw",
+  };
+
+  const panel = (target: PanelNode): PanelNode => {
+    const members = [...new Set(target.views.map((id) => id === "chemistry" ? "chemdraw" : id))];
+    return {
+      ...target,
+      views: members,
+      selected: target.selected === "chemistry" ? "chemdraw" : target.selected,
+    };
+  };
+  const node = (target: LayoutNode): LayoutNode => {
+    if (target.kind === "panel") return panel(target);
+    if (target.kind === "stage") return target.child ? { ...target, child: node(target.child) as typeof target.child } : target;
+    return { ...target, children: target.children.map(node) };
+  };
+  return {
+    ...document,
+    root: document.root ? node(document.root) : null,
+    floating: document.floating.map((entry) => ({ ...entry, panel: panel(entry.panel) })),
+    hidden: document.hidden.map((entry) => ({ ...entry, panel: panel(entry.panel) })),
+    views,
+  };
+}
+
 const newDocumentId = () => `document-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 
 /** The panels holding Project, Papers or the Agent. */
@@ -262,7 +296,11 @@ export class WorkspaceLibrary {
       if (!raw) return null;
       const parsed = JSON.parse(raw) as Partial<SavedLibrary>;
       const workspaces = Array.isArray(parsed.workspaces)
-        ? parsed.workspaces.filter(isWorkspace).map((entry) => ({ ...entry, name: storedName(entry.name) }))
+        ? parsed.workspaces.filter(isWorkspace).map((entry) => ({
+          ...entry,
+          name: storedName(entry.name),
+          arrangement: entry.arrangement ? migrateChemistryPanel(entry.arrangement) : null,
+        }))
         : [];
       return workspaces.length ? { version: LIBRARY_VERSION, workspaces, recent: typeof parsed.recent === "string" ? parsed.recent : undefined } : null;
     } catch {

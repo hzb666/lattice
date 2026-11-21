@@ -274,12 +274,12 @@ fn writing_with_nothing_open_shows_the_project_panel_beside_the_pdf() {
 }
 
 #[test]
-fn migrates_the_saved_chemdraw_view_into_chemistry() {
+fn migrates_the_saved_chemistry_view_into_chemdraw() {
     let mut doc = default_layout();
-    doc.views.insert("chemdraw".into(), record("chemdraw"));
+    doc.views.insert("chemistry".into(), record("chemistry"));
     let project = find_panel(&mut doc, "panel-project");
-    project.views.push("chemdraw".into());
-    project.selected = "chemdraw".into();
+    project.views.push("chemistry".into());
+    project.selected = "chemistry".into();
 
     let migrated = tidy(&doc);
 
@@ -287,16 +287,16 @@ fn migrates_the_saved_chemdraw_view_into_chemistry() {
         docked(&migrated, "panel-project").unwrap(),
         PanelNode {
             id: "panel-project".into(),
-            views: strings(&["project", "agent", "chemistry"]),
-            selected: "chemistry".into(),
+            views: strings(&["project", "agent", "chemdraw"]),
+            selected: "chemdraw".into(),
         }
     );
-    assert!(!migrated.views.contains_key("chemdraw"));
-    assert_eq!(migrated.views["chemistry"].kind, "chemistry");
+    assert!(!migrated.views.contains_key("chemistry"));
+    assert_eq!(migrated.views["chemdraw"].kind, "chemdraw");
 }
 
 #[test]
-fn merges_a_legacy_chemdraw_tab_into_the_existing_chemistry_panel() {
+fn merges_legacy_chemistry_into_an_existing_chemdraw_panel() {
     let mut doc = default_layout();
     doc.views.insert("chemistry".into(), record("chemistry"));
     doc.views.insert("chemdraw".into(), record("chemdraw"));
@@ -310,12 +310,12 @@ fn merges_a_legacy_chemdraw_tab_into_the_existing_chemistry_panel() {
         docked(&migrated, "panel-project").unwrap(),
         PanelNode {
             id: "panel-project".into(),
-            views: strings(&["project", "agent", "chemistry"]),
-            selected: "chemistry".into(),
+            views: strings(&["project", "agent", "chemdraw"]),
+            selected: "chemdraw".into(),
         }
     );
-    assert_eq!(migrated.views["chemistry"].kind, "chemistry");
-    assert!(!migrated.views.contains_key("chemdraw"));
+    assert_eq!(migrated.views["chemdraw"].kind, "chemdraw");
+    assert!(!migrated.views.contains_key("chemistry"));
 }
 
 #[test]

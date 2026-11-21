@@ -24,9 +24,9 @@ Chemex — CDXML inspection and compound fields (no UI)
   chemex build MANUSCRIPT.tex NEW_OUTPUT_DIRECTORY
 
 Fields: [[@compound-001]] or [[@compound-001_ Scheme ^ product ]]
-LaTeX:  \\includegraphics{drawing.cdxml} and \\chemex{compound-001}
+LaTeX:  \\includegraphics{drawing.cdxml}, \\chemn{sample.mnova}, or \\chemd{sample.mnova}
 
-render creates numbered CDXML copies; export adds native vector PDFs.
+render creates numbered CDXML copies; export adds native vector PDFs and Mnova spectrum PDFs.
 build publishes only the manuscript PDF. SVG and PDF exports are cached per project.
 Tools: CHEMEX_INKSCAPE, CHEMEX_LATEXMK, and CHEMEX_UV, or executables on PATH.
 Original TeX and CDXML files are never overwritten.
@@ -81,10 +81,8 @@ fn inspect(source: &Path) -> Result<()> {
 
 fn structures(source: &Path) -> Result<()> {
     let source = read_stable(source)?;
-    let report = chemex_cli::analyze_compounds(&source, |script, request| {
-        tools::run_rdkit(script, request).map_err(|error| error.to_string())
-    })
-    .map_err(|error| error.to_string())?;
+    let report =
+        chemex_cli::analyze_compounds_with_rdkit(&source).map_err(|error| error.to_string())?;
     let stdout = io::stdout();
     let mut stdout = stdout.lock();
     serde_json::to_writer_pretty(&mut stdout, &report)?;

@@ -18,6 +18,7 @@
 
 use std::{
     cell::OnceCell,
+    num::NonZeroUsize,
     path::{Path, PathBuf},
     rc::Rc,
 };
@@ -58,10 +59,11 @@ fn content_width(context: &HoverCardContext) -> Pixels {
 pub fn figure_media(
     project_root: &Path,
     path: &Path,
+    spectrum: Option<NonZeroUsize>,
     context: &HoverCardContext,
     cx: &mut App,
 ) -> Option<AnyElement> {
-    let preview = previews::figure(project_root, path, &context.editor, cx)?;
+    let preview = previews::figure(project_root, path, spectrum, &context.editor, cx)?;
     Some(render_figure(preview, context, cx))
 }
 
@@ -345,11 +347,13 @@ impl HoverProvider for GraphicsCards {
         )?;
         let absolute: Rc<Path> = index.root().join(&resolved).into();
         let project_root = index.root().to_path_buf();
+        let spectrum = target.spectrum;
         Some(HoverTarget {
             range: target.range.start + start..target.range.end + start,
             id: "graphics",
             card: Rc::new(move |context, _, cx| {
-                let preview = previews::figure(&project_root, &absolute, &context.editor, cx);
+                let preview =
+                    previews::figure(&project_root, &absolute, spectrum, &context.editor, cx);
                 image_card(preview, &resolved, context, cx)
             }),
         })

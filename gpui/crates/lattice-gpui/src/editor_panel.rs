@@ -311,8 +311,14 @@ impl EditorPanel {
         let lattice = cx.new(|cx| LatticeEditor::new(buffer.clone(), window, cx));
         let editor = lattice.read(cx).editor().clone();
         let tex = latex::is_tex_source(&path);
+        let preamble_row = tex
+            .then(|| latex::folding::initial_preamble_row(&buffer.read(cx).snapshot()))
+            .flatten();
         lattice.update(cx, |lattice, cx| {
-            lattice.set_fold_source(tex.then(latex::folding::source), cx)
+            lattice.set_fold_source(tex.then(latex::folding::source), cx);
+            if let Some(row) = preamble_row {
+                lattice.toggle_fold(row, window, cx);
+            }
         });
         let rail = tex
             .then(|| Self::new_rail(&lattice, &project, relative.clone(), saved_text.clone(), cx));

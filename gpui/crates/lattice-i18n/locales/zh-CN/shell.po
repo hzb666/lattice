@@ -2,52 +2,112 @@
 msgid "Annotate selection"
 msgstr "评论所选内容"
 
-#: lattice-gpui/src/shell/chemistry.rs
+#: lattice-gpui/src/titlebar/panels_menu.rs
 msgid "Chemistry"
 msgstr "化学"
 
-#: lattice-gpui/src/shell/chemistry.rs
-msgid "Show Chemistry panel"
-msgstr "显示化学面板"
+#: lattice-gpui/src/shell/chemdraw.rs
+msgid "ChemDraw"
+msgstr "ChemDraw"
 
-#: lattice-gpui/src/shell/chemistry.rs
+#: lattice-gpui/src/shell/chemdraw.rs
+msgid "Show ChemDraw panel"
+msgstr "显示 ChemDraw 面板"
+
+#: lattice-gpui/src/shell/molecule.rs
+msgid "Molecule"
+msgstr "分子"
+
+#: lattice-gpui/src/shell/molecule.rs
+msgid "Show Molecule panel"
+msgstr "显示分子面板"
+
+#: lattice-gpui/src/shell/molecule.rs
+msgid "Open a project to identify molecules"
+msgstr "打开项目以识别分子"
+
+#: lattice-gpui/src/shell/molecule.rs
+msgid "Analyzing ChemDraw structures…"
+msgstr "正在分析 ChemDraw 结构…"
+
+#: lattice-gpui/src/shell/molecule.rs
+msgid "Could not scan the project"
+msgstr "无法扫描项目"
+
+#: lattice-gpui/src/shell/molecule.rs
+msgid "{count} molecules"
+msgstr "{count} 个分子"
+
+#: lattice-gpui/src/shell/molecule.rs
+msgid "{count} duplicate structures"
+msgstr "{count} 个重复结构"
+
+#: lattice-gpui/src/shell/molecule.rs
+msgid "Could not analyze this drawing: {reason}"
+msgstr "无法分析此绘图：{reason}"
+
+#: lattice-gpui/src/shell/molecule.rs
+msgid "No numbered molecules found"
+msgstr "未找到已编号分子"
+
+#: lattice-gpui/src/shell/molecule.rs
+msgid "No molecule analysis available"
+msgstr "没有可用的分子分析结果"
+
+#: lattice-gpui/src/shell/molecule.rs
+msgid "Formula unavailable"
+msgstr "分子式不可用"
+
+#: lattice-gpui/src/shell/molecule.rs
+msgid "Same structure as {target}"
+msgstr "结构与 {target} 相同"
+
+#: lattice-gpui/src/shell/molecule.rs
+msgid "Could not identify structure: {reason}"
+msgstr "无法识别结构：{reason}"
+
+#: lattice-gpui/src/shell/molecule.rs
+msgid "Not compared: {reason}"
+msgstr "未参与判重：{reason}"
+
+#: lattice-gpui/src/shell/chemdraw.rs
 msgid "Exporting with ChemDraw…"
 msgstr "正在使用 ChemDraw 导出…"
 
-#: lattice-gpui/src/shell/chemistry.rs
+#: lattice-gpui/src/shell/chemdraw.rs
 msgid "No CDXML files in this project"
 msgstr "此项目中没有 CDXML 文件"
 
-#: lattice-gpui/src/shell/chemistry.rs
+#: lattice-gpui/src/shell/chemdraw.rs
 msgid "Choose a CDXML file to preview"
 msgstr "选择一个 CDXML 文件进行预览"
 
-#: lattice-gpui/src/shell/chemistry.rs
+#: lattice-gpui/src/shell/chemdraw.rs
 msgid "Rendered"
 msgstr "渲染后"
 
-#: lattice-gpui/src/shell/chemistry.rs
+#: lattice-gpui/src/shell/chemdraw.rs
 msgid "Source"
 msgstr "渲染前"
 
-#: lattice-gpui/src/shell/chemistry.rs
+#: lattice-gpui/src/shell/chemdraw.rs
 msgid "Zoom in"
 msgstr "放大"
 
-#: lattice-gpui/src/shell/chemistry.rs
+#: lattice-gpui/src/shell/chemdraw.rs
 msgid "Zoom out"
 msgstr "缩小"
 
-#: lattice-gpui/src/shell/chemistry.rs
+#: lattice-gpui/src/shell/chemdraw.rs
 #: lattice-gpui/src/file_tree/menu.rs
 msgid "Open in ChemDraw"
 msgstr "在 ChemDraw 中打开"
 
-#: lattice-gpui/src/shell/chemistry.rs
+#: lattice-gpui/src/shell/chemdraw.rs
 msgid "Fit page to width"
 msgstr "适合页面宽度"
 
-#: lattice-gpui/src/shell/chemistry.rs
+#: lattice-gpui/src/shell/chemdraw.rs
 msgid "Fit page to height"
 msgstr "适合页面高度"
 

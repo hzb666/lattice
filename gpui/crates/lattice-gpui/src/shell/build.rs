@@ -422,7 +422,7 @@ impl Shell {
                 }
                 if result.success && !cancelled {
                     if !result.steps.is_empty() {
-                        self.chemistry_built(&result.root_document, cx);
+        self.chemdraw_built(&result.root_document, cx);
                     }
                     notices::dismiss(BUILD_FAILED_NOTICE, cx);
                     self.get_started_built(cx);
@@ -498,7 +498,7 @@ impl Shell {
                 }
                 self.settle_builds(cx);
                 self.builds_idle(window, cx);
-                self.sync_chemistry_preview(cx);
+        self.sync_chemdraw_preview(cx);
             }
         }
         cx.notify();

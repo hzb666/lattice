@@ -38,6 +38,18 @@ describe("the workspace library", () => {
     expect(new WorkspaceLibrary().list()).toEqual(library.list());
   });
 
+  it("migrates saved Chemistry workspace views to ChemDraw", () => {
+    const library = new WorkspaceLibrary();
+    const id = library.recent();
+    const arrangement = defaultLayout();
+    arrangement.views.chemistry = { type: "chemistry" };
+    expect(library.setArrangement(id, arrangement)).toBe(true);
+
+    const saved = new WorkspaceLibrary().get(id)!.arrangement!;
+    expect(saved.views.chemistry).toBeUndefined();
+    expect(saved.views.chemdraw).toMatchObject({ type: "chemdraw" });
+  });
+
   it("keeps names short, unique and non-empty", () => {
     const library = new WorkspaceLibrary();
     const [first] = library.list();

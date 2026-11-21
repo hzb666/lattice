@@ -7,7 +7,7 @@ use chemex_cdxml::{DrawingDocument, FieldValues};
 
 use crate::{Result, export, output, tools};
 use chemex_cli as tex;
-use chemex_cli::{DrawingRegistration, DrawingRequest, PACKAGE};
+use chemex_cli::{DrawingRegistration, FigureRegistration, FigureRequest, PACKAGE};
 
 const MANUSCRIPT_PDF: &str = "manuscript.pdf";
 
@@ -27,16 +27,13 @@ pub(crate) fn run(manuscript: &Path, destination: &Path, kind: OutputKind) -> Re
         write_new(&stage.join("chemex.sty"), PACKAGE.as_bytes())?;
         let manuscript_parent = manuscript.parent().unwrap_or(Path::new("."));
         let project = tools::canonicalize(manuscript_parent)?;
-        let drawings = discover(&latexmk, stage, &project, &manuscript)?;
-        if drawings.is_empty() {
-            return Err("manuscript contains no CDXML references".into());
+        let requests = discover(&latexmk, stage, &project, &manuscript)?;
+        if requests.is_empty() {
+            return Err("manuscript contains no Chemex figure references".into());
         }
-        let (documents, fields) = load_drawings(&drawings, &manuscript)?;
-        let registrations = registrations(&drawings, &fields);
-        write_new(
-            &stage.join("chemex-register.tex"),
-            tex::registrations(&registrations).as_bytes(),
-        )?;
+        let figures = load_figures(requests, &manuscript)?;
+        let mut registrations = registrations(&figures);
+        write_registrations(stage, &registrations)?;
         run_tex_mode(
             &latexmk,
             stage,
@@ -45,18 +42,33 @@ pub(crate) fn run(manuscript: &Path, destination: &Path, kind: OutputKind) -> Re
             "numbering",
             "\\ChemexNumberingMode",
         )?;
-        let numbered_drawings = tex::read_drawings(&stage.join("chemex-drawings.dat"))?;
-        tex::validate_drawings(&drawings, &numbered_drawings, "numbering")?;
+        let numbered_figures = tex::read_figures(&stage.join("chemex-figures.dat"))?;
+        tex::validate_figures(
+            &figures
+                .iter()
+                .map(|figure| figure.request.clone())
+                .collect::<Vec<_>>(),
+            &numbered_figures,
+            "numbering",
+        )?;
         let numbers = tex::read_numbers(&stage.join("chemex-numbers.dat"))?;
-        let all_fields: Vec<_> = fields.iter().flatten().cloned().collect();
+        let all_fields: Vec<_> = registrations
+            .iter()
+            .filter_map(|registration| match registration {
+                FigureRegistration::ChemDraw(drawing) => Some(drawing.fields.as_slice()),
+                FigureRegistration::Mnova { .. } => None,
+            })
+            .flatten()
+            .cloned()
+            .collect();
         let values = tex::field_values(&all_fields, &numbers)?;
-        let exports = render_drawings(stage, &documents, &values)?;
+        let directories = render_figures(stage, &figures, &values)?;
         if !matches!(kind, OutputKind::Render) {
-            fs::write(
-                stage.join("chemex-register.tex"),
-                tex::prepared_registrations(&registrations, &numbers)?,
+            export_figures(&project, stage, &figures, &directories, &mut registrations)?;
+            write_new(
+                &stage.join("chemex-register.tex"),
+                tex::prepared_registrations(&registrations, &numbers)?.as_bytes(),
             )?;
-            export::drawings(&project, stage, &exports)?;
         }
         if matches!(kind, OutputKind::Build) {
             run_tex_mode(
@@ -67,8 +79,15 @@ pub(crate) fn run(manuscript: &Path, destination: &Path, kind: OutputKind) -> Re
                 "manuscript",
                 "\\ChemexFinalMode",
             )?;
-            let final_drawings = tex::read_drawings(&stage.join("chemex-drawings.dat"))?;
-            tex::validate_drawings(&drawings, &final_drawings, "final")?;
+            let final_figures = tex::read_figures(&stage.join("chemex-figures.dat"))?;
+            tex::validate_figures(
+                &figures
+                    .iter()
+                    .map(|figure| figure.request.clone())
+                    .collect::<Vec<_>>(),
+                &final_figures,
+                "final",
+            )?;
             tools::check_pdf(&stage.join(MANUSCRIPT_PDF))?;
         } else if matches!(kind, OutputKind::Export) {
             fs::write(stage.join("chemex-mode.tex"), "\\ChemexPreparedMode\n")?;
@@ -84,7 +103,7 @@ fn discover(
     stage: &Path,
     project: &Path,
     manuscript: &Path,
-) -> Result<Vec<DrawingRequest>> {
+) -> Result<Vec<FigureRequest>> {
     run_tex_mode(
         latexmk,
         stage,
@@ -93,60 +112,135 @@ fn discover(
         "discovery",
         "\\ChemexDiscoveryMode",
     )?;
-    tex::read_drawings(&stage.join("chemex-drawings.dat"))
+    tex::read_figures(&stage.join("chemex-figures.dat"))
 }
 
-fn load_drawings(
-    requests: &[DrawingRequest],
-    manuscript: &Path,
-) -> Result<(Vec<DrawingDocument>, Vec<Vec<String>>)> {
-    let mut documents = Vec::with_capacity(requests.len());
-    let mut fields = Vec::with_capacity(requests.len());
-    for request in requests {
-        let path = resolve_drawing(manuscript, &request.path)?;
-        let document = crate::load(&path)?;
-        let keys: Vec<_> = document
-            .fields()
-            .iter()
-            .map(|field| field.compound_id.clone())
-            .collect();
-        documents.push(document);
-        fields.push(keys);
-    }
-    Ok((documents, fields))
+struct LoadedFigure {
+    request: FigureRequest,
+    path: PathBuf,
+    document: Option<DrawingDocument>,
 }
 
-fn registrations(requests: &[DrawingRequest], fields: &[Vec<String>]) -> Vec<DrawingRegistration> {
+fn load_figures(requests: Vec<FigureRequest>, manuscript: &Path) -> Result<Vec<LoadedFigure>> {
     requests
-        .iter()
-        .zip(fields)
-        .enumerate()
-        .map(|(index, (request, fields))| DrawingRegistration {
-            counter: request.counter.clone(),
-            fields: fields.clone(),
-            asset: format!("drawings/drawing-{:03}.pdf", index + 1),
+        .into_iter()
+        .map(|request| {
+            let path = resolve_figure(manuscript, &request)?;
+            let document = match request {
+                FigureRequest::ChemDraw { .. } => Some(crate::load(&path)?),
+                FigureRequest::Mnova { .. } => None,
+            };
+            Ok(LoadedFigure {
+                request,
+                path,
+                document,
+            })
         })
         .collect()
 }
 
-fn render_drawings(
+fn registrations(figures: &[LoadedFigure]) -> Vec<FigureRegistration> {
+    figures
+        .iter()
+        .map(|figure| match &figure.request {
+            FigureRequest::ChemDraw { counter, .. } => {
+                let fields = figure
+                    .document
+                    .as_ref()
+                    .map(|document| {
+                        document
+                            .fields()
+                            .iter()
+                            .map(|field| field.compound_id.clone())
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                FigureRegistration::ChemDraw(DrawingRegistration {
+                    counter: counter.clone(),
+                    fields,
+                    asset: String::new(),
+                })
+            }
+            FigureRequest::Mnova { spectrum, .. } => FigureRegistration::Mnova {
+                spectrum: *spectrum,
+                asset: String::new(),
+            },
+        })
+        .collect()
+}
+
+fn write_registrations(stage: &Path, registrations: &[FigureRegistration]) -> Result<()> {
+    write_new(
+        &stage.join("chemex-register.tex"),
+        tex::registrations(registrations).as_bytes(),
+    )?;
+    Ok(())
+}
+
+fn render_figures(
     stage: &Path,
-    documents: &[DrawingDocument],
+    figures: &[LoadedFigure],
     values: &FieldValues,
 ) -> Result<Vec<PathBuf>> {
     let drawing_directory = stage.join("drawings");
     fs::create_dir(&drawing_directory)?;
-    documents
+    figures
         .iter()
         .enumerate()
-        .map(|(index, document)| {
+        .map(|(index, figure)| {
             let directory = drawing_directory.join(format!("drawing-{:03}", index + 1));
             fs::create_dir(&directory)?;
-            let rendered = document.render_fields(values)?;
-            write_new(&directory.join("drawing.cdxml"), rendered.as_bytes())?;
+            match &figure.request {
+                FigureRequest::ChemDraw { .. } => {
+                    let document = figure
+                        .document
+                        .as_ref()
+                        .ok_or("ChemDraw figure has no parsed document")?;
+                    let rendered = document.render_fields(values)?;
+                    write_new(&directory.join("drawing.cdxml"), rendered.as_bytes())?;
+                }
+                FigureRequest::Mnova { .. } => {
+                    fs::copy(&figure.path, directory.join("spectrum.mnova"))?;
+                }
+            }
             Ok(directory)
         })
         .collect()
+}
+
+fn export_figures(
+    project: &Path,
+    stage: &Path,
+    figures: &[LoadedFigure],
+    directories: &[PathBuf],
+    registrations: &mut [FigureRegistration],
+) -> Result<()> {
+    let cache = export::cache_directory(project)?;
+    for (index, ((figure, directory), registration)) in figures
+        .iter()
+        .zip(directories)
+        .zip(registrations)
+        .enumerate()
+    {
+        let pdf = match &figure.request {
+            FigureRequest::ChemDraw { .. } => export::drawing_pdf(&cache, directory)?,
+            FigureRequest::Mnova { spectrum, .. } => chemex_cli::export_spectrum_pdf(
+                &cache,
+                &figure.path,
+                *spectrum,
+                |mut command, cwd| {
+                    tools::run(&mut command, cwd, "mestrelab").map_err(|error| error.to_string())
+                },
+            )?,
+        };
+        let asset = format!("drawings/drawing-{:03}.pdf", index + 1);
+        fs::copy(pdf, stage.join(&asset))?;
+        match registration {
+            FigureRegistration::ChemDraw(drawing) => drawing.asset = asset,
+            FigureRegistration::Mnova { asset: target, .. } => *target = asset,
+        }
+    }
+    Ok(())
 }
 
 fn run_tex_mode(
@@ -192,10 +286,24 @@ fn latexmk_command(
     Ok(command)
 }
 
-fn resolve_drawing(manuscript: &Path, value: &str) -> Result<PathBuf> {
-    let relative = Path::new(value);
+fn resolve_figure(manuscript: &Path, request: &FigureRequest) -> Result<PathBuf> {
+    let relative = Path::new(request.path());
+    let extension = match request {
+        FigureRequest::ChemDraw { .. } => "cdxml",
+        FigureRequest::Mnova { .. } => "mnova",
+    };
     if relative.is_absolute() {
-        return Err(format!("ChemDraw path must be relative to the manuscript: {value}").into());
+        return Err(format!(
+            "Chemex figure path must be relative to the manuscript: {}",
+            request.path()
+        )
+        .into());
+    }
+    if !relative
+        .extension()
+        .is_some_and(|actual| actual.eq_ignore_ascii_case(extension))
+    {
+        return Err(format!("expected a .{extension} file: {}", request.path()).into());
     }
     Ok(tools::canonicalize(
         &manuscript.parent().unwrap_or(Path::new(".")).join(relative),

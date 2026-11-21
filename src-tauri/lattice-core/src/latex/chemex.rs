@@ -4,7 +4,7 @@ use super::{build, search_paths, ActiveBuild, BuildSteps};
 use crate::util::{err, sha256_hex};
 use crate::{chemistry, commands, host_paths, project};
 use chemex_cdxml::{DrawingDocument, FieldValues};
-use chemex_cli::{self as tex, DrawingRegistration, DrawingRequest};
+use chemex_cli::{self as tex, DrawingRegistration, FigureRegistration, FigureRequest};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::ffi::{OsStr, OsString};
@@ -14,7 +14,7 @@ use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 use walkdir::WalkDir;
 
-const REQUESTS: &str = "chemex-drawings.dat";
+const REQUESTS: &str = "chemex-figures.dat";
 const NUMBERS: &str = "chemex-numbers.dat";
 const REGISTER: &str = "chemex-register.tex";
 
@@ -34,7 +34,9 @@ pub(super) fn enabled(source: &Path) -> bool {
         bytes.split(|byte| *byte == b'\n').any(|line| {
             let text = line.split(|byte| *byte == b'%').next().unwrap_or_default();
             text.windows(b"chemex".len()).any(|word| word == b"chemex")
-                || text.windows(b".cdxml".len()).any(|word| word.eq_ignore_ascii_case(b".cdxml"))
+                || [b".cdxml".as_slice(), b".mnova".as_slice()].iter().any(|extension| {
+                    text.windows(extension.len()).any(|word| word.eq_ignore_ascii_case(extension))
+                })
         })
     })
 }
@@ -113,32 +115,61 @@ impl Preparation<'_> {
             return Ok(inputs);
         }
         let discovery = self.pass_folder(&namespace, "discover", b"\\ChemexDiscoveryMode\n")?;
-        let drawings = self.discover(&discovery)?;
-        if drawings.requests.is_empty() {
-            return Err("The LaTeX project contains no CDXML references".into());
+        let figures = self.discover(&discovery)?;
+        if figures.items.is_empty() {
+            return Err("The LaTeX project contains no Chemex figure references".into());
         }
-        let mut registrations = drawings.registrations();
-        let (values, numbers) = self.number(&namespace, &drawings, &registrations)?;
-        let mut assets = Vec::with_capacity(drawings.requests.len());
-        for (index, (request, drawing)) in drawings.iter().enumerate() {
-            let rendered = drawing.render_fields(&values).map_err(err)?;
-            let rendered_path = chemistry::cache_file(
-                self.root,
-                &format!("{namespace}/drawings/drawing-{:03}.cdxml", index + 1),
-            )?;
-            let (svg, pdf) =
-                chemistry::pdf(self.root, &rendered, |command| self.run_tool("ChemDraw", command))
-                    .map_err(|error| format!("{}: {error}", request.path))?;
-            chemistry::write_if_changed(&rendered_path, rendered.as_bytes())?;
+        let mut registrations = figures.registrations()?;
+        let (values, numbers) = self.number(&namespace, &figures, &registrations)?;
+        let mut assets = Vec::with_capacity(figures.items.len());
+        for (index, figure) in figures.items.iter().enumerate() {
+            let (pdf, source_hash, detail) = match &figure.request {
+                FigureRequest::ChemDraw { path, .. } => {
+                    let drawing = figures
+                        .documents
+                        .get(path)
+                        .ok_or("Chemex CDXML request has no parsed drawing")?;
+                    let rendered = drawing.render_fields(&values).map_err(err)?;
+                    let rendered_path = chemistry::cache_file(
+                        self.root,
+                        &format!("{namespace}/drawings/drawing-{:03}.cdxml", index + 1),
+                    )?;
+                    let (svg, pdf) = chemistry::pdf(self.root, &rendered, |command| {
+                        self.run_tool("ChemDraw", command)
+                    })
+                    .map_err(|error| format!("{}: {error}", figure.request.path()))?;
+                    chemistry::write_if_changed(&rendered_path, rendered.as_bytes())?;
+                    let detail = svg
+                        .file_stem()
+                        .and_then(OsStr::to_str)
+                        .ok_or("Missing Chemex SVG key")?
+                        .to_owned();
+                    (pdf, sha256_hex(drawing.source()), detail)
+                }
+                FigureRequest::Mnova { spectrum, .. } => {
+                    let pdf = chemistry::export_spectrum_pdf(
+                        self.root,
+                        &figure.path,
+                        *spectrum,
+                        |mut command, directory| {
+                            command.current_dir(directory);
+                            self.run_tool("MestReNova", command)
+                        },
+                    )
+                    .map_err(|error| format!("{}: {error}", figure.request.path()))?;
+                    (pdf, hash_file(&figure.path)?, spectrum.to_string())
+                }
+            };
             let asset = pdf
                 .file_name()
                 .and_then(OsStr::to_str)
                 .ok_or("Missing Chemex asset filename")?
                 .to_owned();
-            let numbered =
-                svg.file_stem().and_then(OsStr::to_str).ok_or("Missing Chemex SVG key")?;
-            assets.push(format!("{asset} {} {numbered}", sha256_hex(drawing.source())));
-            registrations[index].asset = asset;
+            assets.push(format!("{asset} {source_hash} {detail}"));
+            match &mut registrations[index] {
+                FigureRegistration::ChemDraw(drawing) => drawing.asset = asset,
+                FigureRegistration::Mnova { asset: target, .. } => *target = asset,
+            }
         }
         let folder = self.pass_folder(&namespace, "final", b"\\ChemexPreparedMode\n")?;
         let registration = tex::prepared_registrations(&registrations, &numbers).map_err(err)?;
@@ -146,7 +177,7 @@ impl Preparation<'_> {
         let inputs = Inputs { folder, assets: assets_folder(self.root)? };
         if self.fingerprint(&manifest)? != key {
             return Err(
-                "LaTeX or CDXML sources changed during Chemex preparation; build again".into()
+                "LaTeX or figure sources changed during Chemex preparation; build again".into()
             );
         }
         chemistry::write_if_changed(
@@ -166,10 +197,16 @@ impl Preparation<'_> {
         hash.update([0]);
         hash.update(manifest.trusted.to_string().as_bytes());
         hash.update([0]);
-        hash.update(b"chemex-preparation-v2");
+        hash.update(b"chemex-preparation-v3");
         hash.update([0]);
         hash.update(tex::PACKAGE.as_bytes());
         let mut files = dependency_files(&root)?;
+        if files.iter().any(|path| {
+            path.extension().is_some_and(|extension| extension.eq_ignore_ascii_case("mnova"))
+        }) {
+            hash.update(chemex_cli::spectrum_renderer_fingerprint().as_bytes());
+            hash.update([0]);
+        }
         files.push(project::safe_path(&root, self.document)?);
         files.sort();
         files.dedup();
@@ -201,32 +238,37 @@ impl Preparation<'_> {
         Ok(folder.to_path_buf())
     }
 
-    fn discover(&self, folder: &Path) -> Result<Drawings, String> {
+    fn discover(&self, folder: &Path) -> Result<Figures, String> {
         self.pass("Chemex discovery", folder)?;
         let requests = match fs::symlink_metadata(folder.join(REQUESTS)) {
-            Ok(info) if info.is_file() => {
-                tex::read_drawings(&folder.join(REQUESTS)).map_err(err)?
-            }
-            Ok(_) => return Err("Invalid Chemex drawing request file".into()),
+            Ok(info) if info.is_file() => tex::read_figures(&folder.join(REQUESTS)).map_err(err)?,
+            Ok(_) => return Err("Invalid Chemex figure request file".into()),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
             Err(error) => return Err(err(error)),
         };
-        Drawings::load(self.root, self.document, requests)
+        Figures::load(self.root, self.document, requests)
     }
 
     fn number(
-        &self, namespace: &str, drawings: &Drawings, registrations: &[DrawingRegistration],
+        &self, namespace: &str, figures: &Figures, registrations: &[FigureRegistration],
     ) -> Result<(FieldValues, BTreeMap<String, String>), String> {
-        let fields: Vec<_> =
-            registrations.iter().flat_map(|drawing| drawing.fields.iter().cloned()).collect();
+        let fields: Vec<_> = registrations
+            .iter()
+            .filter_map(|registration| match registration {
+                FigureRegistration::ChemDraw(drawing) => Some(drawing.fields.iter().cloned()),
+                FigureRegistration::Mnova { .. } => None,
+            })
+            .flatten()
+            .collect();
         if fields.is_empty() {
             return Ok((FieldValues::new(), BTreeMap::new()));
         }
         let folder = self.pass_folder(namespace, "number", b"\\ChemexNumberingMode\n")?;
         write_registrations(&folder, registrations)?;
         self.pass("Chemex numbering", &folder)?;
-        let numbered = tex::read_drawings(&folder.join(REQUESTS)).map_err(err)?;
-        tex::validate_drawings(&drawings.requests, &numbered, "numbering").map_err(err)?;
+        let numbered = tex::read_figures(&folder.join(REQUESTS)).map_err(err)?;
+        let expected: Vec<_> = figures.items.iter().map(|item| item.request.clone()).collect();
+        tex::validate_figures(&expected, &numbered, "numbering").map_err(err)?;
         let numbers = tex::read_numbers(&folder.join(NUMBERS)).map_err(err)?;
         let values = tex::field_values(&fields, &numbers).map_err(err)?;
         Ok((values, numbers))
@@ -295,7 +337,7 @@ fn dependency_files(root: &Path) -> Result<Vec<PathBuf>, String> {
         let entry = entry.map_err(err)?;
         let extension = entry.path().extension().and_then(OsStr::to_str).unwrap_or_default();
         if entry.file_type().is_file()
-            && (["tex", "sty", "cls", "def", "cfg", "cdxml", "bib"]
+            && (["tex", "sty", "cls", "def", "cfg", "cdxml", "mnova", "bib"]
                 .iter()
                 .any(|kind| extension.eq_ignore_ascii_case(kind))
                 || matches!(entry.file_name().to_str(), Some("latexmkrc" | ".latexmkrc")))
@@ -304,6 +346,20 @@ fn dependency_files(root: &Path) -> Result<Vec<PathBuf>, String> {
         }
     }
     Ok(files)
+}
+
+fn hash_file(path: &Path) -> Result<String, String> {
+    let mut file = File::open(path).map_err(err)?;
+    let mut hash = Sha256::new();
+    let mut buffer = [0; 16 * 1024];
+    loop {
+        let read = file.read(&mut buffer).map_err(err)?;
+        if read == 0 {
+            break;
+        }
+        hash.update(&buffer[..read]);
+    }
+    Ok(format!("{:x}", hash.finalize()))
 }
 
 fn cached_inputs(root: &Path, namespace: &str, key: &str) -> Result<Option<Inputs>, String> {
@@ -335,7 +391,11 @@ fn cached_inputs(root: &Path, namespace: &str, key: &str) -> Result<Option<Input
     }
     for (index, line) in lines.enumerate() {
         let valid = if let Some(asset) = chemistry::Asset::parse(line) {
-            asset_cached(&assets, asset.pdf, asset.numbered)
+            if chemistry::pdf_key(asset.pdf).is_some() {
+                asset_cached(&assets, asset.pdf, asset.detail)
+            } else {
+                chemistry::cached_spectrum_pdf(&assets, asset.pdf)
+            }
         } else if chemistry::pdf_key(line).is_some() {
             let path = chemistry::cache_file(
                 root,
@@ -364,44 +424,74 @@ fn assets_folder(root: &Path) -> Result<PathBuf, String> {
     Ok(file.parent().ok_or("Missing Chemex asset directory")?.to_path_buf())
 }
 
-struct Drawings {
-    requests: Vec<DrawingRequest>,
+struct LoadedFigure {
+    request: FigureRequest,
+    path: PathBuf,
+}
+
+struct Figures {
+    items: Vec<LoadedFigure>,
     documents: BTreeMap<String, DrawingDocument>,
 }
 
-impl Drawings {
-    fn load(root: &Path, document: &str, requests: Vec<DrawingRequest>) -> Result<Self, String> {
+impl Figures {
+    fn load(root: &Path, document: &str, requests: Vec<FigureRequest>) -> Result<Self, String> {
         let mut documents = BTreeMap::new();
+        let mut items = Vec::with_capacity(requests.len());
         for request in &requests {
-            if !documents.contains_key(&request.path) {
-                let path = drawing_path(root, document, &request.path)?;
-                let drawing = chemistry::read_document(&path)
-                    .map_err(|error| format!("{}: {error}", request.path))?;
-                documents.insert(request.path.clone(), drawing);
+            let extension = match request {
+                FigureRequest::ChemDraw { .. } => "cdxml",
+                FigureRequest::Mnova { .. } => "mnova",
+            };
+            let path = figure_path(root, document, request.path(), extension)?;
+            if let FigureRequest::ChemDraw { path: name, .. } = request {
+                if !documents.contains_key(name) {
+                    let drawing = chemistry::read_document(&path)
+                        .map_err(|error| format!("{}: {error}", request.path()))?;
+                    documents.insert(name.clone(), drawing);
+                }
             }
+            items.push(LoadedFigure { request: request.clone(), path });
         }
-        Ok(Self { requests, documents })
+        Ok(Self { items, documents })
     }
 
-    fn iter(&self) -> impl Iterator<Item = (&DrawingRequest, &DrawingDocument)> {
-        self.requests.iter().map(|request| (request, &self.documents[&request.path]))
-    }
-
-    fn registrations(&self) -> Vec<DrawingRegistration> {
-        self.iter()
-            .map(|(request, drawing)| DrawingRegistration {
-                counter: request.counter.clone(),
-                fields: drawing.fields().iter().map(|field| field.compound_id.clone()).collect(),
-                asset: String::new(),
+    fn registrations(&self) -> Result<Vec<FigureRegistration>, String> {
+        self.items
+            .iter()
+            .map(|figure| match &figure.request {
+                FigureRequest::ChemDraw { counter, path } => {
+                    let drawing = self
+                        .documents
+                        .get(path)
+                        .ok_or("Chemex CDXML request has no parsed drawing")?;
+                    Ok(FigureRegistration::ChemDraw(DrawingRegistration {
+                        counter: counter.clone(),
+                        fields: drawing
+                            .fields()
+                            .iter()
+                            .map(|field| field.compound_id.clone())
+                            .collect(),
+                        asset: String::new(),
+                    }))
+                }
+                FigureRequest::Mnova { spectrum, .. } => {
+                    Ok(FigureRegistration::Mnova { spectrum: *spectrum, asset: String::new() })
+                }
             })
             .collect()
     }
 }
 
-fn drawing_path(root: &Path, document: &str, name: &str) -> Result<PathBuf, String> {
+fn figure_path(
+    root: &Path, document: &str, name: &str, extension: &str,
+) -> Result<PathBuf, String> {
     let relative = Path::new(name);
-    if !relative.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("cdxml")) {
-        return Err(format!("Expected a CDXML drawing: {name}"));
+    if relative.is_absolute() {
+        return Err(format!("Chemex figure path must stay inside the project: {name}"));
+    }
+    if !relative.extension().is_some_and(|ext| ext.eq_ignore_ascii_case(extension)) {
+        return Err(format!("Expected a .{extension} figure: {name}"));
     }
     let folder = Path::new(document).parent().unwrap_or(Path::new(""));
     let mut path = folder.to_path_buf();
@@ -423,7 +513,7 @@ fn drawing_path(root: &Path, document: &str, name: &str) -> Result<PathBuf, Stri
     project::safe_path(root, name)
 }
 
-fn write_registrations(folder: &Path, registrations: &[DrawingRegistration]) -> Result<(), String> {
+fn write_registrations(folder: &Path, registrations: &[FigureRegistration]) -> Result<(), String> {
     chemistry::write_if_changed(
         &folder.join(REGISTER),
         tex::registrations(registrations).as_bytes(),
@@ -465,9 +555,10 @@ mod tests {
         root.write("main.tex", "\\documentclass{article}\n\\input{chapters/results}\n");
         root.write(
             "chapters/results.tex",
-            "% \\includegraphics{ignored.cdxml}\n\\includegraphics{drawing.cdxml}\n",
+            "% \\includegraphics{ignored.cdxml}\n\\includegraphics{drawing.cdxml}\n\\chemd{spectra/sample.mnova}\n",
         );
         root.write("drawing.cdxml", "first");
+        root.write("spectra/sample.mnova", "first spectrum");
         let preparation = Preparation {
             root: &root,
             document: "main.tex",
@@ -480,6 +571,9 @@ mod tests {
         root.write(".research/cache/ignored.tex", "changed");
         assert_eq!(before, preparation.fingerprint(&manifest).unwrap());
         root.write("drawing.cdxml", "changed");
+        assert_ne!(before, preparation.fingerprint(&manifest).unwrap());
+        let before = preparation.fingerprint(&manifest).unwrap();
+        root.write("spectra/sample.mnova", "changed spectrum");
         assert_ne!(before, preparation.fingerprint(&manifest).unwrap());
     }
 
@@ -499,6 +593,7 @@ mod tests {
         project::write_manifest(&root, &manifest).unwrap();
         root.write("main.tex", "source");
         root.write("figure.cdxml", "used");
+        root.write("spectrum.mnova", "used spectrum");
         let preparation = Preparation {
             root: &root,
             document: "main.tex",
@@ -515,6 +610,9 @@ mod tests {
         let before = preparation.fingerprint(&manifest).unwrap();
         root.write("figure.cdxml", "changed drawing");
         assert_ne!(before, preparation.fingerprint(&manifest).unwrap());
+        let before = preparation.fingerprint(&manifest).unwrap();
+        root.write("spectrum.mnova", "changed spectrum");
+        assert_ne!(before, preparation.fingerprint(&manifest).unwrap());
     }
 
     #[test]
@@ -529,7 +627,10 @@ mod tests {
         fs::write(final_dir.join("chemex-mode.tex"), "\\ChemexPreparedMode\n").unwrap();
         let svg = b"<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>";
         let name = format!("chemex-{}.pdf", sha256_hex(svg));
-        let registration = format!("\\chemex@register{{1}}{{compound}}{{}}{{{name}}}\n");
+        let spectrum = format!("mnova-{}.pdf", "c".repeat(64));
+        let registration = format!(
+            "\\chemex@register{{1}}{{compound}}{{}}{{{name}}}\n\\chemex@registerspectrum{{2}}{{1}}{{{spectrum}}}\n"
+        );
         fs::write(&folder, &registration).unwrap();
         let rendered = b"drawing";
         fs::write(
@@ -542,9 +643,11 @@ mod tests {
         let source_key = sha256_hex(rendered);
         fs::write(assets.join(format!("{source_key}.svg")), svg).unwrap();
         fs::write(assets.join(&name), b"%PDF-1.4\n%%EOF").unwrap();
+        fs::write(assets.join(&spectrum), b"%PDF-1.4\nx\n%%EOF").unwrap();
         let marker = format!(
-            "{key}\n{}\n{name} {source_key} {source_key}",
-            sha256_hex(registration.as_bytes())
+            "{key}\n{}\n{name} {source_key} {source_key}\n{spectrum} {} 1",
+            sha256_hex(registration.as_bytes()),
+            sha256_hex(b"source spectrum"),
         );
         chemistry::write_if_changed(
             &chemistry::ready_path(&root, &namespace).unwrap(),
@@ -560,8 +663,46 @@ mod tests {
         assert_eq!(Some(key.as_str()), ready.lines().next());
         assert_eq!(Some(sha256_hex(registration.as_bytes()).as_str()), ready.lines().nth(1));
         assert!(cached_inputs(&root, &namespace, &key).unwrap().is_some());
+        fs::remove_file(assets_folder(&root).unwrap().join(&spectrum)).unwrap();
+        assert!(cached_inputs(&root, &namespace, &key).unwrap().is_none());
+        fs::write(assets_folder(&root).unwrap().join(&spectrum), b"%PDF-1.4\nx\n%%EOF").unwrap();
         fs::remove_file(assets_folder(&root).unwrap().join(name)).unwrap();
         assert!(cached_inputs(&root, &namespace, &key).unwrap().is_none());
+    }
+
+    #[test]
+    fn figures_keep_mnova_spectrum_selection_and_resolve_paths_beside_the_paper() {
+        let root = TempDir::new("chemex-mnova-figure");
+        root.write("main.tex", "paper");
+        root.write("spectra/Document 1.mnova", "opaque Mnova source");
+        let figures = Figures::load(
+            &root,
+            "main.tex",
+            vec![
+                FigureRequest::Mnova {
+                    path: "spectra/Document 1.mnova".into(),
+                    spectrum: std::num::NonZeroUsize::new(1).unwrap(),
+                },
+                FigureRequest::Mnova {
+                    path: "spectra/Document 1.mnova".into(),
+                    spectrum: std::num::NonZeroUsize::new(2).unwrap(),
+                },
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(2, figures.items.len());
+        assert_eq!(
+            root.join("spectra/Document 1.mnova").canonicalize().unwrap(),
+            figures.items[0].path
+        );
+        let registrations = figures.registrations().unwrap();
+        assert!(
+            matches!(registrations[0], FigureRegistration::Mnova { spectrum, .. } if spectrum.get() == 1)
+        );
+        assert!(
+            matches!(registrations[1], FigureRegistration::Mnova { spectrum, .. } if spectrum.get() == 2)
+        );
     }
 
     #[test]

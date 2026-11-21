@@ -1,5 +1,5 @@
 \NeedsTeXFormat{LaTeX2e}
-\ProvidesPackage{chemex}[2026/11/19 ChemDraw compound references]
+\ProvidesPackage{chemex}[2026/11/21 Chemex figures]
 \RequirePackage{graphicx}
 \makeatletter
 
@@ -16,15 +16,19 @@
 \newcounter{chemex@drawing}
 \newbox\chemex@fieldbox
 \ifchemex@prepared\else
-\newwrite\chemex@drawings
-\immediate\openout\chemex@drawings=chemex-drawings.dat
-\AtEndDocument{\immediate\closeout\chemex@drawings}
+\newwrite\chemex@figures
+\immediate\openout\chemex@figures=chemex-figures.dat
+\AtEndDocument{\immediate\closeout\chemex@figures}
 \fi
 
 \newcommand{\chemex@register}[4]{%
   \expandafter\def\csname chemex@counter@#1\endcsname{#2}%
   \expandafter\def\csname chemex@fields@#1\endcsname{#3}%
   \expandafter\def\csname chemex@asset@#1\endcsname{#4}%
+}
+\newcommand{\chemex@registerspectrum}[3]{%
+  \expandafter\def\csname chemex@spectrum@#1\endcsname{#2}%
+  \expandafter\def\csname chemex@asset@#1\endcsname{#3}%
 }
 
 \newcommand{\chemex@claim}[2]{%
@@ -127,12 +131,24 @@
   \AtEndDocument{\immediate\closeout\chemex@numbers}
 \fi
 
-\newcommand{\chemd}{\@ifnextchar[{\chemex@chemd}{\chemex@chemd[compound]}}
-\def\chemex@chemd[#1]#2{\chemex@drawing{#1}{#2}\includegraphics}
+\def\chemd{\@ifnextchar[{\chemex@chemd}{\chemex@chemddefault}}
+\def\chemex@chemddefault#1{%
+  \csname chemex_if_mnova:nTF\endcsname{#1}%
+    {\chemex@spectrum{1}{#1}\includegraphics}%
+    {\chemex@drawing{compound}{#1}\includegraphics}%
+}
+\def\chemex@chemd[#1]#2{%
+  \csname chemex_if_mnova:nTF\endcsname{#2}%
+    {\chemex@spectrum{#1}{#2}\includegraphics}%
+    {\chemex@drawing{#1}{#2}\includegraphics}%
+}
+\def\chemn{\@ifnextchar[{\chemex@chemn}{\chemex@chemndefault}}
+\def\chemex@chemndefault#1{\chemex@spectrum{1}{#1}\includegraphics}
+\def\chemex@chemn[#1]#2{\chemex@spectrum{#1}{#2}\includegraphics}
 \def\chemex@drawing#1#2#3{%
   \stepcounter{chemex@drawing}%
   \ifchemex@prepared\else
-    \immediate\write\chemex@drawings{\string\chemex@drawrequest{#1}{\unexpanded{#2}}}%
+    \immediate\write\chemex@figures{\string\chemex@drawrequest{#1}{\unexpanded{#2}}}%
   \fi
   \ifchemex@discovery\else
     \edef\chemex@index{\arabic{chemex@drawing}}%
@@ -161,14 +177,47 @@
     \fi
   \fi
 }
+\def\chemex@spectrum#1#2#3{%
+  \stepcounter{chemex@drawing}%
+  \ifchemex@prepared\else
+    \immediate\write\chemex@figures{\string\chemex@spectrumrequest{#1}{\unexpanded{#2}}}%
+  \fi
+  \ifchemex@discovery\else
+    \edef\chemex@index{\arabic{chemex@drawing}}%
+    \ifchemex@numbering\else
+      \ifcsname chemex@spectrum@\chemex@index\endcsname
+        \edef\chemex@requested{#1}%
+        \edef\chemex@registered{\csname chemex@spectrum@\chemex@index\endcsname}%
+        \ifx\chemex@requested\chemex@registered\else
+          \PackageError{chemex}{Mnova spectrum changed between build passes}{Keep the spectrum index consistent.}%
+        \fi
+        #3{\csname chemex@asset@\chemex@index\endcsname}%
+      \else
+        \PackageError{chemex}{Spectrum registration is missing}{Run the Chemex build from the manuscript source.}%
+      \fi
+    \fi
+  \fi
+}
 
 \let\chemex@originalgraphics\Ginclude@graphics
 \ExplSyntaxOn
+\cs_new_protected:Npn \chemex_if_mnova:nTF #1#2#3
+  {
+    \exp_args:Nne \regex_match:nnTF
+      { \.[mM][nN][oO][vV][aA] "? \Z }
+      { \tl_to_str:n {#1} }
+      {#2}
+      {#3}
+  }
 \cs_set_protected:Npn \Ginclude@graphics #1
   {
     \exp_args:Nne \regex_match:nnTF { \.[cC][dD][xX][mM][lL] "? \Z } { \tl_to_str:n {#1} }
       { \chemex@drawing{compound}{#1}\chemex@originalgraphics }
-      { \chemex@originalgraphics{#1} }
+      {
+        \exp_args:Nne \regex_match:nnTF { \.[mM][nN][oO][vV][aA] "? \Z } { \tl_to_str:n {#1} }
+          { \chemex@spectrum{1}{#1}\chemex@originalgraphics }
+          { \chemex@originalgraphics{#1} }
+      }
   }
 \ExplSyntaxOff
 

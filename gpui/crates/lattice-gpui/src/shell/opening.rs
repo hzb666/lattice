@@ -101,7 +101,8 @@ impl Shell {
         self.agent_project(Some(root.clone()), cx);
         self.tools_project_opened(&project, &root, window, cx);
         let files = project.read(cx).files().to_vec();
-        self.chemistry_project_opened(&root, &files, cx);
+        self.chemdraw_project_opened(&root, &files, cx);
+        self.molecules_project_opened(&root, &files, cx);
         let terminal_moved = self.terminal_follows(root.clone(), cx);
         self._project_git = Some(cx.subscribe(&project, |this, _, event, cx| match event {
             crate::project::ProjectEvent::GitChanged => this.notice_conflicts(cx),
@@ -109,7 +110,8 @@ impl Shell {
             // a sync's own writes apart).
             crate::project::ProjectEvent::FilesChanged(paths) => {
                 let paths = paths.clone();
-                this.chemistry_files_changed(paths.as_deref(), cx);
+                this.chemdraw_files_changed(paths.as_deref(), cx);
+                this.molecules_files_changed(paths.as_deref(), cx);
                 this.agent_files_changed(paths.as_deref(), cx);
                 this.overleaf
                     .update(cx, |bridge, cx| bridge.files_changed(paths.as_deref(), cx));
@@ -117,8 +119,10 @@ impl Shell {
             crate::project::ProjectEvent::TreeChanged => {
                 if let (Some(project), Some(root)) = (&this.project, this.root(cx)) {
                     let files = project.read(cx).files().to_vec();
-                    this.chemistry_project_opened(&root, &files, cx);
-                    this.sync_chemistry_preview(cx);
+                    this.chemdraw_project_opened(&root, &files, cx);
+                    this.molecules_project_opened(&root, &files, cx);
+                    this.sync_chemdraw_preview(cx);
+                    this.sync_molecules(cx);
                 }
             }
             _ => {}
@@ -150,7 +154,8 @@ impl Shell {
         self.pdf
             .update(cx, |panel, cx| panel.show_project(root, pdf, window, cx));
         self.watch_builds(&project, window, cx);
-        self.sync_chemistry_preview(cx);
+        self.sync_chemdraw_preview(cx);
+        self.sync_molecules(cx);
         cx.notify();
     }
 }

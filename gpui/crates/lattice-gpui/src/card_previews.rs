@@ -6,7 +6,8 @@
 //!
 //! - a PNG, JPEG, WebP or SVG is shown as it is, and a CDXML drawing is shown
 //!   as the SVG Chemex exports for it;
-//! - a PDF shows its first page, at most 720px wide, as PDF.js draws it
+//! - an Mnova file is exported with MestReNova, then shown as a PDF; a PDF
+//!   shows its first page, at most 720px wide, as PDF.js draws it
 //!   there, through the PDF viewer's PDFium;
 //! - any other format (EPS) has no preview, and a file that cannot be read
 //!   (gone, larger than 50 MB) failed to load.
@@ -17,6 +18,7 @@
 mod math_page;
 
 use std::{
+    num::NonZeroUsize,
     path::Path,
     rc::Rc,
     sync::{Arc, atomic::AtomicBool},
@@ -51,6 +53,7 @@ enum Kind {
     Image(ImageFormat),
     Pdf,
     ChemDraw,
+    Mnova,
     Other,
 }
 
@@ -65,6 +68,7 @@ fn kind_of(path: &Path) -> Kind {
         Some("svg") => Kind::Image(ImageFormat::Svg),
         Some("pdf") => Kind::Pdf,
         Some("cdxml") => Kind::ChemDraw,
+        Some("mnova") => Kind::Mnova,
         _ => Kind::Other,
     }
 }
@@ -99,7 +103,13 @@ impl PreviewHost for Host {
         }
     }
 
-    fn figure(&self, project_root: &Path, path: &Path, cx: &mut App) -> Task<Figure> {
+    fn figure(
+        &self,
+        project_root: &Path,
+        path: &Path,
+        spectrum: Option<NonZeroUsize>,
+        cx: &mut App,
+    ) -> Task<Figure> {
         let path = path.to_path_buf();
         match kind_of(&path) {
             Kind::Other => Task::ready(if path.is_file() {
@@ -140,6 +150,32 @@ impl PreviewHost for Host {
                 cx.spawn(async move |_| match read.await {
                     Some(image) => Figure::Shown(ImageSource::Render(image)),
                     None => Figure::Failed,
+                })
+            }
+            Kind::Mnova => {
+                let Some(engine) = crate::pdf::PdfEngine::global(cx).ok() else {
+                    return Task::ready(Figure::Failed);
+                };
+                let project_root = project_root.to_path_buf();
+                let relative = path
+                    .strip_prefix(&project_root)
+                    .ok()
+                    .and_then(Path::to_str)
+                    .map(str::to_owned);
+                let spectrum = spectrum.unwrap_or(NonZeroUsize::MIN);
+                let export = cx.background_spawn(async move {
+                    let relative = relative?;
+                    lattice_core::chemistry::mnova_preview_pdf(&project_root, &relative, spectrum)
+                        .ok()
+                });
+                cx.spawn(async move |cx| {
+                    let Some(pdf) = export.await else {
+                        return Figure::Failed;
+                    };
+                    match first_page(&engine, pdf, cx).await {
+                        Some(image) => Figure::Shown(ImageSource::Render(image)),
+                        None => Figure::Failed,
+                    }
                 })
             }
         }
@@ -218,6 +254,7 @@ mod tests {
         ));
         assert!(matches!(kind_of(Path::new("a.pdf")), Kind::Pdf));
         assert!(matches!(kind_of(Path::new("a.cdxml")), Kind::ChemDraw));
+        assert!(matches!(kind_of(Path::new("a.mnova")), Kind::Mnova));
         assert!(matches!(kind_of(Path::new("a.cdx")), Kind::Other));
         assert!(matches!(kind_of(Path::new("a.eps")), Kind::Other));
         assert!(matches!(kind_of(Path::new("a")), Kind::Other));

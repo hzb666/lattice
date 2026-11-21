@@ -16,8 +16,8 @@ Chemex 的 workspace 可独立验证；项目管理、桌面界面和论文编�
 | `chemex-cdxml/fields.rs` | 识别占位字段、校验映射、生成局部补丁 |
 | `chemex-cdxml/grouping.rs`、`field_layout.rs` | 按作者分组关联结构、保持独立编号的水平中心 |
 | `chemex-chemdraw` | 原生导出能力边界、单页校验及 PowerShell STA 辅助脚本 |
-| `chemex-cli/chemex.sty`、`tex.rs` | CDXML 图片引用、LaTeX counter 桥接、绘图收集和编号清单 |
-| `chemex-cli/build.rs`、`export.rs`、`tools.rs` | 构建调度、原生转换、持久缓存、超时和日志 |
+| `chemex-cli/chemex.sty`、`tex.rs` | CDXML/Mnova 图片引用、LaTeX counter 桥接、图稿清单 |
+| `chemex-cli/build.rs`、`export.rs`、`mnova.rs` | 构建调度、原生转换、持久缓存、超时和日志 |
 | `chemex-cli/structures.rs`、`structures.py` | 字段到 CDXML Fragment 映射、RDKit 结构分析及保守去重 |
 | `chemex-cli/output.rs` | 新生成目录发布与失败中间文件保留 |
 
@@ -40,7 +40,7 @@ Chemex 的 workspace 可独立验证；项目管理、桌面界面和论文编�
 - 对含自定义 DTD 实体或未知嵌套样式内容的字段不猜测替换范围。普通对象仍可检查，不含字段的文档可原样返回。
 - 输出会再次解析以检查 XML 完整性；这不替代 ChemDraw 应用兼容性检查。
 
-`chemex.sty` 在 `graphicx` 加载图片时截获明确带 `.cdxml` 扩展名的字面路径。发现、编号和最终构建按相同顺序记录引用。最终构建把匹配的 PDF 传给 `graphicx`，沿用原有图片选项。`\chemd[counter]` 仍可指定自定义 counter。普通图稿无需定义计数器。
+`chemex.sty` 在 `graphicx` 加载图片时截获 `.cdxml` 和 `.mnova` 字面路径；显式引用支持 `\chemn{...}` 和按扩展名分派的 `\chemd{...}`。发现、编号和最终构建按相同顺序记录引用，PDF 继续使用 `graphicx` 原有图片选项。CDXML 可用 `\chemd[counter]{...}` 指定 counter；Mnova 可用 `\chemn[N]{...}` 或 `\chemd[N]{...}` 选取从 1 开始的谱图序号，省略时默认为 1。
 
 ## 化学语义边界
 
@@ -78,7 +78,9 @@ Fragment 保持作者创建的容器边界，不等同于已识别的 Compound�
 
 独立 CLI 的转换缓存保存在主 `.tex` 目录下的 `.chem/drawing-cache/v1/`。Lattice 编译与其化学预览共用 `.research/cache/chemex-v1/assets/`，以编号替换后 CDXML 的 SHA-256 保存渲染 SVG 和 PDF；准备记录校验当前 Tex/样式/CDXML 指纹。未变化时直接使用持久注册表和图稿，省去 ChemDraw、Inkscape 与编号准备 pass；正文编译仍由稳定目录中的 `latexmk` 管理依赖增量。编号 CDXML 副本同样保存在文稿专属缓存中。不要把 `build` 目录里的 PDF 当作 LaTeX 输入源。
 
-多页和跨页画布尚未验证，导出明确拒绝；解析和字段替换仍支持多页。`build` 从原稿位置解析 TeX 项目，把中间文件写入暂存输出目录；尚不接管完整多文件项目。`latexmk` 使用 `-norc -pdf -interaction=nonstopmode -halt-on-error -no-shell-escape`。工具分别通过 `CHEMEX_INKSCAPE`、`CHEMEX_LATEXMK` 或 PATH 定位，没有硬编码本机安装目录。
+Mnova 通过独立 MestReNova 脚本从原始文件的临时副本导出选中谱图所在页：脚本使用 `serialization.open`、`DocumentWindow`、`PageItem` 和 `NMRSpectrum` 定位从 1 开始的谱图，克隆目标页到临时文档后用 `serialization.save(..., "pdf")` 输出；不保存或关闭用户已打开的文档。PDF 缓存键包含 Mnova 源文件哈希、1 起始的谱图序号、脚本和 MestReNova 可执行文件元数据；构建与 hover 共用同一资产缓存，原文件或渲染器变化会重新导出。Windows 按 `CHEMEX_MESTRENOVA`、`PATH`、运行中的 MestReNova 进程路径依序发现工具；脱离 GUI 使用 CLI 且应用未运行时，需设置该环境变量。
+
+ChemDraw 多页和跨页画布尚未验证，ChemDraw 导出明确拒绝；Mnova 按选中谱图所在页克隆输出，但用户样本的多页视觉保真仍待实测。解析和字段替换仍支持多页。`build` 从原稿位置解析 TeX 项目，把中间文件写入暂存输出目录；尚不接管完整多文件项目。`latexmk` 使用 `-norc -pdf -interaction=nonstopmode -halt-on-error -no-shell-escape`。工具分别通过 `CHEMEX_INKSCAPE`、`CHEMEX_LATEXMK` 或 PATH 定位，没有硬编码本机安装目录。
 
 每个外部阶段的标准输出和错误分别保存，超时 120 秒，只终止当前启动的辅助进程，不终止 ChemDraw 应用。超时时临时副本可能仍在原生应用中打开，因此必须保留构建目录。Windows 路径按 UTF-16 去除旧工具不兼容的 verbatim 前缀，保留 Unicode 和 UNC 路径形式。
 

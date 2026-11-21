@@ -10,13 +10,15 @@
 //! only when TeX would find none, the one project file that ends with the
 //! path stands in.
 
-use std::{ops::Range, sync::LazyLock};
+use std::{num::NonZeroUsize, ops::Range, path::Path, sync::LazyLock};
 
 use regex::Regex;
 
 static GRAPHICS: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\\includegraphics(?:\[[^\]]*\])?\{((?:\\detokenize\{[^}]*\}|[^}]+))\}")
-        .expect("the \\includegraphics pattern compiles")
+    Regex::new(
+        r"\\(includegraphics|chemd|chemn)(?:\[([^\]]*)\])?\{((?:\\detokenize\{[^}]*\}|[^}]+))\}",
+    )
+    .expect("the figure reference pattern compiles")
 });
 static GRAPHICSPATH: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"\\graphicspath\s*\{((?:\{[^}]*\})+)\}")
@@ -31,7 +33,7 @@ static DETOKENIZE: LazyLock<Regex> = LazyLock::new(|| {
 /// graphicx tries the extensions it knows; the bare name, last, finds a file
 /// saved without one.
 const GRAPHICS_EXTENSIONS: &[&str] = &[
-    ".pdf", ".png", ".jpg", ".jpeg", ".svg", ".eps", ".webp", ".cdxml", "",
+    ".pdf", ".png", ".jpg", ".jpeg", ".svg", ".eps", ".webp", ".cdxml", ".mnova", "",
 ];
 
 /// An `\includegraphics` path under the pointer: its span in the text it
@@ -40,6 +42,7 @@ const GRAPHICS_EXTENSIONS: &[&str] = &[
 pub struct GraphicsTarget {
     pub range: Range<usize>,
     pub path: String,
+    pub spectrum: Option<NonZeroUsize>,
 }
 
 /// The path written, `\detokenize` taken off and backslashes made slashes.
@@ -56,13 +59,30 @@ pub fn unwrap_latex_path(raw: &str) -> String {
 /// the pointer anywhere on the argument, ends included.
 pub fn graphics_target(text: &str, position: usize) -> Option<GraphicsTarget> {
     GRAPHICS.captures_iter(text).find_map(|found| {
-        let content = found.get(1)?;
+        let command = found.get(1)?.as_str();
+        let option = found.get(2).map(|value| value.as_str());
+        let content = found.get(3)?;
         let path = unwrap_latex_path(content.as_str());
-        (!path.is_empty() && position >= content.start() && position <= content.end()).then(|| {
-            GraphicsTarget {
-                range: content.range(),
-                path,
-            }
+        if path.is_empty() || position < content.start() || position > content.end() {
+            return None;
+        }
+        let spectrum = if command == "chemn"
+            || (command == "chemd"
+                && Path::new(&path)
+                    .extension()
+                    .is_some_and(|extension| extension.eq_ignore_ascii_case("mnova")))
+        {
+            Some(match option {
+                Some(value) => value.trim().parse().ok()?,
+                None => NonZeroUsize::new(1)?,
+            })
+        } else {
+            None
+        };
+        Some(GraphicsTarget {
+            range: content.range(),
+            path,
+            spectrum,
         })
     })
 }
@@ -198,6 +218,7 @@ mod tests {
             Some(GraphicsTarget {
                 range: from..from + "figures/plot".len(),
                 path: "figures/plot".into(),
+                spectrum: None,
             })
         );
         assert_eq!(
@@ -206,6 +227,33 @@ mod tests {
         );
         assert_eq!(graphics_target(source, source.find("width").unwrap()), None);
         assert_eq!(graphics_target("Plain text", 3), None);
+    }
+
+    #[test]
+    fn chemd_preview_uses_first_or_explicit_mnova_spectrum() {
+        let source = r"\chemn{Document 1.mnova} \chemn[3]{appendix.mnova} \chemd{drawing.mnova} \chemd[scheme]{drawing.cdxml}";
+        let first = source.find("Document").unwrap();
+        let third = source.find("appendix").unwrap();
+        let drawing = source.find("drawing.cdxml").unwrap();
+
+        assert_eq!(
+            Some(NonZeroUsize::new(1).unwrap()),
+            graphics_target(source, first).and_then(|target| target.spectrum)
+        );
+        assert_eq!(
+            Some(NonZeroUsize::new(3).unwrap()),
+            graphics_target(source, third).and_then(|target| target.spectrum)
+        );
+        let chemd = source.find("drawing.mnova").unwrap();
+        assert_eq!(
+            Some(NonZeroUsize::new(1).unwrap()),
+            graphics_target(source, chemd).and_then(|target| target.spectrum)
+        );
+        assert_eq!(
+            None,
+            graphics_target(source, drawing).and_then(|target| target.spectrum)
+        );
+        assert_eq!(None, graphics_target(r"\chemd[0]{file.mnova}", 13));
     }
 
     #[test]
@@ -230,6 +278,10 @@ mod tests {
         assert_eq!(
             resolve_graphics("molecule", &project, &roots, "").as_deref(),
             Some("figs/molecule.cdxml")
+        );
+        assert_eq!(
+            resolve_graphics("spectrum", &paths(&["figs/spectrum.mnova"]), &roots, "").as_deref(),
+            Some("figs/spectrum.mnova")
         );
         assert_eq!(resolve_graphics("missing", &project, &roots, ""), None);
     }

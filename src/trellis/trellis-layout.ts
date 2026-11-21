@@ -12,7 +12,8 @@ import {
   createDocument, layout as L, sanitize, type HiddenPanel, type LayoutDocument, type LayoutNode, type PanelNode, type ViewRecord,
 } from "@danfessler/trellis";
 import {
-  arrangementOf, documentSlot, isDocumentSlot, isDocumentView, layoutShape, LAYOUT_STORAGE_PREFIX, LAYOUT_VERSION, type WorkspaceLibrary,
+  arrangementOf, documentSlot, isDocumentSlot, isDocumentView, layoutShape, LAYOUT_STORAGE_PREFIX,
+  LAYOUT_VERSION, migrateChemistryPanel, type WorkspaceLibrary,
 } from "./trellis-workspaces";
 import { ROOT_PDF } from "./compiled-pdf-tabs";
 
@@ -57,7 +58,8 @@ type SavedLayout = {
 
 export const VIEW_TYPES = [
   "project", "papers", "agent", "pdf", ROOT_PDF, "file", "slot", "terminal",
-  "history", "git", "comments", "overleaf", "literature", "todos", "checklist", "start",
+  "history", "git", "comments", "overleaf", "literature", "todos", "checklist",
+  "chemdraw", "molecule", "start",
 ] as const;
 
 /**
@@ -491,7 +493,7 @@ function migrateLayout(saved: SavedLayout): LayoutDocument | null {
   // their workspace (open documents are re-placed as App restores its tabs). v2
   // documents are v3's; only the envelope gained the workspace.
   if (saved.version !== LAYOUT_VERSION && saved.version !== 2) return null;
-  return saved.document;
+  return migrateChemistryPanel(saved.document);
 }
 
 const knownType = (type: string) => (VIEW_TYPES as readonly string[]).includes(type);
@@ -521,13 +523,13 @@ export function loadLayout(projectRoot: string): ProjectLayout | null {
         const preset = saved.preset?.previous && (saved.preset.preset === "writing" || saved.preset.preset === "reading" || saved.preset.preset === "bibliography")
           ? {
             preset: saved.preset.preset,
-            previous: sanitize(saved.preset.previous, knownType),
+            previous: sanitize(migrateChemistryPanel(saved.preset.previous), knownType),
             supplied: Array.isArray(saved.preset.supplied) ? saved.preset.supplied.filter((id) => typeof id === "string") : [],
           }
           : null;
         const focus = saved.focus?.previous
           ? {
-            previous: sanitize(saved.focus.previous, knownType),
+            previous: sanitize(migrateChemistryPanel(saved.focus.previous), knownType),
             supplied: Array.isArray(saved.focus.supplied) ? saved.focus.supplied.filter((id) => typeof id === "string") : [],
             pdf: saved.focus.pdf === true,
           }
@@ -577,7 +579,13 @@ export function openProjectLayout(projectRoot: string, library: WorkspaceLibrary
   if (loaded) return { ...loaded, places, workspace };
   // A workspace never saved is the default layout, which gets a document panel with the first document.
   const arrangement = library.get(workspace)?.arrangement;
-  return { document: arrangement ? sanitize(arrangement, knownType) : defaultLayout(), preset: null, focus: null, workspace, places };
+  return {
+    document: arrangement ? sanitize(migrateChemistryPanel(arrangement), knownType) : defaultLayout(),
+    preset: null,
+    focus: null,
+    workspace,
+    places,
+  };
 }
 
 /** The arrangement saved in workspace `id`: one never saved is the default layout's. */

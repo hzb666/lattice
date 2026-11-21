@@ -32,8 +32,8 @@ pub fn open_url(url: &str, cx: &mut App) -> Result<(), String> {
     system_open(url, cx)
 }
 
-/// Open a project CDXML file after applying the project's path restrictions.
-pub(crate) fn open_cdxml(root: &Path, relative: &str, cx: &mut App) {
+/// Open a project file after applying the project's path restrictions.
+pub(crate) fn open_project_file(root: &Path, relative: &str, cx: &mut App) {
     match lattice_core::project::safe_path(root, relative) {
         Ok(path) => cx.open_with_system(&path),
         Err(error) => crate::notices::error(lattice_i18n::t!("Could not open the file"), error, cx),

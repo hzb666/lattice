@@ -57,7 +57,8 @@ pub const VIEW_TYPES: &[&str] = &[
     "literature",
     "todos",
     "checklist",
-    "chemistry",
+    "chemdraw",
+    "molecule",
     "start",
 ];
 
@@ -74,8 +75,8 @@ pub fn known_type(kind: &str) -> bool {
 /// `doc` with views of unknown types dropped and its tree made whole.
 pub fn tidy(doc: &LayoutDocument) -> LayoutDocument {
     let mut migrated = doc.clone();
-    if let Some(mut previous) = migrated.views.shift_remove("chemdraw") {
-        if let Some(current) = migrated.views.get_mut("chemistry") {
+    if let Some(mut previous) = migrated.views.shift_remove("chemistry") {
+        if let Some(current) = migrated.views.get_mut("chemdraw") {
             if current.params.is_none() {
                 current.params = previous.params.take();
             }
@@ -83,14 +84,14 @@ pub fn tidy(doc: &LayoutDocument) -> LayoutDocument {
                 current.title = previous.title.take();
             }
         } else {
-            previous.kind = "chemistry".into();
-            migrated.views.insert("chemistry".into(), previous);
+            previous.kind = "chemdraw".into();
+            migrated.views.insert("chemdraw".into(), previous);
         }
         migrated = map_panels(&migrated, |panel| {
             let mut panel = panel.clone();
             migrate_chemistry_ids(&mut panel.views);
-            if panel.selected == "chemdraw" {
-                panel.selected = "chemistry".into();
+            if panel.selected == "chemistry" {
+                panel.selected = "chemdraw".into();
             }
             panel
         });
@@ -110,8 +111,8 @@ pub fn tidy(doc: &LayoutDocument) -> LayoutDocument {
 
 fn migrate_chemistry_ids(ids: &mut Vec<String>) {
     for id in ids.iter_mut() {
-        if id == "chemdraw" {
-            *id = "chemistry".into();
+        if id == "chemistry" {
+            *id = "chemdraw".into();
         }
     }
     let mut seen = std::collections::HashSet::new();

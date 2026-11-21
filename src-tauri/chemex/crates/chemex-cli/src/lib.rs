@@ -2,21 +2,40 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
+use std::num::NonZeroUsize;
 use std::path::Path;
 
 use chemex_cdxml::FieldValues;
 
+mod mnova;
+#[allow(dead_code)]
+mod output;
 mod structures;
+#[allow(dead_code)]
+mod tools;
+pub use mnova::{export_spectrum_pdf, is_valid_spectrum_pdf, spectrum_renderer_fingerprint};
 pub use structures::{CompoundStructure, StructureReport, analyze_compounds};
+
+pub fn analyze_compounds_with_rdkit(source: &str) -> std::result::Result<StructureReport, String> {
+    analyze_compounds(source, |script, request| {
+        tools::run_rdkit(script, request).map_err(|error| error.to_string())
+    })
+}
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 pub const PACKAGE: &str = include_str!("chemex.sty");
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct DrawingRequest {
-    pub counter: String,
-    pub path: String,
+pub enum FigureRequest {
+    ChemDraw {
+        counter: String,
+        path: String,
+    },
+    Mnova {
+        path: String,
+        spectrum: NonZeroUsize,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -26,43 +45,74 @@ pub struct DrawingRegistration {
     pub asset: String,
 }
 
-pub fn validate_drawings(
-    expected: &[DrawingRequest],
-    actual: &[DrawingRequest],
+#[derive(Clone, Debug)]
+pub enum FigureRegistration {
+    ChemDraw(DrawingRegistration),
+    Mnova {
+        spectrum: NonZeroUsize,
+        asset: String,
+    },
+}
+
+impl FigureRequest {
+    pub fn path(&self) -> &str {
+        match self {
+            Self::ChemDraw { path, .. } | Self::Mnova { path, .. } => path,
+        }
+    }
+}
+
+pub fn validate_figures(
+    expected: &[FigureRequest],
+    actual: &[FigureRequest],
     pass: &str,
 ) -> Result<()> {
     if expected != actual {
-        return Err(format!("CDXML references changed during the {pass} pass").into());
+        return Err(format!("Chemex figure references changed during the {pass} pass").into());
     }
     Ok(())
 }
 
-pub fn read_drawings(path: &Path) -> Result<Vec<DrawingRequest>> {
+pub fn read_figures(path: &Path) -> Result<Vec<FigureRequest>> {
     let contents = fs::read_to_string(path).map_err(|error| {
         format!(
-            "cannot read TeX drawing requests {}: {error}",
+            "cannot read TeX figure requests {}: {error}",
             path.display()
         )
     })?;
-    let mut drawings = Vec::new();
+    let mut figures = Vec::new();
     for line in contents.lines() {
-        let Some(record) = line.strip_prefix(r"\chemex@drawrequest") else {
-            return Err(format!("invalid TeX drawing request: {line}").into());
+        if let Some(record) = line.strip_prefix(r"\chemex@drawrequest") {
+            let (counter, rest) = group(record)?;
+            let (path, rest) = group(rest)?;
+            if !rest.trim().is_empty() {
+                return Err(format!("unexpected data in TeX drawing request: {line}").into());
+            }
+            let counter = counter.trim().to_owned();
+            validate_counter(&counter)?;
+            let path = unescape_tex_path(path.trim())?;
+            validate_extension(&path, "cdxml")?;
+            figures.push(FigureRequest::ChemDraw { counter, path });
+            continue;
+        }
+
+        let Some(record) = line.strip_prefix(r"\chemex@spectrumrequest") else {
+            return Err(format!("invalid TeX figure request: {line}").into());
         };
-        let (counter, rest) = group(record)?;
+        let (spectrum, rest) = group(record)?;
         let (path, rest) = group(rest)?;
         if !rest.trim().is_empty() {
-            return Err(format!("unexpected data in TeX drawing request: {line}").into());
+            return Err(format!("unexpected data in TeX spectrum request: {line}").into());
         }
-        let counter = counter.trim().to_owned();
-        validate_counter(&counter)?;
+        let spectrum = spectrum
+            .trim()
+            .parse::<NonZeroUsize>()
+            .map_err(|_| format!("invalid Mnova spectrum index in TeX request: {line}"))?;
         let path = unescape_tex_path(path.trim())?;
-        if path.is_empty() {
-            return Err("CDXML path cannot be empty".into());
-        }
-        drawings.push(DrawingRequest { counter, path });
+        validate_extension(&path, "mnova")?;
+        figures.push(FigureRequest::Mnova { path, spectrum });
     }
-    Ok(drawings)
+    Ok(figures)
 }
 
 pub fn read_numbers(path: &Path) -> Result<BTreeMap<String, String>> {
@@ -90,30 +140,37 @@ pub fn read_numbers(path: &Path) -> Result<BTreeMap<String, String>> {
     Ok(numbers)
 }
 
-pub fn registrations(drawings: &[DrawingRegistration]) -> String {
+pub fn registrations(figures: &[FigureRegistration]) -> String {
     let mut output = String::new();
-    for (index, drawing) in drawings.iter().enumerate() {
-        let fields = drawing
-            .fields
-            .iter()
-            .map(|key| format!(r"\chemex@assignfield{{{}}}{{{key}}}", drawing.counter))
-            .collect::<String>();
-        output.push_str(&format!(
-            r"\chemex@register{{{}}}{{{}}}{{{fields}}}{{{}}}",
-            index + 1,
-            drawing.counter,
-            drawing.asset
-        ));
+    for (index, figure) in figures.iter().enumerate() {
+        let index = index + 1;
+        let registration = match figure {
+            FigureRegistration::ChemDraw(drawing) => {
+                let fields = drawing
+                    .fields
+                    .iter()
+                    .map(|key| format!(r"\chemex@assignfield{{{}}}{{{key}}}", drawing.counter))
+                    .collect::<String>();
+                format!(
+                    r"\chemex@register{{{index}}}{{{}}}{{{fields}}}{{{}}}",
+                    drawing.counter, drawing.asset
+                )
+            }
+            FigureRegistration::Mnova { spectrum, asset } => {
+                format!(r"\chemex@registerspectrum{{{index}}}{{{spectrum}}}{{{asset}}}")
+            }
+        };
+        output.push_str(&registration);
         output.push('\n');
     }
     output
 }
 
 pub fn prepared_registrations(
-    drawings: &[DrawingRegistration],
+    figures: &[FigureRegistration],
     numbers: &BTreeMap<String, String>,
 ) -> Result<String> {
-    let mut output = registrations(drawings);
+    let mut output = registrations(figures);
     if !numbers.is_empty() {
         output.push_str(concat!(
             "\\begingroup\n",
@@ -148,6 +205,19 @@ pub fn field_values(fields: &[String], numbers: &BTreeMap<String, String>) -> Re
 fn validate_counter(counter: &str) -> Result<()> {
     if counter.is_empty() || !counter.bytes().all(|byte| byte.is_ascii_alphabetic()) {
         return Err(format!("invalid LaTeX counter name {counter:?}").into());
+    }
+    Ok(())
+}
+
+fn validate_extension(path: &str, expected: &str) -> Result<()> {
+    if path.is_empty() {
+        return Err(format!("{expected} path cannot be empty").into());
+    }
+    if !Path::new(path)
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case(expected))
+    {
+        return Err(format!("expected a .{expected} file: {path}").into());
     }
     Ok(())
 }
@@ -214,10 +284,10 @@ fn unescape_tex_path(path: &str) -> Result<String> {
             continue;
         }
         let Some(escaped) = characters.next() else {
-            return Err("trailing escape in CDXML path".into());
+            return Err("trailing escape in figure path".into());
         };
         if !matches!(escaped, '#' | '$' | '%' | '&' | '_' | '{' | '}') {
-            return Err(format!("unsupported TeX escape \\{escaped} in drawing path").into());
+            return Err(format!("unsupported TeX escape \\{escaped} in figure path").into());
         }
         output.push(escaped);
     }
@@ -229,13 +299,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn drawing_declarations_must_match_across_tex_passes() {
-        let declaration = DrawingRequest {
+    fn figure_declarations_must_match_across_tex_passes() {
+        let declaration = FigureRequest::ChemDraw {
             counter: "compound".into(),
             path: "drawing.cdxml".into(),
         };
         assert!(
-            validate_drawings(
+            validate_figures(
                 std::slice::from_ref(&declaration),
                 std::slice::from_ref(&declaration),
                 "final"
@@ -243,34 +313,60 @@ mod tests {
             .is_ok()
         );
 
-        let changed = DrawingRequest {
-            counter: "scheme".into(),
-            path: "appendix.cdxml".into(),
+        let changed = FigureRequest::Mnova {
+            path: "appendix.mnova".into(),
+            spectrum: NonZeroUsize::new(2).unwrap(),
         };
-        assert!(validate_drawings(&[declaration], &[changed], "final").is_err());
+        assert!(validate_figures(&[declaration], &[changed], "final").is_err());
     }
 
     #[test]
-    fn reads_tex_drawing_requests_with_unicode_and_spaces() {
-        let path = std::env::temp_dir().join(format!("chemex-drawings-{}.dat", std::process::id()));
+    fn reads_tex_figure_requests_with_unicode_spaces_and_spectrum_indices() {
+        let path = std::env::temp_dir().join(format!("chemex-figures-{}.dat", std::process::id()));
         fs::write(
             &path,
-            "\\chemex@drawrequest{scheme}{\"figures/有机 1.cdxml\"}\n\\chemex@drawrequest{appendix}{figures/a\\_b.cdxml}\n",
+            "\\chemex@drawrequest{scheme}{\"figures/有机 1.cdxml\"}\n\\chemex@spectrumrequest{2}{figures/a\\_b.mnova}\n",
         )
         .unwrap();
         assert_eq!(
             vec![
-                DrawingRequest {
+                FigureRequest::ChemDraw {
                     counter: "scheme".into(),
                     path: "figures/有机 1.cdxml".into()
                 },
-                DrawingRequest {
-                    counter: "appendix".into(),
-                    path: "figures/a_b.cdxml".into()
+                FigureRequest::Mnova {
+                    path: "figures/a_b.mnova".into(),
+                    spectrum: NonZeroUsize::new(2).unwrap(),
                 }
             ],
-            read_drawings(&path).unwrap()
+            read_figures(&path).unwrap()
         );
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn spectrum_requests_default_to_the_first_spectrum() {
+        let path =
+            std::env::temp_dir().join(format!("chemex-figures-default-{}.dat", std::process::id()));
+        fs::write(&path, r"\chemex@spectrumrequest{1}{sample.mnova}").unwrap();
+        assert_eq!(
+            vec![FigureRequest::Mnova {
+                path: "sample.mnova".into(),
+                spectrum: NonZeroUsize::new(1).unwrap(),
+            }],
+            read_figures(&path).unwrap()
+        );
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn rejects_zero_and_wrong_extension_spectrum_requests() {
+        let path =
+            std::env::temp_dir().join(format!("chemex-figures-invalid-{}.dat", std::process::id()));
+        fs::write(&path, "\\chemex@spectrumrequest{0}{sample.mnova}\n").unwrap();
+        assert!(read_figures(&path).is_err());
+        fs::write(&path, "\\chemex@spectrumrequest{1}{sample.cdxml}\n").unwrap();
+        assert!(read_figures(&path).is_err());
         fs::remove_file(path).unwrap();
     }
 
@@ -287,25 +383,32 @@ mod tests {
 
     #[test]
     fn registration_runs_keys_at_each_drawing_position() {
-        let output = registrations(&[DrawingRegistration {
-            counter: "scheme".into(),
-            fields: vec!["compound-a".into(), "compound-b".into()],
-            asset: "drawings/drawing-001.pdf".into(),
-        }]);
+        let output = registrations(&[
+            FigureRegistration::ChemDraw(DrawingRegistration {
+                counter: "scheme".into(),
+                fields: vec!["compound-a".into(), "compound-b".into()],
+                asset: "drawings/drawing-001.pdf".into(),
+            }),
+            FigureRegistration::Mnova {
+                spectrum: NonZeroUsize::new(2).unwrap(),
+                asset: "mnova-asset.pdf".into(),
+            },
+        ]);
         assert!(output.contains(
             r"\chemex@assignfield{scheme}{compound-a}\chemex@assignfield{scheme}{compound-b}"
         ));
         assert!(output.contains("drawings/drawing-001.pdf"));
+        assert!(output.contains(r"\chemex@registerspectrum{2}{2}{mnova-asset.pdf}"));
     }
 
     #[test]
     fn prepared_registrations_embed_plain_text_expectations_as_safe_tex() {
         let output = prepared_registrations(
-            &[DrawingRegistration {
+            &[FigureRegistration::ChemDraw(DrawingRegistration {
                 counter: "compound".into(),
                 fields: vec!["compound-a".into()],
                 asset: "drawings/drawing-001.pdf".into(),
-            }],
+            })],
             &BTreeMap::from([("compound-a".into(), "1 # % & _".into())]),
         )
         .unwrap();

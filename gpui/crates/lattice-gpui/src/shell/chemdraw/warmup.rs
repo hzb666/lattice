@@ -3,7 +3,7 @@ use std::{path::PathBuf, sync::Arc, time::Duration};
 use chemex_cdxml::DrawingDocument;
 use gpui::{AppContext as _, Context, Task};
 
-use super::ChemistryPanel;
+use super::ChemDrawPanel;
 
 #[derive(Default)]
 pub(super) struct Warmup {
@@ -25,7 +25,7 @@ impl Warmup {
     pub fn start(
         &mut self,
         drawing: (PathBuf, Arc<DrawingDocument>, Vec<String>),
-        cx: &mut Context<ChemistryPanel>,
+        cx: &mut Context<ChemDrawPanel>,
     ) {
         if !cfg!(windows)
             || !self.allowed

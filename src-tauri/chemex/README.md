@@ -53,11 +53,13 @@ Compound \chemex{compound-001} was converted to \chemex{compound-002}.
 .chem/demo/
 ├── drawings/drawing-001/drawing.cdxml
 ├── drawings/drawing-002/drawing.cdxml
-├── chemex-drawings.dat
+├── chemex-figures.dat
 └── chemex-numbers.dat
 ```
 
-`\includegraphics{路径.cdxml}` 使用相对于主 `.tex` 的文件路径，支持 `width`、`height`、`trim` 等 `graphicx` 选项。普通 CDXML 图稿可以直接引用。含编号字段的图稿使用默认 `compound` 计数器，其他计数器使用 `\chemd[counter]{路径.cdxml}`。
+`\includegraphics{路径.cdxml}` 仍可直接引用 CDXML，支持 `width`、`height`、`trim` 等 `graphicx` 选项；Mnova 也可直接引用并默认输出第 1 张谱图。推荐用 `\chemn{路径.mnova}`，多谱图文件可写 `\chemn[2]{路径.mnova}` 选择第 2 张。统一的 `\chemd{路径.cdxml}` / `\chemd{路径.mnova}` 同样支持按扩展名识别，Mnova 用 `[2]` 选择序号，CDXML 的 `\chemd[counter]{路径.cdxml}` 仍用方括号指定 LaTeX counter。省略参数的 Mnova 默认选第 1 张；序号超出文件谱图数量时报错。
+
+Mnova 由 MestReNova 脚本接口从私有文档副本导出所选谱图所在页的 PDF，再由 LaTeX 嵌入。首次导出后以源文件、谱图序号和渲染器指纹缓存在项目 `.research/cache/chemex-v1/assets/`，后续构建与编辑器 hover 预览共用；不修改或保存原始 `.mnova`。Windows 上会先查 `PATH`，再只读查询已运行的 MestReNova 进程；独立 CLI 或 Mnova 未运行时，可设置 `CHEMEX_MESTRENOVA` 为可执行文件完整路径。
 
 默认 `compound` 按图稿在 LaTeX 原文中的引用顺序编号。每个 key 首次作为图稿字段出现时推进计数器，`\chemex{key}` 只查号，可以写在图稿之前。图稿中的重复 key 复用编号。其他计数器通过 `\chemex[counter]{key}` 指定，仍由正文或图稿中的首次出现推进。格式使用 `\Roman`、`\roman`、`\Alph`、`\alph` 或自定义 `\thecompound`，重置使用原生 `\setcounter`。
 
@@ -130,7 +132,7 @@ cargo run --manifest-path src-tauri/chemex/Cargo.toml -p chemex-cli -- build src
 
 Lattice 的本地 Chemex 集成样稿保存在 `src-tauri/chemex/.chem/paper-01/` 和 `paper-02/`；Build 会准备图稿并使用普通 Lattice `latexmk` 流程排版，准备记录和矢量图保存在论文项目 `.research/cache/chemex-v1/`。默认编号改为按图稿出现顺序，因此插入新图稿后，既有编号及正文 `\chemex{key}` 引用都会顺延更新。ChemDraw 与 TeX Live 必须可用；随仓库保留的 Inkscape 位于 `src-tauri/chemex/tools/inkscape/`，Lattice 通过 `CHEMEX_INKSCAPE` 使用它。
 
-当前 `build` 从原稿位置解析相对 `\input` 和资源，但把中间文件写入临时目录；尚不承诺完整多文件项目、BibTeX 依赖发现或自定义构建脚本。输入文件必须是 UTF-8。单张 ChemDraw 导出暂限单页；`inspect` 和 `render` 支持多页。
+当前 `build` 从原稿位置解析相对 `\input` 和资源，但把中间文件写入临时目录；尚不承诺完整多文件项目、BibTeX 依赖发现或自定义构建脚本。输入文件必须是 UTF-8。单张 ChemDraw 导出暂限单页；Mnova 导出按选中谱图所在页输出，用户样本的多页视觉保真仍待实测；`inspect` 和 `render` 支持多页。
 
 失败时命令返回非零退出码，并打印保留中间文件的 `.chemex-*.tmp` 目录。检查对应的 `chemdraw`、`inkscape`、`latexmk` 日志；不会发布半成品到目标目录。辅助进程超时为 120 秒，不终止 ChemDraw 应用；超时时原生应用可能仍打开临时副本。
 

@@ -283,7 +283,7 @@ impl Run {
             let read = self
                 .wait_for(cx, Duration::from_secs(5), |_, cx| {
                     matches!(
-                        previews::figure(root, &figure, &editor, cx),
+                        previews::figure(root, &figure, None, &editor, cx),
                         Some(Preview::Ready(Figure::Shown(_)))
                     )
                 })
@@ -301,7 +301,7 @@ impl Run {
         let unavailable = self
             .wait_for(cx, Duration::from_secs(5), |_, cx| {
                 matches!(
-                    previews::figure(root, &vector, &editor, cx),
+                    previews::figure(root, &vector, None, &editor, cx),
                     Some(Preview::Ready(Figure::Unavailable))
                 )
             })

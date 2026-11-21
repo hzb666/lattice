@@ -21,6 +21,26 @@ const REVEAL_LABEL: &str = n!("Show in Explorer");
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
 const REVEAL_LABEL: &str = n!("Show in file manager");
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ExternalEditor {
+    ChemDraw,
+    MestReNova,
+}
+
+fn external_editor(path: &str, folder: bool) -> Option<ExternalEditor> {
+    if folder {
+        return None;
+    }
+    let extension = std::path::Path::new(path).extension()?.to_str()?;
+    if extension.eq_ignore_ascii_case("cdxml") {
+        Some(ExternalEditor::ChemDraw)
+    } else if extension.eq_ignore_ascii_case("mnova") {
+        Some(ExternalEditor::MestReNova)
+    } else {
+        None
+    }
+}
+
 type Run = Box<dyn Fn(&mut FileTreePanel, &mut Window, &mut Context<FileTreePanel>)>;
 
 /// An item that runs `run` on the tree.
@@ -179,12 +199,16 @@ impl FileTreePanel {
                 .icon(if chosen { Icon::CHECK } else { Icon::FILE_PLAY }),
             );
         }
-        if !folder && path.to_ascii_lowercase().ends_with(".cdxml") {
+        if let Some(editor) = external_editor(&path, folder) {
             let (root, relative) = (root.clone(), path.clone());
+            let label = match editor {
+                ExternalEditor::ChemDraw => t!("Open in ChemDraw"),
+                ExternalEditor::MestReNova => t!("Open in MestReNova"),
+            };
             menu = menu.separator().item(
-                MenuAction::new(t!("Open in ChemDraw"), move |_, cx| {
+                MenuAction::new(label, move |_, cx| {
                     if let Some(root) = &root {
-                        crate::opener::open_cdxml(root, &relative, cx);
+                        crate::opener::open_project_file(root, &relative, cx);
                     }
                 })
                 .icon(Icon::CHEMISTRY),
@@ -271,5 +295,28 @@ impl FileTreePanel {
                 project.set_show_hidden(!shown, cx);
             });
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ExternalEditor, external_editor};
+
+    #[test]
+    fn editor_matches_supported_chemistry_files_case_insensitively() {
+        assert_eq!(
+            Some(ExternalEditor::ChemDraw),
+            external_editor("figures/scheme.CDXML", false)
+        );
+        assert_eq!(
+            Some(ExternalEditor::MestReNova),
+            external_editor("spectra/sample.MnOvA", false)
+        );
+    }
+
+    #[test]
+    fn editor_is_not_offered_for_folders_or_other_files() {
+        assert_eq!(None, external_editor("figures/sample.mnova", true));
+        assert_eq!(None, external_editor("figures/sample.pdf", false));
     }
 }

@@ -10,21 +10,31 @@ pub(crate) fn ready_path(root: &Path, namespace: &str) -> Result<PathBuf, String
 pub(crate) struct Asset<'a> {
     pub pdf: &'a str,
     pub source: &'a str,
-    pub numbered: &'a str,
+    pub detail: &'a str,
 }
 
 impl<'a> Asset<'a> {
     pub fn parse(line: &'a str) -> Option<Self> {
         let mut parts = line.split(' ');
-        let asset = Self { pdf: parts.next()?, source: parts.next()?, numbered: parts.next()? };
-        pdf_key(asset.pdf)?;
-        (parts.next().is_none() && [asset.source, asset.numbered].into_iter().all(valid_hash))
-            .then_some(asset)
+        let asset = Self { pdf: parts.next()?, source: parts.next()?, detail: parts.next()? };
+        let detail_valid = if pdf_key(asset.pdf).is_some() {
+            valid_hash(asset.detail)
+        } else if spectrum_key(asset.pdf).is_some() {
+            asset.detail.parse::<std::num::NonZeroUsize>().is_ok()
+        } else {
+            false
+        };
+        (parts.next().is_none() && valid_hash(asset.source) && detail_valid).then_some(asset)
     }
 }
 
 pub(crate) fn pdf_key(name: &str) -> Option<&str> {
     let hash = name.strip_prefix("chemex-")?.strip_suffix(".pdf")?;
+    valid_hash(hash).then_some(hash)
+}
+
+pub(crate) fn spectrum_key(name: &str) -> Option<&str> {
+    let hash = name.strip_prefix("mnova-")?.strip_suffix(".pdf")?;
     valid_hash(hash).then_some(hash)
 }
 
@@ -38,14 +48,17 @@ pub fn built_preview_svg(root: &Path, paper: &str, source: &str) -> Option<Vec<u
     let marker = crate::project::safe_path(root, &format!("{CACHE}/{namespace}/{READY}")).ok()?;
     let marker = String::from_utf8(read_asset(&marker).ok()?).ok()?;
     let source = sha256_hex(source);
-    let mut matches =
-        marker.lines().skip(2).filter_map(Asset::parse).filter(|asset| asset.source == source);
+    let mut matches = marker
+        .lines()
+        .skip(2)
+        .filter_map(Asset::parse)
+        .filter(|asset| pdf_key(asset.pdf).is_some() && asset.source == source);
     let asset = matches.next()?;
-    if matches.any(|other| other.numbered != asset.numbered || other.pdf != asset.pdf) {
+    if matches.any(|other| other.detail != asset.detail || other.pdf != asset.pdf) {
         return None;
     }
     let svg_path =
-        crate::project::safe_path(root, &format!("{CACHE}/assets/{}.svg", asset.numbered)).ok()?;
+        crate::project::safe_path(root, &format!("{CACHE}/assets/{}.svg", asset.detail)).ok()?;
     let svg = read_svg(&svg_path)?;
     (pdf_key(asset.pdf)? == sha256_hex(&svg)).then_some(svg)
 }
