@@ -24,7 +24,10 @@
  *   source is mounted), so the two views step through one history.
  *
  * Host to page, beside the document protocol's `doc:open` (with `projectRoot`,
- * `files`, `texSources`, `split`, `papers`), `doc:source`, `doc:active`, `doc:flush`
+ * `files`, `texSources`, `split`, `papers`, and `tableWidths`: the file's saved
+ * tables' column widths, `[{ index, signature, widths }]`, kept by the owner
+ * and never in the file),
+ * `doc:source`, `doc:active`, `doc:flush`
  * and `doc:locale`:
  *   md:split          { split }         the view is Split (source labels kept for its scroll sync)
  *   md:reveal         { id, line }      land on a 1-based line of the file
@@ -41,6 +44,8 @@
  * Page to host:
  *   md:change         { source, base }  the whole file after an edit made against `base`
  *   md:undo, md:redo
+ *   md:table-widths   { tables }        a drag or a fit changed the file's saved tables: the
+ *                     whole list, which the owner keeps as it is
  *   md:overleaf-accept, md:overleaf-reject   { id }   a suggestion card's Accept or Reject
  *   md:view-in-source { offset }        show the source with the caret at a UTF-16 offset
  *   md:open-path      { path }          a project link followed
@@ -74,6 +79,7 @@ import type { usePaperPdf } from "../../../src/canvas/use-paper-pdf";
 import { LatticeVisualMarkdownEditor } from "../../../src/editor/markdown/engine/lattice-visual-editor";
 import { MarkdownWorkspaceIndex } from "../../../src/editor/markdown/markdown-workspace-index";
 import type { VisualRevealTarget } from "../../../src/editor/markdown/visual-editor-props";
+import type { SavedTable, TableColumnWidths } from "../../../src/editor/markdown/engine/table-column-widths";
 import { katexMacrosFromSources } from "../../../src/editor/latex/latex-text";
 import { markdownFrontmatterEnd } from "../../../src/app-utils";
 import type { FileNode, PaperSummary } from "../../../src/app-types";
@@ -168,7 +174,10 @@ type MarkdownOpen = {
   presence?: PresenceCursor[];
   papers?: PaperSummary[];
   overleaf?: Partial<MarkdownOverleaf>;
+  tableWidths?: SavedTable[];
 };
+
+const NO_TABLES: SavedTable[] = [];
 
 type Reveal = { id: string; target: VisualRevealTarget };
 
@@ -188,6 +197,7 @@ type State = {
   papers: PaperSummary[];
   /** Overleaf's suggestions on the file, positioned in it. */
   overleaf: MarkdownOverleaf;
+  tableWidths: SavedTable[];
 };
 
 /** What the owner sends of Overleaf's suggestions (`md:overleaf`, `markdown_host.rs`). */
@@ -208,7 +218,8 @@ type Action =
   | { type: "presence"; presence: PresenceCursor[] }
   | { type: "papers"; papers: PaperSummary[] }
   | { type: "overleaf"; overleaf: MarkdownOverleaf }
-  | { type: "editable"; editable: boolean };
+  | { type: "editable"; editable: boolean }
+  | { type: "table-widths"; tables: SavedTable[] };
 
 function reduce(state: State, action: Action): State {
   switch (action.type) {
@@ -220,6 +231,7 @@ function reduce(state: State, action: Action): State {
         presence: action.open.presence ?? [],
         papers: action.open.papers ?? [],
         overleaf: { ...NO_OVERLEAF, ...action.open.overleaf },
+        tableWidths: action.open.tableWidths ?? NO_TABLES,
       };
     case "source":
       return { ...state, source: action.source };
@@ -243,6 +255,8 @@ function reduce(state: State, action: Action): State {
       return { ...state, overleaf: action.overleaf };
     case "editable":
       return state.opened ? { ...state, opened: { ...state.opened, editable: action.editable } } : state;
+    case "table-widths":
+      return { ...state, tableWidths: action.tables };
   }
 }
 
@@ -279,8 +293,9 @@ function Markdown() {
     presence: [],
     papers: [],
     overleaf: NO_OVERLEAF,
+    tableWidths: NO_TABLES,
   });
-  const { opened, source, split, ready, assetRevision, reveal, files, texSources, paper, presence, papers, overleaf } = state;
+  const { opened, source, split, ready, assetRevision, reveal, files, texSources, paper, presence, papers, overleaf, tableWidths } = state;
   // Why the engine cannot show this full text as written, for its masthead
   // (`onEligibilityChange`, `paperVisualEligibilityReason`).
   const [eligibility, setEligibility] = useState<string | null>(null);
@@ -479,6 +494,14 @@ function Markdown() {
     return true;
   }, [markEcho]);
 
+  const tableColumnWidths = useMemo((): TableColumnWidths => ({
+    tables: tableWidths,
+    onChange: (tables) => {
+      dispatch({ type: "table-widths", tables });
+      host().post("md:table-widths", { tables });
+    },
+  }), [tableWidths]);
+
   const onUndo = useCallback(() => { host().post("md:undo"); return true; }, []);
   const onRedo = useCallback(() => { host().post("md:redo"); return true; }, []);
   const onFlushPendingChange = useCallback((flush: (() => boolean) | null) => { pendingFlush = flush; }, []);
@@ -619,6 +642,7 @@ function Markdown() {
           assetRevision={assetRevision}
           editable={opened.editable}
           onCaretChange={onCaretChange}
+          tableColumnWidths={tableColumnWidths}
         />
       </Fragment>
     </ScrollArea>
