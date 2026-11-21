@@ -86,14 +86,20 @@ impl TrellisWorkspace {
                     }
                 });
         } else {
+            let mut contents = div()
+                .absolute()
+                .inset_0()
+                .rounded(card.radius)
+                .overflow_hidden();
             for s in p.surfaces.iter().filter(|s| s.shown) {
                 if let Some(content) = self.render_surface(p, s, window, cx) {
-                    el = el.child(content);
+                    contents = contents.child(content);
                 }
             }
             if p.bar == TabbarMode::Always || p.bar == TabbarMode::Overlay {
-                el = el.child(self.render_strip(p, window, cx));
+                contents = contents.child(self.render_strip(p, window, cx));
             }
+            el = el.child(contents);
         }
         el = el.children(self.skin.clone().card_children(p, cx));
         if p.handles {

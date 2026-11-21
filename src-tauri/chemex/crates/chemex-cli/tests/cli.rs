@@ -32,10 +32,10 @@ impl Project {
 \renewcommand{\thecompound}{\Roman{compound}}
 \begin{document}
 References: \chemex{compound-001}, \chemex{compound-002}.
-\chemexdrawing[compound]{drawing.cdxml}
+\chemd[compound]{drawing.cdxml}
 \setcounter{compound}{0}
 \renewcommand{\thecompound}{\alph{compound}}
-\chemexdrawing[compound]{appendix.cdxml}
+\chemd[compound]{appendix.cdxml}
 \end{document}
 ",
         )

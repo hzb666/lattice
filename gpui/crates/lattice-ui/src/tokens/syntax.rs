@@ -65,15 +65,15 @@ pub const COLOR_SYNTAX_GITHUB_CARET: ColorToken = ColorToken::new(hex(0x0969DA),
 /// GitHub code theme (the default): LaTeX commands, keywords
 ///
 /// App: `code-theme github --syntax-keyword`.
-pub const COLOR_SYNTAX_GITHUB_KEYWORD: ColorToken = ColorToken::new(hex(0xCF222E), hex(0xFF7B72));
+pub const COLOR_SYNTAX_GITHUB_KEYWORD: ColorToken = ColorToken::new(hex(0xCC1E2C), hex(0xFF7B72));
 /// GitHub code theme (the default): operators
 ///
 /// App: `code-theme github --syntax-operator`.
-pub const COLOR_SYNTAX_GITHUB_OPERATOR: ColorToken = ColorToken::new(hex(0xCF222E), hex(0xFF7B72));
+pub const COLOR_SYNTAX_GITHUB_OPERATOR: ColorToken = ColorToken::new(hex(0xCC1E2C), hex(0xFF7B72));
 /// GitHub code theme (the default): sectioning, functions
 ///
 /// App: `code-theme github --syntax-function`.
-pub const COLOR_SYNTAX_GITHUB_FUNCTION: ColorToken = ColorToken::new(hex(0x804DDC), hex(0xD2A8FF));
+pub const COLOR_SYNTAX_GITHUB_FUNCTION: ColorToken = ColorToken::new(hex(0x7C49D8), hex(0xD2A8FF));
 /// GitHub code theme (the default): environment names, types
 ///
 /// App: `code-theme github --syntax-type`.
@@ -89,7 +89,7 @@ pub const COLOR_SYNTAX_GITHUB_STRING: ColorToken = ColorToken::new(hex(0x0A3069)
 /// GitHub code theme (the default): comments
 ///
 /// App: `code-theme github --syntax-comment`.
-pub const COLOR_SYNTAX_GITHUB_COMMENT: ColorToken = ColorToken::new(hex(0x59636E), hex(0x8B949E));
+pub const COLOR_SYNTAX_GITHUB_COMMENT: ColorToken = ColorToken::new(hex(0x59636E), hex(0x8E97A1));
 /// GitHub code theme (the default): numbers, constants
 ///
 /// App: `code-theme github --syntax-number`.

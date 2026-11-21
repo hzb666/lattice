@@ -74,10 +74,10 @@ pub const COLOR_ACCENT_CONTRAST: ColorToken = ColorToken::new(hex(0xFFFFFF), hex
 ///
 /// App: `--focus`.
 pub const COLOR_FOCUS: ColorToken = ColorToken::new(hex(0x3B5BD6), hex(0x7F97FF));
-/// Control hover, 5% of the ink
+/// Control hover, 8% of the ink
 ///
 /// App: `--control-hover-surface`.
-pub const COLOR_HOVER: ColorToken = ColorToken::new(rgba8(36, 36, 38, 0.05), rgba8(233, 233, 231, 0.05));
+pub const COLOR_HOVER: ColorToken = ColorToken::new(rgba8(36, 36, 38, 0.08), rgba8(233, 233, 231, 0.08));
 /// Control press, 8% of the ink
 ///
 /// App: `--control-pressed-surface`.
@@ -86,10 +86,10 @@ pub const COLOR_PRESSED: ColorToken = ColorToken::new(rgba8(36, 36, 38, 0.08), r
 ///
 /// App: `--control-tinted-surface`.
 pub const COLOR_TINTED: ColorToken = ColorToken::new(rgba8(48, 48, 51, 0.12), rgba8(231, 231, 228, 0.12));
-/// Hover on the darker chrome, 6% of the ink
+/// Hover on the darker chrome, 8% of the ink
 ///
 /// App: `--chrome-hover-surface`.
-pub const COLOR_CHROME_HOVER: ColorToken = ColorToken::new(rgba8(36, 36, 38, 0.06), rgba8(233, 233, 231, 0.06));
+pub const COLOR_CHROME_HOVER: ColorToken = ColorToken::new(rgba8(36, 36, 38, 0.08), rgba8(233, 233, 231, 0.08));
 /// Selected row, 8% of the ink, with medium weight
 ///
 /// App: `--navigation-tree-selected-surface`.
@@ -101,7 +101,7 @@ pub const COLOR_SELECTION: ColorToken = ColorToken::new(rgba8(61, 122, 242, 0.16
 /// Editor current line, neutral under every accent
 ///
 /// App: `--editor-active-line-surface`.
-pub const COLOR_CURRENT_LINE: ColorToken = ColorToken::new(rgba8(48, 48, 51, 0.043), rgba8(255, 255, 255, 0.05));
+pub const COLOR_CURRENT_LINE: ColorToken = ColorToken::new(rgba8(48, 48, 51, 0.08), rgba8(255, 255, 255, 0.08));
 /// Danger status
 ///
 /// App: `--status-danger`.
@@ -248,11 +248,11 @@ pub const COLOR_MATCH_CURRENT: ColorToken = ColorToken::same(rgba8(255, 142, 0, 
 /// Control hover: ink at this strength
 ///
 /// App: `--control-hover-surface`.
-pub const OPACITY_HOVER: f32 = 0.05;
+pub const OPACITY_HOVER: f32 = 0.08;
 /// Hover on the darker chrome
 ///
 /// App: `--chrome-hover-surface`.
-pub const OPACITY_CHROME_HOVER: f32 = 0.06;
+pub const OPACITY_CHROME_HOVER: f32 = 0.08;
 /// Press and selected row
 ///
 /// App: `--control-pressed-surface`.

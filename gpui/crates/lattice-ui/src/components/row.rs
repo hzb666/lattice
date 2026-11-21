@@ -10,7 +10,7 @@
 //! the body role; a detail in caption secondary, under the label or at the
 //! end; anything trailing (keycaps, a badge, an action) last.
 //!
-//! States follow the Guidelines: hover is the ink at 5%, pressed 8%, both on
+//! Hover and press use the ink at 8%, both on
 //! the fast tier; the selected row takes the selected-row wash with its label
 //! at medium weight; the row the keys reached in a list (`current`) takes the
 //! accent wash, its icon stepping up to the primary ink. A clickable row is a

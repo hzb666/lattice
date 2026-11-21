@@ -44,7 +44,7 @@ When to use what, what never to do, and the contrast every surface owes its text
 
 - Compact chrome around comfortable reading and writing surfaces. Density is a property of the surface, not of the product.
 - One of each: one accent, one serif voice, one focus ring, one elevation ladder, one motion system. A second of anything is a missing decision.
-- State runs one way: hover is lighter than pressed, and hover lighter than selected lighter than active, so two states never read the same.
+- Hover gives transient feedback. Selection and active states persist and use their own semantic cues.
 - Colour carries meaning, not decoration: status, the accent and file kinds. Everything else is ink on neutral surfaces.
 
 ### Colour
@@ -89,7 +89,7 @@ Six roles, each a size with its own leading. Take both.
 
 ### States and focus
 
-- Hover is 5% of the ink, pressed 8%, a selected row 8% with medium weight; the darker chrome hovers at 6%.
+- Neutral controls and chrome use 8% of the ink for hover and press. A selected row uses 8% with medium weight.
 - Keyboard focus is one ring, 2px at a 2px offset in the focus colour. Components never add a second ring, and pointer focus draws none.
 - Text entry answers focus with its border, not the ring. Selection is a fill, never an outline.
 - A disabled Button keeps a faint slab with stepped-back ink; icon buttons, switches and checkboxes fade to 42%.
@@ -167,12 +167,12 @@ A raised, popover, floating or dialog surface stands on `--color-raised` with `b
 | `--color-line-strong` | `rgb(28 28 31 / 14%)` | `rgb(255 255 255 / 12%)` | Stronger line: secondary Button edge, switch off track |
 | `--color-accent` | `#303033` | `#E7E7E4` | Interaction accent (Graphite = neutral); checkbox and switch on |
 | `--color-focus` | `#3B5BD6` | `#7F97FF` | Keyboard focus ring (blue under Graphite; the accent under a preset) |
-| `--color-hover` | `rgb(36 36 38 / 5%)` | `rgb(233 233 231 / 5%)` | Control hover, 5% of the ink |
+| `--color-hover` | `rgb(36 36 38 / 8%)` | `rgb(233 233 231 / 8%)` | Control hover, 8% of the ink |
 | `--color-pressed` | `rgb(36 36 38 / 8%)` | `rgb(233 233 231 / 8%)` | Control press, 8% of the ink |
-| `--color-chrome-hover` | `rgb(36 36 38 / 6%)` | `rgb(233 233 231 / 6%)` | Hover on the darker chrome, 6% of the ink |
+| `--color-chrome-hover` | `rgb(36 36 38 / 8%)` | `rgb(233 233 231 / 8%)` | Hover on the darker chrome, 8% of the ink |
 | `--color-row-selected` | `rgb(36 36 38 / 8%)` | `rgb(233 233 231 / 8%)` | Selected row, 8% of the ink, with medium weight |
 | `--color-selection` | `rgb(61 122 242 / 16%)` | `rgb(61 122 242 / 19%)` | Text selection in the editor |
-| `--color-current-line` | `rgb(48 48 51 / 4.3%)` | `rgb(255 255 255 / 5%)` | Editor current line, neutral under every accent |
+| `--color-current-line` | `rgb(48 48 51 / 8%)` | `rgb(255 255 255 / 8%)` | Editor current line, neutral under every accent |
 | `--color-danger` | `#BC413E` | `#EE7772` | Danger status |
 | `--color-success` | `#2C785C` | `#66BD99` | Success status |
 | `--color-warning` | `#8D6400` | `#D7A62B` | Warning status |
@@ -278,13 +278,13 @@ A raised, popover, floating or dialog surface stands on `--color-raised` with `b
 | `--color-syntax-github-ink` | `#1F2328` | `#E6EDF3` | GitHub code theme (the default): ink: plain code and brackets |
 | `--color-syntax-github-line-number` | `#89929C` | `#6E7681` | GitHub code theme (the default): line numbers in the gutter |
 | `--color-syntax-github-caret` | `#0969DA` | `#2F81F7` | GitHub code theme (the default): the caret |
-| `--color-syntax-github-keyword` | `#CF222E` | `#FF7B72` | GitHub code theme (the default): LaTeX commands, keywords |
-| `--color-syntax-github-operator` | `#CF222E` | `#FF7B72` | GitHub code theme (the default): operators |
-| `--color-syntax-github-function` | `#804DDC` | `#D2A8FF` | GitHub code theme (the default): sectioning, functions |
+| `--color-syntax-github-keyword` | `#CC1E2C` | `#FF7B72` | GitHub code theme (the default): LaTeX commands, keywords |
+| `--color-syntax-github-operator` | `#CC1E2C` | `#FF7B72` | GitHub code theme (the default): operators |
+| `--color-syntax-github-function` | `#7C49D8` | `#D2A8FF` | GitHub code theme (the default): sectioning, functions |
 | `--color-syntax-github-type` | `#116329` | `#7EE787` | GitHub code theme (the default): environment names, types |
 | `--color-syntax-github-variable` | `#0550AE` | `#79C0FF` | GitHub code theme (the default): math, variables |
 | `--color-syntax-github-string` | `#0A3069` | `#A5D6FF` | GitHub code theme (the default): strings, arguments |
-| `--color-syntax-github-comment` | `#59636E` | `#8B949E` | GitHub code theme (the default): comments |
+| `--color-syntax-github-comment` | `#59636E` | `#8E97A1` | GitHub code theme (the default): comments |
 | `--color-syntax-github-number` | `#0550AE` | `#79C0FF` | GitHub code theme (the default): numbers, constants |
 | `--color-syntax-github-citation` | `#0A3069` | `#A5D6FF` | GitHub code theme (the default): citation keys |
 | `--color-syntax-github-reference` | `#953800` | `#FFA657` | GitHub code theme (the default): cross-references |
@@ -361,8 +361,8 @@ A raised, popover, floating or dialog surface stands on `--color-raised` with `b
 
 | Token | Value | Use |
 | --- | --- | --- |
-| `--opacity-hover` | `5%` | Control hover: ink at this strength |
-| `--opacity-chrome-hover` | `6%` | Hover on the darker chrome |
+| `--opacity-hover` | `8%` | Control hover: ink at this strength |
+| `--opacity-chrome-hover` | `8%` | Hover on the darker chrome |
 | `--opacity-pressed` | `8%` | Press and selected row |
 | `--opacity-tab-selected` | `10%` | Selected panel tab: ink at this strength laid opaque on the panel surface |
 | `--opacity-tinted` | `12%` | Tinted and danger Button rest, status washes |

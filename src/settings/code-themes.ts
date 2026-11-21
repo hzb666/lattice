@@ -229,7 +229,7 @@ const EDITOR_GROUNDS: Record<Theme, readonly string[]> = {
 const EDITOR_GROUND = "var(--editor-bg)";
 
 /** The current line's wash: the ink at the strength Lattice's own editor uses. */
-const LINE_ALPHA = 0.05;
+const LINE_ALPHA = 0.08;
 /** An unfocused editor keeps its selection at this share of the focused one. */
 const UNFOCUSED_SELECTION = 0.6;
 

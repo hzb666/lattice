@@ -40,7 +40,7 @@ Chemex 的 workspace 可独立验证；项目管理、桌面界面和论文编�
 - 对含自定义 DTD 实体或未知嵌套样式内容的字段不猜测替换范围。普通对象仍可检查，不含字段的文档可原样返回。
 - 输出会再次解析以检查 XML 完整性；这不替代 ChemDraw 应用兼容性检查。
 
-`chemex.sty` 在 `graphicx` 加载图片时截获明确带 `.cdxml` 扩展名的字面路径。发现、编号和最终构建按相同顺序记录引用。最终构建把匹配的 PDF 传给 `graphicx`，沿用原有图片选项。`\chemexdrawing[counter]` 仍可指定自定义 counter。普通图稿无需定义计数器。
+`chemex.sty` 在 `graphicx` 加载图片时截获明确带 `.cdxml` 扩展名的字面路径。发现、编号和最终构建按相同顺序记录引用。最终构建把匹配的 PDF 传给 `graphicx`，沿用原有图片选项。`\chemd[counter]` 仍可指定自定义 counter。普通图稿无需定义计数器。
 
 ## 化学语义边界
 

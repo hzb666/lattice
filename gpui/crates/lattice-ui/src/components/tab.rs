@@ -416,6 +416,9 @@ impl RenderOnce for PanelTab {
                 .relative()
                 .flex_none()
                 .size(ICON)
+                .flex()
+                .items_center()
+                .justify_center()
                 .children(self.icon)
                 .children(dirty_dot),
         )

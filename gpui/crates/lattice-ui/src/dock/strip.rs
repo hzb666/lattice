@@ -12,5 +12,5 @@ pub const MENU_WIDTH: Pixels = px(24.);
 pub const DOCUMENT_TAB_MIN: Pixels = px(100.);
 /// A document's tab at its smallest: icon and close square, no label.
 pub const DOCUMENT_TAB_FLOOR: Pixels = px(66.);
-/// Between the spare tools and the panel's tools (`.trellis-latex-tools`).
-pub const SPARE_GAP: Pixels = px(4.);
+/// Between the document's view switch and its build tools.
+pub const SPARE_GAP: Pixels = px(8.);

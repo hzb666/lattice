@@ -76,19 +76,19 @@ fn github_draws_on_the_lattice_sheet_with_its_own_selection_and_line() {
     assert_eq!(style["editor.background"], "#00000000");
     assert_eq!(style["editor.gutter.background"], "#00000000");
     assert_eq!(style["editor.active_line.background"], "#00000000");
-    // #0969da33, and GitHub's ink at 5% (0.05 × 255 rounds to 0x0d).
+    // #0969da33, and GitHub's ink at 8% (0.08 × 255 rounds to 0x14).
     assert_eq!(style["players"][0]["selection"], "#0969da33");
-    assert_eq!(hex(current_line(CodeTheme::Github, &palette)), "#1f23280d");
+    assert_eq!(hex(current_line(CodeTheme::Github, &palette)), "#1f232814");
     assert_eq!(style["players"][0]["cursor"], "#0969daff");
     assert_eq!(style["editor.line_number"], "#89929cff");
-    assert_eq!(style["syntax"]["keyword"]["color"], "#cf222eff");
+    assert_eq!(style["syntax"]["keyword"]["color"], "#cc1e2cff");
     // #8250df, fitted to 4.5:1 on every light tint's editor ground.
-    assert_eq!(style["syntax"]["function"]["color"], "#804ddcff");
+    assert_eq!(style["syntax"]["function"]["color"], "#7c49d8ff");
     // Markdown's headings take the function colour at 600, its marks the
     // keyword colour at the text's weight (`markdownHighlightStyle`).
-    assert_eq!(style["syntax"]["markup.heading"]["color"], "#804ddcff");
+    assert_eq!(style["syntax"]["markup.heading"]["color"], "#7c49d8ff");
     assert_eq!(style["syntax"]["markup.heading"]["font_weight"], 600);
-    assert_eq!(style["syntax"]["markup.meta"]["color"], "#cf222eff");
+    assert_eq!(style["syntax"]["markup.meta"]["color"], "#cc1e2cff");
     assert_eq!(style["syntax"]["markup.meta"]["font_weight"], Value::Null);
     assert_eq!(style["syntax"]["markup.quote"]["font_style"], "italic");
 
@@ -97,7 +97,7 @@ fn github_draws_on_the_lattice_sheet_with_its_own_selection_and_line() {
     let dark_palette = Palette::new(Appearance::Dark, Tint::Sage, Accent::Graphite);
     assert_eq!(
         hex(current_line(CodeTheme::Github, &dark_palette)),
-        "#e6edf30d"
+        "#e6edf314"
     );
 }
 
@@ -118,10 +118,10 @@ fn a_dark_only_theme_keeps_its_own_ground_in_a_light_app() {
     let style = &theme["style"];
     assert_eq!(theme["appearance"], "light");
     assert_eq!(hex(ground(CodeTheme::Dracula, &palette)), "#282a36ff");
-    assert_eq!(hex(current_line(CodeTheme::Dracula, &palette)), "#32343fff");
+    assert_eq!(hex(current_line(CodeTheme::Dracula, &palette)), "#393a45ff");
     assert_eq!(style["players"][0]["selection"], "#44475aff");
     // Fitted on Dracula's own ground and line only: #6272a4 lightened.
-    assert_eq!(style["syntax"]["comment"]["color"], "#899bcfff");
+    assert_eq!(style["syntax"]["comment"]["color"], "#91a3d8ff");
     // The chrome around the buffer stays the light app's.
     assert_eq!(style["toolbar.background"], hex(palette.editor));
     // The washes over the buffer are the dark palette's.
@@ -137,14 +137,14 @@ fn a_dark_only_theme_stands_on_the_window_in_a_dark_app() {
         hex(ground(CodeTheme::Dracula, &palette)),
         hex(palette.editor)
     );
-    assert_eq!(hex(current_line(CodeTheme::Dracula, &palette)), "#f8f8f20d");
+    assert_eq!(hex(current_line(CodeTheme::Dracula, &palette)), "#f8f8f214");
     // Fitted on all five dark tints' grounds and lines at once.
-    assert_eq!(style["syntax"]["comment"]["color"], "#7e8fc3ff");
+    assert_eq!(style["syntax"]["comment"]["color"], "#8496caff");
 
     let nord = style_of(CodeTheme::Nord, Appearance::Light);
     let light = Palette::new(Appearance::Light, Tint::Mist, Accent::Graphite);
     assert_eq!(hex(ground(CodeTheme::Nord, &light)), "#2e3440ff");
-    assert_eq!(nord["syntax"]["keyword"]["color"], "#89aacaff");
+    assert_eq!(nord["syntax"]["keyword"]["color"], "#90b1d1ff");
 }
 
 #[test]
@@ -152,9 +152,9 @@ fn the_roles_beyond_the_ten_have_their_own_colours() {
     // Catppuccin Latte: maths delimiters pink, keys lavender, apart from the
     // teal variables (#179299, #ea76cb and #7287fd, each fitted).
     let latte = &style_of(CodeTheme::Catppuccin, Appearance::Light)["syntax"];
-    assert_eq!(latte["variable"]["color"], "#097a80ff");
-    assert_eq!(latte["variable.special"]["color"], "#b24297ff");
-    assert_eq!(latte["property"]["color"], "#5363d5ff");
+    assert_eq!(latte["variable"]["color"], "#14767cff");
+    assert_eq!(latte["variable.special"]["color"], "#ae3e93ff");
+    assert_eq!(latte["property"]["color"], "#505fd2ff");
 }
 
 #[test]

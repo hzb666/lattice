@@ -13,7 +13,7 @@ use gpui::{
 use lattice_editor::LatticeEditor;
 use lattice_i18n::tc;
 use lattice_settings::LatexView;
-use lattice_ui::ActiveLattice as _;
+use lattice_ui::{Icon, components::Segmented, shape};
 
 use super::{
     EditorPanel, EditorPanelEvent,
@@ -87,7 +87,11 @@ impl EditorPanel {
                     tc!("LaTeX editor view", "Source"),
                     tc!("LaTeX editor view", "Visual"),
                 ];
-                lattice_ui::components::ViewSwitch::width(&names, true, window, cx)
+                let choices: gpui::Pixels = names
+                    .into_iter()
+                    .map(|name| gpui::px(28.) + Segmented::name_room(name, window, cx))
+                    .sum();
+                choices + shape::SEGMENTED.inset * 2.
             }),
             render: std::rc::Rc::new(|_, cx| latex_view_switch(cx).into_any_element()),
         });
@@ -239,21 +243,21 @@ impl EditorPanel {
 /// A .tex file's Source / Visual switch (`TrellisLatexViewSwitch`): the
 /// choice is every `.tex` file's, so every open one follows.
 fn latex_view_switch(cx: &App) -> impl IntoElement {
-    let palette = cx.palette();
     let view = chosen_latex_view(cx);
-    lattice_ui::components::ViewSwitch::new("latex-view-switch")
-        .mode(
-            lattice_ui::Icon::CODE_XML,
+    Segmented::new("latex-view-switch")
+        .filled()
+        .named(true)
+        .icon_choice(
+            Icon::CODE_XML,
             tc!("LaTeX editor view", "Source"),
             view == LatexView::Source,
             |_, _, cx| choose_latex_view(LatexView::Source, cx),
         )
-        .mode(
-            lattice_ui::Icon::TYPE,
+        .icon_choice(
+            Icon::TYPE,
             tc!("LaTeX editor view", "Visual"),
             view == LatexView::Visual,
             |_, _, cx| choose_latex_view(LatexView::Visual, cx),
         )
-        .surface(palette.editor)
         .parity("editor/view-switch")
 }

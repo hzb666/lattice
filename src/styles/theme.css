@@ -72,9 +72,8 @@ textarea {
   --accent: var(--accent-graphite);
   /* Graphite's soft accent: a quiet neutral wash. */
   --neutral-soft: rgba(48, 48, 51, 0.08);
-  /* The editor's current line: half that wash, so it marks the caret's line
-     without banding the page. */
-  --editor-line: rgba(48, 48, 51, 0.045);
+  /* Keep the editor's current line neutral under every accent. */
+  --editor-line: rgba(48, 48, 51, 0.08);
   --accent-soft: var(--neutral-soft);
   --accent-contrast: #ffffff;
   /* The keyboard focus ring, and where a dragged tab or panel lands: a
@@ -195,7 +194,7 @@ textarea {
   --accent-graphite: #e7e7e4;
   --accent: var(--accent-graphite);
   --neutral-soft: rgba(255, 255, 255, 0.1);
-  --editor-line: rgba(255, 255, 255, 0.05);
+  --editor-line: rgba(255, 255, 255, 0.08);
   --accent-soft: var(--neutral-soft);
   --accent-contrast: #171718;
   --danger: #ee7772;

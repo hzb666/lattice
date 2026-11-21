@@ -1,9 +1,8 @@
 //! Lattice's controls, each matching its board on Paper's Components page
 //! and the running app's Main window.
 //!
-//! The interaction rules are the Guidelines': hover is 5% of the ink (6% on
-//! the darker chrome), pressed 8%, a selected row 8% with medium weight; one
-//! 2px focus ring at a 2px offset, for keyboard focus only.
+//! Neutral hover and press use 8% of the ink, as does a selected row with
+//! medium weight. Keyboard focus uses one 2px ring at a 2px offset.
 
 mod badge;
 mod button;

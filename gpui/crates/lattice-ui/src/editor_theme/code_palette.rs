@@ -63,7 +63,7 @@ pub struct CodeVariant {
     /// Gutter numbers at text's 4.5:1, for the More Contrast setting.
     pub line_number_contrast: Srgb,
     pub caret: Srgb,
-    /// The current line: the theme's ink at 5%.
+    /// The current line: the theme's ink at 8%.
     pub line: Srgb,
     pub selection_focused: Srgb,
     /// The selection of an editor without focus, at 60% of the focused one.

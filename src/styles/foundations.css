@@ -264,7 +264,7 @@
   --form-control-select-radius: var(--radius-control);
   --form-control-textarea-min-height: 88px;
   --form-control-disabled-opacity: 0.45;
-  --control-hover-surface: color-mix(in srgb, var(--text-primary) 5%, transparent);
+  --control-hover-surface: color-mix(in srgb, var(--text-primary) 8%, transparent);
   --control-pressed-surface: color-mix(in srgb, var(--text-primary) 8%, transparent);
   /* A disabled Button, whatever its variant: the shape stays as a faint
      outlined slab and the ink steps back, so a disabled primary never reads
@@ -561,7 +561,7 @@
   /* One hover wash for chrome affordances that sit directly on a chrome or
      sidebar surface: titlebar buttons, navigation actions, toolbar icons. A
      step above a control's hover, since the ground under it is darker. */
-  --chrome-hover-surface: color-mix(in srgb, var(--text-primary) 6%, transparent);
+  --chrome-hover-surface: color-mix(in srgb, var(--text-primary) 8%, transparent);
   /* Keyboard focus is one ring, declared once and drawn by the global
      `:focus-visible` rule in styles/app-shell.css. Components size it through
      these roles instead of hand-rolling a per-component shadow. The 2px gap

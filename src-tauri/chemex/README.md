@@ -57,7 +57,7 @@ Compound \chemex{compound-001} was converted to \chemex{compound-002}.
 └── chemex-numbers.dat
 ```
 
-`\includegraphics{路径.cdxml}` 使用相对于主 `.tex` 的文件路径，支持 `width`、`height`、`trim` 等 `graphicx` 选项。普通 CDXML 图稿可以直接引用。含编号字段的图稿使用默认 `compound` 计数器，其他计数器使用 `\chemexdrawing[counter]{路径.cdxml}`。
+`\includegraphics{路径.cdxml}` 使用相对于主 `.tex` 的文件路径，支持 `width`、`height`、`trim` 等 `graphicx` 选项。普通 CDXML 图稿可以直接引用。含编号字段的图稿使用默认 `compound` 计数器，其他计数器使用 `\chemd[counter]{路径.cdxml}`。
 
 默认 `compound` 按图稿在 LaTeX 原文中的引用顺序编号。每个 key 首次作为图稿字段出现时推进计数器，`\chemex{key}` 只查号，可以写在图稿之前。图稿中的重复 key 复用编号。其他计数器通过 `\chemex[counter]{key}` 指定，仍由正文或图稿中的首次出现推进。格式使用 `\Roman`、`\roman`、`\Alph`、`\alph` 或自定义 `\thecompound`，重置使用原生 `\setcounter`。
 
@@ -70,8 +70,8 @@ Compound \chemex{compound-001} was converted to \chemex{compound-002}.
 \renewcommand{\thecompoundmain}{2024-\arabic{compoundmain}}
 \renewcommand{\thecompoundsupp}{2025-\arabic{compoundsupp}}
 % In the document body
-\chemexdrawing[compoundmain]{figures/2024.cdxml}
-\chemexdrawing[compoundsupp]{figures/2025.cdxml}
+\chemd[compoundmain]{figures/2024.cdxml}
+\chemd[compoundsupp]{figures/2025.cdxml}
 ```
 
 重置同一个 counter 后，继续引用原 key 仍得到原编号；要表示一个新的化合物，必须在 ChemDraw 中使用新的 key。

@@ -11,8 +11,9 @@ use std::{
 
 use chemex_cdxml::DrawingDocument;
 use gpui::{
-    App, AppContext as _, Bounds, Context, Entity, FocusHandle, Focusable, ImageSource,
-    InteractiveElement as _, IntoElement, ParentElement as _, Render, RenderImage, ScrollHandle,
+    App, AppContext as _, Bounds, Context, CursorStyle, DispatchPhase, Entity, FocusHandle,
+    Focusable, ImageSource, InteractiveElement as _, IntoElement, MouseButton, MouseMoveEvent,
+    MouseUpEvent, ParentElement as _, Pixels, Point, Render, RenderImage, ScrollHandle,
     SharedString, StatefulInteractiveElement as _, Styled as _, Task, UniformListScrollHandle,
     Window, actions, canvas, div, img, prelude::FluentBuilder as _, px, relative, size,
     uniform_list,
@@ -29,6 +30,7 @@ use lattice_i18n::t;
 use lattice_ui::{
     ActiveLattice as _, Icon, TextRole, TextRoleStyle as _,
     components::{Button, EmptyState, IconButton, LatticeTooltip, TreeRow},
+    scrollbar::FluidScrollbar,
     tokens::{SPACING_2, SPACING_4},
 };
 
@@ -43,10 +45,11 @@ mod warmup;
 use preview_cache::PreviewCache;
 use warmup::Warmup;
 
-const MIN_SCALE: f32 = 0.3;
-const MAX_SCALE: f32 = 5.;
+const MIN_SCALE: f32 = 0.1;
+const MAX_SCALE: f32 = 3.;
 const ZOOM_STEP: f32 = 0.1;
 const RENDER_SCALE: f32 = 2.;
+const PREVIEW_PADDING: f32 = 20.;
 const GROUPS_WIDTH: f32 = 152.;
 const NARROW_WIDTH: f32 = 520.;
 const WIDE_ASPECT: f32 = 1.5;
@@ -96,6 +99,7 @@ pub(crate) struct ChemistryPanel {
     generation: u64,
     files_scroll: UniformListScrollHandle,
     preview_scroll: ScrollHandle,
+    preview_drag: Rc<Cell<Option<Point<Pixels>>>>,
     preview_stage: Rc<Cell<Bounds<gpui::Pixels>>>,
     panel_bounds: Rc<Cell<Bounds<gpui::Pixels>>>,
     _load: Option<Task<()>>,
@@ -154,22 +158,7 @@ impl Render for ChemistryPanel {
             cx,
             |this, path, cx| this.select_file(path, cx),
         );
-        let stage = preview_stage(
-            "chemistry-preview-stage",
-            self.preview.as_ref(),
-            self.error.as_deref(),
-            self.loading,
-            if self.files.is_empty() {
-                t!("No CDXML files in this project")
-            } else {
-                t!("Choose a CDXML file to preview")
-            },
-            &self.preview_scroll,
-            palette.clone(),
-            self.scale,
-            self.fit,
-            self.preview_stage.clone(),
-        );
+        let stage = self.preview_stage(cx);
         let content = div()
             .id("chemistry-preview-content")
             .flex()
@@ -366,6 +355,7 @@ impl ChemistryPanel {
             generation: 0,
             files_scroll: UniformListScrollHandle::new(),
             preview_scroll: ScrollHandle::new(),
+            preview_drag: Rc::default(),
             preview_stage: Rc::default(),
             panel_bounds: Rc::default(),
             _load: None,
@@ -452,19 +442,10 @@ impl ChemistryPanel {
         self.load_preview(None, cx);
     }
 
-    fn set_scale(&mut self, scale: f32, cx: &mut Context<Self>) {
-        let scale = ((scale * 10.).round() / 10.).clamp(MIN_SCALE, MAX_SCALE);
-        if (scale - self.scale).abs() <= f32::EPSILON {
-            return;
-        }
-        self.scale = scale;
-        cx.notify();
-    }
-
     fn step_zoom(&mut self, direction: f32, cx: &mut Context<Self>) {
-        let scale = self.display_scale() + direction * ZOOM_STEP;
+        self.scale = zoom_step(self.display_scale(), direction);
         self.fit = PreviewFit::Manual;
-        self.set_scale(scale, cx);
+        cx.notify();
     }
 
     fn set_fit(&mut self, fit: PreviewFit, cx: &mut Context<Self>) {
@@ -477,21 +458,15 @@ impl ChemistryPanel {
         let Some(preview) = &self.preview else {
             return self.scale;
         };
-        let image_size = preview.size(0);
-        let natural = size(
-            image_size.width.0 as f32 / RENDER_SCALE,
-            image_size.height.0 as f32 / RENDER_SCALE,
-        );
+        if self.fit == PreviewFit::Manual {
+            return self.scale;
+        }
         let bounds = self.preview_stage.get().size;
         let room = size(
-            (f32::from(bounds.width) - 40.).max(1.),
-            (f32::from(bounds.height) - 40.).max(1.),
+            (f32::from(bounds.width) - 2. * PREVIEW_PADDING).max(1.),
+            (f32::from(bounds.height) - 2. * PREVIEW_PADDING).max(1.),
         );
-        if self.fit == PreviewFit::Manual {
-            self.scale
-        } else {
-            self.scale * fit_scale(natural, room, self.fit)
-        }
+        fit_scale(preview_size(preview), room, self.fit)
     }
 
     fn open_selected(&self, cx: &mut Context<Self>) {
@@ -601,6 +576,7 @@ impl ChemistryPanel {
     }
 
     fn cancel_load(&mut self) {
+        self.preview_drag.set(None);
         self._load = None;
         self.loading = false;
         self.generation = self.generation.wrapping_add(1);
@@ -636,6 +612,7 @@ where
                     TreeRow::file(format!("{id}:{path}"), path.clone(), 0)
                         .selected(selected)
                         .into_list_item(cx)
+                        .w_full()
                         .tooltip({
                             let path = path.clone();
                             move |_, cx| LatticeTooltip::view(path.clone(), None, cx)
@@ -746,100 +723,162 @@ fn file_browser(
         .child(div().flex_1().min_h_0().child(rows))
 }
 
-fn preview_stage(
-    id: &'static str,
-    preview: Option<&Arc<RenderImage>>,
-    error: Option<&str>,
-    loading: bool,
-    empty: impl Into<SharedString>,
-    scroll: &ScrollHandle,
-    palette: lattice_ui::Palette,
-    scale: f32,
-    fit: PreviewFit,
-    stage_bounds: Rc<Cell<Bounds<gpui::Pixels>>>,
-) -> gpui::Stateful<gpui::Div> {
-    let stage_size = stage_bounds.get().size;
-    let mut stage = div()
-        .id(id)
-        .relative()
-        .flex_1()
-        .min_w_0()
-        .min_h_0()
-        .overflow_hidden()
-        .flex()
-        .items_center()
-        .justify_center()
-        .p(px(20.));
-    if let Some(preview) = preview {
-        let image_size = preview.size(0);
-        let natural = size(
-            image_size.width.0 as f32 / RENDER_SCALE,
-            image_size.height.0 as f32 / RENDER_SCALE,
-        );
-        let room = size(
-            (f32::from(stage_size.width) - 40.).max(1.),
-            (f32::from(stage_size.height) - 40.).max(1.),
-        );
-        let display_scale = if fit == PreviewFit::Manual {
-            scale
-        } else {
-            fit_scale(natural, room, fit) * scale
+impl ChemistryPanel {
+    fn preview_stage(&self, cx: &App) -> impl IntoElement + use<> {
+        let bounds = self.preview_stage.clone();
+        let content = match (&self.preview, &self.error, self.loading) {
+            (Some(preview), _, _) => self.preview_image(preview).into_any_element(),
+            (None, Some(error), _) => div()
+                .text_color(cx.palette().text_secondary)
+                .child(error.clone())
+                .into_any_element(),
+            (None, None, true) => div()
+                .text_color(cx.palette().text_secondary)
+                .child(t!("Exporting with ChemDraw…"))
+                .into_any_element(),
+            (None, None, false) => EmptyState::new(if self.files.is_empty() {
+                t!("No CDXML files in this project")
+            } else {
+                t!("Choose a CDXML file to preview")
+            })
+            .into_any_element(),
         };
-        let width = natural.width * display_scale;
-        let height = natural.height * display_scale;
-        let content_width = f32::from(stage_size.width).max(width + 40.);
-        let content_height = f32::from(stage_size.height).max(height + 40.);
-        stage = stage.child(
-            div()
-                .id("chemistry-preview-scroll")
+        div()
+            .id("chemistry-preview-stage")
+            .relative()
+            .flex_1()
+            .min_w_0()
+            .min_h_0()
+            .overflow_hidden()
+            .flex()
+            .items_center()
+            .justify_center()
+            .p(px(PREVIEW_PADDING))
+            .child(content)
+            .child(
+                canvas(
+                    move |next, window, _| {
+                        if bounds.get().size != next.size {
+                            window.request_animation_frame();
+                        }
+                        bounds.set(next);
+                    },
+                    |_, _, _, _| {},
+                )
                 .absolute()
-                .inset_0()
-                .overflow_scroll()
-                .track_scroll(scroll)
-                .child(
-                    div()
-                        .w(px(content_width))
-                        .h(px(content_height))
-                        .p(px(20.))
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .child(
-                            img(ImageSource::Render(preview.clone()))
-                                .w(px(width))
-                                .h(px(height)),
-                        ),
-                ),
-        );
-    } else if let Some(error) = error {
-        stage = stage.child(
-            div()
-                .text_color(palette.text_secondary)
-                .child(error.to_owned()),
-        );
-    } else if loading {
-        stage = stage.child(
-            div()
-                .text_color(palette.text_secondary)
-                .child(t!("Exporting with ChemDraw…")),
-        );
-    } else {
-        stage = stage.child(EmptyState::new(empty));
+                .inset_0(),
+            )
     }
-    let bounds = stage_bounds.clone();
-    stage.child(
+
+    fn preview_image(&self, preview: &Arc<RenderImage>) -> impl IntoElement {
+        let natural = preview_size(preview);
+        let scale = self.display_scale();
+        let drawn = size(px(natural.width * scale), px(natural.height * scale));
+        let viewport = self.preview_stage.get().size;
+        let padding = px(2. * PREVIEW_PADDING);
+        let content = viewport.max(&size(drawn.width + padding, drawn.height + padding));
+        let drag = self.preview_drag.clone();
+        let scroll = self.preview_scroll.clone();
+        div()
+            .id("chemistry-preview-image")
+            .absolute()
+            .inset_0()
+            .child(
+                div()
+                    .id("chemistry-preview-scroll")
+                    .absolute()
+                    .inset_0()
+                    .overflow_scroll()
+                    .track_scroll(&scroll)
+                    .when(content != viewport, |surface| {
+                        surface.cursor(if drag.get().is_some() {
+                            CursorStyle::ClosedHand
+                        } else {
+                            CursorStyle::OpenHand
+                        })
+                    })
+                    .on_mouse_down(MouseButton::Left, move |event, window, _| {
+                        if scroll.max_offset() != Point::default() {
+                            drag.set(Some(event.position));
+                            window.refresh();
+                        }
+                    })
+                    .child(
+                        h_flex()
+                            .w(content.width)
+                            .h(content.height)
+                            .justify_center()
+                            .child(
+                                img(ImageSource::Render(preview.clone()))
+                                    .w(drawn.width)
+                                    .h(drawn.height),
+                            ),
+                    ),
+            )
+            .child(self.preview_pan_events())
+            .child(FluidScrollbar::vertical(
+                "chemistry-preview-scrollbar",
+                &self.preview_scroll,
+            ))
+            .child(FluidScrollbar::horizontal(
+                "chemistry-preview-scrollbar-x",
+                &self.preview_scroll,
+            ))
+    }
+
+    fn preview_pan_events(&self) -> impl IntoElement {
+        let drag = self.preview_drag.clone();
+        let scroll = self.preview_scroll.clone();
         canvas(
-            move |next, window, _| {
-                if bounds.get().size != next.size {
-                    window.request_animation_frame();
-                }
-                bounds.set(next);
+            |_, _, _| {},
+            move |_, (), window, _| {
+                let move_drag = drag.clone();
+                window.on_mouse_event(move |event: &MouseMoveEvent, phase, window, _| {
+                    if phase != DispatchPhase::Capture || move_drag.get().is_none() {
+                        return;
+                    }
+                    if event.pressed_button != Some(MouseButton::Left) {
+                        move_drag.set(None);
+                        window.refresh();
+                    } else if let Some(last) = move_drag.replace(Some(event.position)) {
+                        scroll.set_offset(pan_offset(
+                            scroll.offset(),
+                            event.position - last,
+                            scroll.max_offset(),
+                        ));
+                        window.refresh();
+                    }
+                });
+                window.on_mouse_event(move |event: &MouseUpEvent, phase, window, _| {
+                    if phase == DispatchPhase::Capture
+                        && event.button == MouseButton::Left
+                        && drag.take().is_some()
+                    {
+                        window.refresh();
+                    }
+                });
             },
-            |_, _, _, _| {},
         )
         .absolute()
-        .inset_0(),
-    )
+        .inset_0()
+    }
+}
+
+fn preview_size(preview: &RenderImage) -> gpui::Size<f32> {
+    let size = preview.size(0);
+    size.map(|length| length.0 as f32 / RENDER_SCALE)
+}
+
+fn pan_offset(
+    offset: Point<Pixels>,
+    delta: Point<Pixels>,
+    overflow: Point<Pixels>,
+) -> Point<Pixels> {
+    (offset + delta).clamp(&(-overflow), &Point::default())
+}
+
+fn zoom_step(scale: f32, direction: f32) -> f32 {
+    (((scale + direction * ZOOM_STEP) / ZOOM_STEP).round() * ZOOM_STEP).clamp(MIN_SCALE, MAX_SCALE)
 }
 
 fn fit_scale(natural: gpui::Size<f32>, room: gpui::Size<f32>, fit: PreviewFit) -> f32 {
@@ -959,7 +998,9 @@ impl Shell {
                 }
                 panel.paper = paper;
                 panel.warmup.allowed = true;
-                if paper_changed || (!panel.loading && (panel.preview.is_none() || panel.error.is_some())) {
+                if paper_changed
+                    || (!panel.loading && (panel.preview.is_none() || panel.error.is_some()))
+                {
                     panel.load_preview(panel.compound_id.clone(), cx);
                 } else {
                     panel.warm_groups(cx);
@@ -1114,13 +1155,49 @@ mod tests {
     fn preview_fit_modes_respect_the_requested_axis_and_manual_mode() {
         let natural = size(400., 200.);
         let room = size(100., 300.);
-        assert_eq!(fit_scale(natural, room, PreviewFit::Both), MIN_SCALE);
-        assert_eq!(fit_scale(natural, room, PreviewFit::Width), MIN_SCALE);
+        assert_eq!(0.25, fit_scale(natural, room, PreviewFit::Both));
+        assert_eq!(0.25, fit_scale(natural, room, PreviewFit::Width));
         assert_eq!(fit_scale(natural, room, PreviewFit::Height), 1.5);
         assert_eq!(
             fit_scale(natural, size(800., 100.), PreviewFit::Height),
             0.5
         );
         assert_eq!(fit_scale(natural, room, PreviewFit::Manual), 1.);
+    }
+
+    #[test]
+    fn preview_zoom_stops_at_ten_and_three_hundred_percent() {
+        assert_eq!(0.1, zoom_step(0.12, -1.));
+        assert_eq!(3., zoom_step(2.98, 1.));
+        assert_eq!(
+            0.1,
+            fit_scale(size(500., 500.), size(10., 10.), PreviewFit::Both)
+        );
+        assert_eq!(
+            3.,
+            fit_scale(size(10., 10.), size(500., 500.), PreviewFit::Width)
+        );
+    }
+
+    #[test]
+    fn preview_pan_stays_inside_the_scrollable_area() {
+        use gpui::point;
+
+        assert_eq!(
+            point(px(0.), px(-80.)),
+            pan_offset(
+                point(px(-5.), px(-40.)),
+                point(px(30.), px(-50.)),
+                point(px(100.), px(80.))
+            ),
+        );
+        assert_eq!(
+            point(px(-35.), px(0.)),
+            pan_offset(
+                point(px(-5.), px(0.)),
+                point(px(-30.), px(-50.)),
+                point(px(100.), px(0.))
+            ),
+        );
     }
 }

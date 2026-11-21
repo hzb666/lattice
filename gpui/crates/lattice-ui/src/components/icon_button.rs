@@ -221,9 +221,8 @@ impl RenderOnce for IconButton {
         let palette = cx.palette().clone();
         let ground = self.surface.ground(&palette);
         let (interaction, pointer) = use_interaction(self.id.clone(), window, cx);
-        // No slab: secondary ink at rest; under the pointer a 5% wash (6% on
-        // the chrome) and the primary ink, 8% while held. An "on" toggle
-        // keeps the accent's wash and ink.
+        // No slab at rest. Hover uses the primary ink and the surface's wash.
+        // An "on" toggle keeps the accent's wash and ink.
         let (bg, ink) = if self.on {
             (palette.toolbar_active, palette.accent)
         } else if self.disabled {

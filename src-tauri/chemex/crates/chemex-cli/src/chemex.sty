@@ -127,8 +127,8 @@
   \AtEndDocument{\immediate\closeout\chemex@numbers}
 \fi
 
-\newcommand{\chemexdrawing}{\@ifnextchar[{\chemex@legacydrawing}{\chemex@legacydrawing[compound]}}
-\def\chemex@legacydrawing[#1]#2{\chemex@drawing{#1}{#2}\includegraphics}
+\newcommand{\chemd}{\@ifnextchar[{\chemex@chemd}{\chemex@chemd[compound]}}
+\def\chemex@chemd[#1]#2{\chemex@drawing{#1}{#2}\includegraphics}
 \def\chemex@drawing#1#2#3{%
   \stepcounter{chemex@drawing}%
   \ifchemex@prepared\else
