@@ -23,6 +23,8 @@ import {
   spreadsheetAppearance,
   withSpreadsheetAppearance,
 } from "./spreadsheet-univer";
+import { secondaryClickAsRightButton } from "./spreadsheet-secondary-click";
+import { stripReservedControls, withPlainCellText } from "./spreadsheet-plain-text";
 import {
   SPREADSHEET_DERIVED_ORIGIN,
   SPREADSHEET_LOCAL_ORIGIN,
@@ -299,6 +301,7 @@ function SpreadsheetEditorSurface({
       (message) => i18n._(message),
       () => exportExcelRef.current(),
     );
+    const stopSecondaryClick = secondaryClickAsRightButton(containerRef.current);
     let disposed = false;
     // Canvas chrome renders asynchronously; retry for ~30 frames until it exists.
     let renderAppearanceFrame: number | null = null;
@@ -312,17 +315,26 @@ function SpreadsheetEditorSurface({
       };
       apply();
     };
-    let workbook = univerAPI.createWorkbook(withSpreadsheetAppearance(
+    let workbook = univerAPI.createWorkbook(withPlainCellText(withSpreadsheetAppearance(
       withSheetViews(initialSnapshot, initialViewStateRef.current?.sheets ?? {}),
       appearance,
-    ) as unknown as IWorkbookData);
+    )) as unknown as IWorkbookData);
+    // Every value Univer writes into a cell (typing, paste, the Agent's and
+    // the file's changes patched in below) passes through this mutation, so a
+    // reserved character never reaches a cell or the file.
+    const plainTextGuard = univerAPI.onBeforeCommandExecute((command) => {
+      if (command.id === SET_RANGE_VALUES_MUTATION && isRecord(command.params)) stripReservedControls(command.params.cellValue);
+    });
     if (initialViewStateRef.current) restoreWorkbookViewState(workbook, initialViewStateRef.current);
     scheduleRenderAppearance();
     const renderCreatedSubscription = renderManager.created$.subscribe((render) => {
       if (render.unitId === workbook.getId() || render.unitId === DOCS_FORMULA_BAR_EDITOR_UNIT_ID_KEY) scheduleRenderAppearance();
     });
     workbookRef.current = workbook;
-    let renderedSnapshot = initialSnapshot;
+    // What Univer shows: the file's values without reserved characters. A
+    // cell nobody edits keeps its value in the file as it was, since every
+    // write below is the difference from this.
+    let renderedSnapshot = withPlainCellText(clone(initialSnapshot));
     let applyingRemote = false;
     let localSyncQueued = false;
     let queuedEdit = false;
@@ -354,7 +366,7 @@ function SpreadsheetEditorSurface({
     const applyRemoteSnapshot = () => {
       remoteSyncQueued = false;
       if (disposed) return;
-      const next = spreadsheetSnapshotFromDoc(doc);
+      const next = withPlainCellText(spreadsheetSnapshotFromDoc(doc));
       if (jsonEqual(next, renderedSnapshot)) return;
       const sameStructure = structureFingerprint(next) === structureFingerprint(renderedSnapshot);
       const cells = sameStructure ? changedCells(renderedSnapshot, next) : [];
@@ -447,6 +459,8 @@ function SpreadsheetEditorSurface({
       if (viewStateFrame !== null) cancelAnimationFrame(viewStateFrame);
       callbacks.current.onViewState?.(workbookViewState(workbook));
       disposed = true;
+      stopSecondaryClick();
+      plainTextGuard.dispose();
       for (const event of viewEvents) event.dispose();
       commandListener.dispose();
       appearanceObserver.disconnect();

@@ -128,6 +128,7 @@ pub(crate) fn refuse_keyboard_while_hidden(webview: &WebView, window: &gpui::Win
                 return_imp,
                 c"v@:".as_ptr(),
             );
+            add_key_control_text_filter(class);
             let refuses = returns.as_bool()
                 && ffi::class_addMethod(
                     class,
@@ -164,6 +165,145 @@ pub(crate) fn refuse_keyboard_while_hidden(webview: &WebView, window: &gpui::Win
 
 #[cfg(not(target_os = "macos"))]
 pub(crate) fn refuse_keyboard_while_hidden(_: &WebView, _: &gpui::Window) {}
+
+/// Whether `character` is one no key types as text: a control character
+/// other than tab and the line breaks (the arrows' old character codes,
+/// U+001C–U+001F, End's U+0004, Home's U+0001, DEL), or one of AppKit's
+/// function keys' `NSEvent.characters` (NSUpArrowFunctionKey U+F700 to
+/// NSModeSwitchFunctionKey U+F747; ← is U+F702). The rest of the private-use
+/// area is text: ⌥⇧K types , and icon fonts live there.
+pub fn is_key_control_character(character: char) -> bool {
+    matches!(character, '\u{0}'..='\u{8}' | '\u{B}' | '\u{C}' | '\u{E}'..='\u{1F}' | '\u{7F}' | '\u{F700}'..='\u{F747}')
+}
+
+/// Text committed to the page, without the keys' control characters.
+pub fn without_key_control_characters(text: &str) -> std::borrow::Cow<'_, str> {
+    if text.chars().any(is_key_control_character) {
+        text.chars()
+            .filter(|&c| !is_key_control_character(c))
+            .collect::<String>()
+            .into()
+    } else {
+        text.into()
+    }
+}
+
+/// The script an Undo (Redo) run in a page: the ⌘Z (⌘⇧Z) it stands for,
+/// for the focused editor to take as its own (the visual Markdown page's
+/// goes through the buffer's history), and WebKit's own undo only when
+/// nothing took it, as a plain text field's ([`crate::Island::undo`]).
+pub(crate) fn page_undo_script(redo: bool) -> String {
+    let command = if redo { "redo" } else { "undo" };
+    format!(
+        "(() => {{ const target = document.activeElement ?? document.body; \
+         const press = new KeyboardEvent('keydown', {{ key: 'z', code: 'KeyZ', metaKey: true, \
+         shiftKey: {redo}, bubbles: true, cancelable: true, composed: true }}); \
+         if (target.dispatchEvent(press)) document.execCommand('{command}'); }})()"
+    )
+}
+
+/// An arrow, Home or End pressed in a page sometimes reached WebKit's
+/// `insertText:` as the key's character instead of as a move: ← as
+/// U+001C (its old character code) or U+F702 (its `NSEvent.characters`).
+/// WebKit inserted it into the focused field, a missing-glyph box after the
+/// text, in a sheet's cell, the visual Markdown page or the Agent's
+/// composer, the last in a cross-origin frame no script of ours reaches. The
+/// page's view drops those characters before WebKit sees them, keeping an
+/// attributed string's attributes; text without any goes through untouched.
+#[cfg(target_os = "macos")]
+unsafe fn add_key_control_text_filter(class: *mut objc2::runtime::AnyClass) {
+    use objc2::rc::Retained;
+    use objc2::{
+        ffi, msg_send,
+        runtime::{AnyClass, AnyObject, Bool, Imp, Sel},
+        sel,
+    };
+    use objc2_foundation::{NSRange, NSString};
+
+    extern "C-unwind" fn insert_text(
+        this: &AnyObject,
+        _: Sel,
+        text: *mut AnyObject,
+        replacement: NSRange,
+    ) {
+        // SAFETY: on the main thread, on an instance of Wry's class or a
+        // subclass of it; `text` is the NSString or NSAttributedString AppKit
+        // passes, and WKWebView takes either.
+        unsafe {
+            let Some(superclass) = AnyClass::get(c"WryWebView").and_then(AnyClass::superclass)
+            else {
+                return;
+            };
+            let insert = |text: *mut AnyObject| {
+                let _: () = msg_send![super(this, superclass), insertText: text, replacementRange: replacement];
+            };
+            let attributed: Bool =
+                msg_send![text, isKindOfClass: objc2::class!(NSAttributedString)];
+            let plain: *mut AnyObject = if attributed.as_bool() {
+                msg_send![text, string]
+            } else {
+                text
+            };
+            if plain.is_null() {
+                return insert(text);
+            }
+            let plain = (*plain.cast::<NSString>()).to_string();
+            if !plain.chars().any(is_key_control_character) {
+                return insert(text);
+            }
+            if !attributed.as_bool() {
+                let kept = without_key_control_characters(&plain);
+                if !kept.is_empty() {
+                    insert(
+                        Retained::as_ptr(&NSString::from_str(&kept))
+                            .cast_mut()
+                            .cast(),
+                    );
+                }
+                return;
+            }
+            // The characters' UTF-16 ranges, deleted back to front from a
+            // copy, so every other character keeps its attributes.
+            let mut dropped = Vec::new();
+            let mut at = 0;
+            for character in plain.chars() {
+                let length = character.len_utf16();
+                if is_key_control_character(character) {
+                    dropped.push(NSRange::new(at, length));
+                }
+                at += length;
+            }
+            let copy: *mut AnyObject = msg_send![text, mutableCopy];
+            for range in dropped.into_iter().rev() {
+                let _: () = msg_send![copy, deleteCharactersInRange: range];
+            }
+            let length: usize = msg_send![copy, length];
+            if length > 0 {
+                insert(copy);
+            }
+            let _: () = msg_send![copy, release];
+        }
+    }
+
+    // SAFETY: on the main thread, once per process; the function matches
+    // `- (void)insertText:(id)string replacementRange:(NSRange)range`.
+    unsafe {
+        let imp: Imp = std::mem::transmute(
+            insert_text as extern "C-unwind" fn(&AnyObject, Sel, *mut AnyObject, NSRange),
+        );
+        let types = format!("v@:@{}\0", <NSRange as objc2::Encode>::ENCODING);
+        if !ffi::class_addMethod(
+            class,
+            sel!(insertText:replacementRange:),
+            imp,
+            types.as_ptr().cast(),
+        )
+        .as_bool()
+        {
+            log::warn!("WryWebView already answers insertText:replacementRange:");
+        }
+    }
+}
 
 /// Each page's view, by address, and its island's ear for
 /// [`watch_keyboard`]; an entry whose island is gone drops at the next send
@@ -288,4 +428,46 @@ pub(crate) fn native_frame(webview: &WebView) -> Option<gpui::Bounds<gpui::Pixel
 #[cfg(not(target_os = "macos"))]
 pub(crate) fn native_frame(_: &WebView) -> Option<gpui::Bounds<gpui::Pixels>> {
     None
+}
+
+/// What an input method does to the page's view when it commits `text`:
+/// `insertText:replacementRange:` with no range to replace.
+#[cfg(target_os = "macos")]
+pub(crate) fn insert_text(webview: &WebView, text: &str) {
+    use objc2::msg_send;
+    use objc2_foundation::{NSRange, NSString};
+    use wry::WebViewExtMacOS as _;
+    let view = webview.raw().webview();
+    let text = NSString::from_str(text);
+    let replacement = NSRange::new(isize::MAX as usize, 0);
+    // SAFETY: on the main thread, on the WKWebView Wry built.
+    unsafe {
+        let _: () = msg_send![&*view, insertText: &*text, replacementRange: replacement];
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+pub(crate) fn insert_text(_: &WebView, _: &str) {}
+
+#[cfg(test)]
+mod tests {
+    use super::without_key_control_characters;
+
+    #[test]
+    fn an_input_methods_text_loses_only_the_keys_control_characters() {
+        assert_eq!(
+            without_key_control_characters("a\u{F702}b\u{F703}\u{F72B}"),
+            "ab"
+        );
+        assert_eq!(
+            without_key_control_characters("a\u{1C}\u{1D}\u{1E}\u{1F}b\u{4}\u{1}\u{7F}"),
+            "ab"
+        );
+        assert_eq!(without_key_control_characters("a\tb\nc\r"), "a\tb\nc\r");
+        assert_eq!(without_key_control_characters("\u{F702}"), "");
+        assert!(matches!(
+            without_key_control_characters("你好 \u{E000} \u{F6FF} \u{F748} \u{F8FF} \u{F900}"),
+            std::borrow::Cow::Borrowed(_)
+        ));
+    }
 }

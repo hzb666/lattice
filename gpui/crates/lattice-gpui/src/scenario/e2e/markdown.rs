@@ -13,8 +13,10 @@
 //!   buffer is clean;
 //! - a word typed into the visual editor with native keys lands in the file
 //!   as exactly that word, every other byte as it was (front matter, table
-//!   and maths included); ⌘Z typed there undoes it through the buffer, and the
-//!   file is back to its first bytes;
+//!   and maths included), with the arrows' characters an input method
+//!   commits mid-word (U+F700–U+F703) dropped; ⌘Z typed there, once the word
+//!   is saved, undoes it through the buffer, and the file is back to its
+//!   first bytes;
 //! - text typed into the source appears in the visual editor;
 //! - Preview shows the visual editor alone, which takes a jump to a line;
 //! - a word typed into the visual editor just before its tab closes is in
@@ -347,7 +349,16 @@ impl Run {
         path: &Path,
         island: &Entity<Island>,
     ) -> Result<()> {
-        let placed = self.markdown_type(cx, island, " quokka").await?;
+        // An input method that answers ↑ ↓ ← → with `insertText:` of each
+        // key's character (U+F700–U+F703) mid-word adds nothing to the file.
+        let placed = self.markdown_type(cx, island, " quo").await?;
+        cx.update(|cx| island.read(cx).insert_text("\u{F700}\u{F701}\u{F702}\u{F703}", cx));
+        self.pause(cx, Duration::from_millis(100)).await;
+        let native = self.native(cx)?;
+        for character in "kka".chars() {
+            native::send_key(native, character, false)?;
+            self.pause(cx, Duration::from_millis(40)).await;
+        }
         let expected = NOTES.replacen(
             "[link](https://example.com).",
             "[link](https://example.com). quokka",
@@ -360,7 +371,7 @@ impl Run {
             .await;
         let text = std::fs::read_to_string(path).unwrap_or_default();
         steps.check(
-            "a word typed into the visual editor with native keys is saved as exactly that word, every other byte of the file (front matter, table, maths) as it was",
+            "a word typed into the visual editor with native keys, an input method's arrow characters committed mid-word, is saved as exactly that word, every other byte of the file (front matter, table, maths) as it was",
             saved && text == expected,
             json!({ "placed": placed, "saved": saved, "exact": text == expected, "text": if text == expected { Value::Null } else { json!(text) } }),
         );
@@ -399,6 +410,53 @@ impl Run {
                 "page": page,
                 "text": if undone { Value::Null } else { json!(std::fs::read_to_string(path).unwrap_or_default()) },
             }),
+        );
+
+        // A real ⌘Z goes through the application, where the Edit menu holds
+        // it: it reaches GPUI as the menu's Undo, never as the page's keys.
+        // With the page focused, one press undoes the page's last edit, once:
+        // " plum" goes and " kiwi", typed before it, stays.
+        self.markdown_type(cx, island, " kiwi").await?;
+        let kiwi = self
+            .wait_for(cx, Duration::from_secs(10), |_, _| {
+                std::fs::read_to_string(path).is_ok_and(|text| text.contains("kiwi"))
+            })
+            .await;
+        self.pause(cx, Duration::from_millis(1200)).await;
+        for character in " plum".chars() {
+            native::send_key(native, character, false)?;
+            self.pause(cx, Duration::from_millis(40)).await;
+        }
+        let plum = self
+            .wait_for(cx, Duration::from_secs(10), |_, _| {
+                std::fs::read_to_string(path).is_ok_and(|text| text.contains("plum"))
+            })
+            .await;
+        native::send_key_equivalent(native, 'z')?;
+        self.wait_for(cx, Duration::from_secs(10), |_, _| {
+            std::fs::read_to_string(path).is_ok_and(|text| !text.contains("plum"))
+        })
+        .await;
+        self.pause(cx, Duration::from_millis(1500)).await;
+        let text = std::fs::read_to_string(path).unwrap_or_default();
+        steps.check(
+            "a real ⌘Z in the visual editor, which arrives as the Edit menu's Undo, undoes its last edit once, after the save",
+            kiwi && plum && text.contains("kiwi") && !text.contains("plum"),
+            json!({ "kiwi": kiwi, "plum": plum, "text": text }),
+        );
+
+        // ⌥⇧K types Apple's logo, a private-use character that is text: the
+        // key the layout gives it, committed as WebKit's `insertText:`.
+        native::send_key(native, '\u{F8FF}', false)?;
+        let apple = self
+            .wait_for(cx, Duration::from_secs(10), |_, _| {
+                std::fs::read_to_string(path).is_ok_and(|text| text.contains('\u{F8FF}'))
+            })
+            .await;
+        steps.check(
+            "⌥⇧K's  typed in the visual editor is saved: only the keys' own characters are dropped",
+            apple,
+            json!({ "apple": apple }),
         );
         Ok(())
     }
