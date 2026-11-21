@@ -190,13 +190,12 @@ pub struct OpenAlexWork {
     pub venue: Option<String>,
 }
 
-/// A merged search hit shown in the Discover panel. alphaXiv (full-text) and
-/// OpenAlex (citation graph) both flow into this single shape; the panel reads
-/// `source` to label the row and picks the fields each source populates.
+/// A merged search hit shown in the Discover panel. The panel reads `source`
+/// to label the row and picks the fields each provider populates.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LiteratureHit {
-    /// "alphaxiv" | "openalex"
+    /// "alphaxiv" | "openalex" | "pubmed"
     pub source: String,
     pub arxiv_id: Option<String>,
     pub title: String,
@@ -205,8 +204,8 @@ pub struct LiteratureHit {
     pub cited_by_count: Option<u32>,
     pub votes: Option<u32>,
     pub snippet: Option<String>,
-    /// The work's abstract, for the row's preview. OpenAlex gives one for most
-    /// works; alphaXiv's full-text hits carry only the matching `snippet`.
+    /// The work's abstract, for the row's preview. alphaXiv's full-text hits
+    /// carry only the matching `snippet`.
     #[serde(default)]
     pub r#abstract: Option<String>,
     pub doi: Option<String>,
@@ -214,6 +213,81 @@ pub struct LiteratureHit {
     /// OpenAlex: where the work was published.
     #[serde(default)]
     pub venue: Option<String>,
+    /// PubMed's stable article identifier.
+    #[serde(default)]
+    pub external_id: Option<String>,
+}
+
+impl LiteratureHit {
+    /// Stable work identifiers for deduplicating provider results.
+    pub fn identity_keys(&self) -> Vec<String> {
+        let mut keys = Vec::new();
+        if let Some(id) = self.arxiv_id.as_deref() {
+            keys.push(format!(
+                "arxiv:{}",
+                crate::papers::arxiv_base_id(id).to_lowercase()
+            ));
+        }
+        if let Some(doi) = self.doi.as_deref() {
+            let doi = crate::project::normalize_doi(doi)
+                .unwrap_or_else(|| doi.trim().to_lowercase());
+            keys.push(format!("doi:{doi}"));
+        }
+        if let Some(id) = self.external_id.as_deref() {
+            keys.push(format!("pubmed:{}", id.trim()));
+        }
+        if keys.is_empty() {
+            keys.push(format!("title:{}", title_identity(&self.title)));
+        }
+        keys
+    }
+}
+
+fn title_identity(title: &str) -> String {
+    title.chars().filter(|ch| ch.is_alphanumeric()).flat_map(char::to_lowercase).collect()
+}
+
+#[cfg(test)]
+mod literature_identity_tests {
+    use super::LiteratureHit;
+
+    fn hit(
+        arxiv_id: Option<&str>,
+        doi: Option<&str>,
+        external_id: Option<&str>,
+        title: &str,
+    ) -> LiteratureHit {
+        LiteratureHit {
+            source: "test".into(),
+            arxiv_id: arxiv_id.map(str::to_string),
+            title: title.into(),
+            year: None,
+            authors: Vec::new(),
+            cited_by_count: None,
+            votes: None,
+            snippet: None,
+            r#abstract: None,
+            doi: doi.map(str::to_string),
+            landing_url: None,
+            venue: None,
+            external_id: external_id.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn identity_prefers_stable_ids_and_uses_title_only_as_fallback() {
+        let first = hit(None, Some("https://doi.org/10.1234/ABC"), None, "Same title");
+        let second = hit(None, Some("10.1234/other"), None, "Same title");
+        let title_only = hit(None, None, None, "Same title");
+
+        assert_eq!(first.identity_keys(), vec!["doi:10.1234/abc".to_string()]);
+        assert_ne!(first.identity_keys(), second.identity_keys());
+        assert_eq!(title_only.identity_keys(), vec!["title:sametitle".to_string()]);
+        assert_eq!(
+            hit(Some("2401.00001v2"), None, None, "A").identity_keys(),
+            vec!["arxiv:2401.00001".to_string()]
+        );
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -10,8 +10,7 @@
 //!    `LATTICE_GPUI_RESOURCES`: the folder holding `presentation-runtime/`);
 //! 2. in the app bundle, `Contents/Resources/` beside `Contents/MacOS/`;
 //! 3. in the checkout the binary runs from: `gpui/target/<profile>/` is two
-//!    folders under `gpui/`, where `scripts/gpui-build.mjs` copies the binary
-//!    it builds in the shared tree back to.
+//!    folders under `gpui/`, alongside the binary built in `gpui/target/`.
 
 use std::path::{Path, PathBuf};
 

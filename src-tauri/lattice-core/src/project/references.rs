@@ -265,7 +265,7 @@ fn resolve_graphics_path(root: &Path, source_path: &Path, value: &str) -> Option
         let candidates = if base.extension().is_some() {
             vec![base]
         } else {
-            ["png", "jpg", "jpeg", "svg", "webp", "pdf"]
+            ["png", "jpg", "jpeg", "svg", "webp", "pdf", "cdxml"]
                 .iter()
                 .map(|extension| base.with_extension(extension))
                 .collect()

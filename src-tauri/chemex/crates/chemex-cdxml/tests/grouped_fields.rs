@@ -102,6 +102,19 @@ fn compound_group_source_preserves_original_group_and_shared_styles() {
 }
 
 #[test]
+fn compound_group_source_without_fields_keeps_the_structure_but_removes_labels() {
+    let document = drawing(
+        "<group id='10'><fragment id='11'/><t id='12'><s>[[@x]]</s></t></group><t><s>outside</s></t>",
+    );
+
+    let selected = document.compound_group_source_without_fields("x").unwrap();
+
+    assert!(selected.contains("<fragment id='11'/>") || selected.contains("<fragment id=\"11\"/>"));
+    assert!(!selected.contains("[[@x]]"));
+    assert!(!selected.contains("outside"));
+}
+
+#[test]
 fn compound_group_source_rejects_ungrouped_or_ambiguous_fields() {
     let ungrouped = drawing("<t><s>[[@x]]</s></t>");
     assert!(matches!(

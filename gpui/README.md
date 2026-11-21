@@ -123,7 +123,7 @@ On every platform, Vim's normal and visual modes keep ⌃M as their next-line st
 
 "Vim mode" in an editor's ⋯ menu turns Zed's Vim mode on for every editor; `LATTICE_GPUI_VIM=1` turns it on for that run only, leaving the saved keymap as it is.
 
-The Chemistry panel shows the full CDXML drawing by default; select a numbered compound to preview it alone, or select `All` to restore the full drawing. On Windows, rendered SVGs are reused from `.research/cache/chemex-v1/assets`; when native group export is unavailable, Lattice exports a temporary group copy using ChemDraw's `SaveAs`.
+The Chemistry panel shows the full CDXML drawing by default; select `Source` or `Rendered` for the All view, or select a compound button labeled with its key and number to preview that structure without either label in the rendered image. The preview has zoom controls and scrolling. On Windows, rendered SVGs are reused from `.research/cache/chemex-v1/assets`; when native group export is unavailable, Lattice exports a temporary group copy using ChemDraw's `SaveAs`.
 
 ## CI
 
@@ -297,7 +297,7 @@ When the live PDF is in its own window, that window comes forward with the mark,
 ## Scripted runs
 
 ```sh
-node ../scripts/gpui-build.mjs                   # release build with offscreen-shots, in the shared build tree
+node ../scripts/gpui-build.mjs                   # release build with offscreen-shots, in gpui/target
 cp -R fixtures/e2e /tmp/lattice-gpui-e2e        # the scenario edits and builds its project
 target/release/lattice-gpui /tmp/lattice-gpui-e2e --scenario e2e --out e2e.json
 ```

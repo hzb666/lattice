@@ -40,6 +40,7 @@ const PICKUP_MS: f64 = 280.;
 const COMPACT: (f64, f64) = (380., 260.);
 const DESKTOP_SPLIT_MAX_PX: f64 = 64.;
 const MIN_SEAM_HIT_WIDTH: f64 = 8.;
+const FRAME_EDGE_HIT_PX: f64 = 20.;
 /// Overlay floats pass over panels freely; only this much of a panel's edge
 /// docks them.
 const OVERLAY_EDGE_BAND: f64 = 0.14;

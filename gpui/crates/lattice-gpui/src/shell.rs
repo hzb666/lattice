@@ -124,6 +124,7 @@ pub use insert_flow::{InsertTable, PasteImageAsFigure};
 pub use insert_pickers_flow::{GoToLine, GoToSymbol, InsertCitation, InsertReference};
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 pub use overleaf_collab::AnnotateSelection;
+#[cfg(target_os = "macos")]
 pub use overleaf_menus::ReviewHere;
 pub(crate) use palette_groups::init as init_recent_commands;
 pub(crate) use pdf_citations::PaperFetched;

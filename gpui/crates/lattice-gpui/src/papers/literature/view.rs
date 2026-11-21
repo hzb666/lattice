@@ -77,10 +77,10 @@ fn signal(hit: &LiteratureHit, full: bool) -> Option<String> {
 }
 
 fn source_name(hit: &LiteratureHit) -> &'static str {
-    if hit.source == "alphaxiv" {
-        "alphaXiv"
-    } else {
-        "OpenAlex"
+    match hit.source.as_str() {
+        "alphaxiv" => "alphaXiv",
+        "pubmed" => "PubMed",
+        _ => "OpenAlex",
     }
 }
 
@@ -118,6 +118,11 @@ fn page(hit: &LiteratureHit) -> Option<String> {
             hit.arxiv_id
                 .as_ref()
                 .map(|id| format!("https://arxiv.org/abs/{id}"))
+        })
+        .or_else(|| {
+            hit.external_id
+                .as_ref()
+                .map(|id| format!("https://pubmed.ncbi.nlm.nih.gov/{id}/"))
         })
 }
 
@@ -184,7 +189,7 @@ impl Literature {
             } else {
                 palette.input
             })
-            .when(hit.arxiv_id.is_some(), |actions| {
+            .when(hit.arxiv_id.is_some() || hit.doi.is_some(), |actions| {
                 actions.child(
                     div()
                         .id(gpui::ElementId::NamedChild(
@@ -418,7 +423,9 @@ impl Literature {
                     .map(|facts| match (&hit.arxiv_id, &hit.doi) {
                         (Some(id), _) => facts.child(fact("arXiv", id.clone(), cx)),
                         (None, Some(doi)) => facts.child(fact("DOI", doi.clone(), cx)),
-                        _ => facts,
+                        (None, None) => facts.when_some(hit.external_id.clone(), |facts, id| {
+                            facts.child(fact("PMID", id, cx))
+                        }),
                     }),
             )
             .child(
@@ -440,7 +447,7 @@ impl Literature {
                                     .child(Icon::CHECK.element(ICON_SMALL, palette.success))
                                     .child(t!("In Papers")),
                             )
-                        } else if hit.arxiv_id.is_some() {
+                        } else if hit.arxiv_id.is_some() || hit.doi.is_some() {
                             actions.child(
                                 Button::new("literature-add", t!("Add to Papers"))
                                     .tinted()
@@ -584,6 +591,20 @@ impl Render for Literature {
         };
         if let Some(error) = self.error.clone() {
             body.push(message(error, mix(palette.danger, palette.text, 0.2), cx));
+        }
+        if self.pubmed_unavailable {
+            body.push(message(
+                t!("PubMed is unavailable; check the Lattice NCBI contact configuration.").into(),
+                palette.text_secondary,
+                cx,
+            ));
+        }
+        if self.results.iter().any(|hit| hit.source == "pubmed") {
+            body.push(message(
+                t!("PubMed abstracts may be copyrighted by publishers or authors. PubMed does not provide medical advice.").into(),
+                palette.text_secondary,
+                cx,
+            ));
         }
         if let Some(notice) = self.notice.clone() {
             body.push(message(notice, palette.text_secondary, cx));

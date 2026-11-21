@@ -215,6 +215,7 @@ mod tests {
                     name: name.to_string(),
                     detail: String::new(),
                     ok: !missing.contains(name),
+                    version: None,
                     code: None,
                     params: Default::default(),
                 })

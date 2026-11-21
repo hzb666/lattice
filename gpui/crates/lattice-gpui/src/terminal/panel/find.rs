@@ -41,6 +41,7 @@ pub(super) struct Find {
 impl TerminalPanel {
     /// The find field's match in front and the number of matches, while it
     /// is open.
+    #[cfg(target_os = "macos")]
     pub fn find_state(&self) -> Option<(Option<usize>, usize)> {
         self.find.as_ref().map(|find| (find.current, find.count))
     }

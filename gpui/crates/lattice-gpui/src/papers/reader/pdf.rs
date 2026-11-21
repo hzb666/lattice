@@ -66,11 +66,13 @@ impl PaperReader {
     }
 
     /// The PDF shown in the text's place (for scenarios).
+    #[cfg(target_os = "macos")]
     pub fn pdf_view(&self) -> Option<Entity<PdfView>> {
         self.pdf.as_ref().map(|pdf| pdf.view.clone())
     }
 
     /// The pages of the PDF shown, once it has loaded (for scenarios).
+    #[cfg(target_os = "macos")]
     pub fn pdf_pages(&self, cx: &App) -> usize {
         self.pdf
             .as_ref()

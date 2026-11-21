@@ -33,6 +33,7 @@ impl PdfView {
     }
 
     /// What the host is still getting, for scripted checks.
+    #[cfg(target_os = "macos")]
     pub fn host_load(&self) -> &HostLoad {
         &self.host_load
     }

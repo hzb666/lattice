@@ -135,6 +135,7 @@ impl ConflictResolver {
     }
 
     /// Whether the sides are named as an Overleaf sync's, for a scenario.
+    #[cfg(target_os = "macos")]
     pub fn is_overleaf(&self) -> bool {
         self.overleaf
     }

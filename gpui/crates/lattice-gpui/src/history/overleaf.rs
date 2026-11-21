@@ -606,31 +606,37 @@ impl HistoryPanel {
 /// writer's clicks would.
 impl HistoryPanel {
     /// The Overleaf view, as its pill chooses it.
+    #[cfg(target_os = "macos")]
     pub fn show_overleaf_for_scenario(&mut self, cx: &mut Context<Self>) {
         self.select_view(super::timeline::HistoryView::Overleaf, cx);
     }
 
     /// Overleaf's entries as read, newest first.
+    #[cfg(target_os = "macos")]
     pub fn overleaf_updates(&self) -> &[OverleafUpdate] {
         &self.overleaf.updates
     }
 
     /// The entry `to_version` opened compared with now, as its tool does.
+    #[cfg(target_os = "macos")]
     pub fn compare_overleaf_for_scenario(&mut self, to_version: i64, cx: &mut Context<Self>) {
         self.compare_row(overleaf_key(to_version), cx);
     }
 
     /// The opened entry's changed files, once read.
+    #[cfg(target_os = "macos")]
     pub fn overleaf_files(&self) -> Option<Vec<OverleafFile>> {
         self.overleaf.opened.as_ref()?.files.value.clone()
     }
 
     /// The opened entry's file `path`, opened as its chip does.
+    #[cfg(target_os = "macos")]
     pub fn open_overleaf_file_for_scenario(&mut self, path: &str, cx: &mut Context<Self>) {
         self.open_overleaf_file(path.to_string(), cx);
     }
 
     /// The opened file's two sides, once read.
+    #[cfg(target_os = "macos")]
     pub fn overleaf_diff_texts(&self) -> Option<(Option<String>, Option<String>)> {
         let loaded = self
             .overleaf
@@ -645,6 +651,7 @@ impl HistoryPanel {
     }
 
     /// The opened entry's file `path` restored, as its Restore does.
+    #[cfg(target_os = "macos")]
     pub fn restore_overleaf_file_for_scenario(
         &mut self,
         path: &str,
@@ -667,6 +674,7 @@ impl HistoryPanel {
     }
 
     /// The opened entry's "Name this version" field, opened.
+    #[cfg(target_os = "macos")]
     pub fn name_overleaf_version_for_scenario(
         &mut self,
         window: &mut Window,
@@ -676,6 +684,7 @@ impl HistoryPanel {
     }
 
     /// An Overleaf action is under way.
+    #[cfg(target_os = "macos")]
     pub fn overleaf_busy(&self) -> bool {
         self.overleaf.busy
     }

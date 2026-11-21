@@ -7,7 +7,7 @@
  *      (`scripts/gpui-e2e-modules.mjs`); a branch that changes nothing GPUI
  *      runs nothing;
  *   2. builds the release binary through `scripts/gpui-build.mjs` (seconds
- *      in the warm shared tree), unless `--no-build`;
+ *      from gpui/target), unless `--no-build`;
  *   3. runs `gpui/script/e2e --only <modules>`: the smoke flow (open, build,
  *      SyncTeX, edits and ⌘S, autosave and outside edits, a second window,
  *      the quit that saves) and those modules;

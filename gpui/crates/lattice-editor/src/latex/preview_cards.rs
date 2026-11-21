@@ -32,7 +32,7 @@ use lattice_i18n::t;
 use lattice_ui::{ActiveLattice as _, Appearance, TextRole, TextRoleStyle as _};
 
 use super::{
-    cards::card_surface,
+    cards::{around, card_surface},
     graphics,
     previews::{self, Figure, MacroSources, MathRequest, Preview},
     syntax,
@@ -55,8 +55,17 @@ fn content_width(context: &HoverCardContext) -> Pixels {
 
 /// A figure's preview (`figurePreview`): `None` without a host, as the
 /// Tauri app's card has none without its figure loader.
-pub fn figure_media(path: &Path, context: &HoverCardContext, cx: &mut App) -> Option<AnyElement> {
-    let preview = previews::figure(path, &context.editor, cx)?;
+pub fn figure_media(
+    project_root: &Path,
+    path: &Path,
+    context: &HoverCardContext,
+    cx: &mut App,
+) -> Option<AnyElement> {
+    let preview = previews::figure(project_root, path, &context.editor, cx)?;
+    Some(render_figure(preview, context, cx))
+}
+
+fn render_figure(preview: Preview<Figure>, context: &HoverCardContext, cx: &App) -> AnyElement {
     let palette = cx.palette().clone();
     // The media reaches 3px past the text on each side (`margin: -2px -3px 9px`).
     let width = content_width(context) + px(6.);
@@ -75,7 +84,7 @@ pub fn figure_media(path: &Path, context: &HoverCardContext, cx: &mut App) -> Op
         .justify_center()
         .items_center();
     let unavailable = |words: &'static str| div().child(words).into_any_element();
-    Some(match preview {
+    match preview {
         Preview::Loading => media
             .min_h(px(72.))
             .flex_col()
@@ -118,7 +127,70 @@ pub fn figure_media(path: &Path, context: &HoverCardContext, cx: &mut App) -> Op
         Preview::Ready(Figure::Failed) => media
             .child(unavailable(t!("Figure preview could not be loaded.")))
             .into_any_element(),
-    })
+    }
+}
+
+fn image_card(
+    preview: Option<Preview<Figure>>,
+    label: &str,
+    context: &HoverCardContext,
+    cx: &App,
+) -> AnyElement {
+    card_surface(cx)
+        .w(card_width(context))
+        .pt(px(10.))
+        .px(px(12.))
+        .pb(px(11.))
+        .text_role(TextRole::Body, cx)
+        .children(preview.map(|preview| render_figure(preview, context, cx)))
+        .child(
+            div()
+                .mt(px(6.))
+                .text_color(cx.palette().text_secondary)
+                .text_size(lattice_ui::tokens::TEXT_MICRO)
+                .truncate()
+                .child(label.to_owned()),
+        )
+        .into_any_element()
+}
+
+/// The preview card for a `\chemex{key}` compound reference.
+pub struct ChemexCards {
+    pub index: gpui::WeakEntity<ProjectIndex>,
+}
+
+impl HoverProvider for ChemexCards {
+    fn target(&self, text: &BufferSnapshot, offset: usize, cx: &App) -> Option<HoverTarget> {
+        if !previews::installed(cx) {
+            return None;
+        }
+        let (window, start) = around(text, offset);
+        let target = syntax::chemex_target(&window, offset - start)?;
+        let index = self.index.upgrade()?;
+        let index = index.read(cx);
+        let has_drawing = index.paths().iter().any(|path| {
+            Path::new(path)
+                .extension()
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("cdxml"))
+        });
+        if !has_drawing {
+            return None;
+        }
+        let root = index.root().to_path_buf();
+        let index = self.index.clone();
+        let compound_id = target.key;
+        Some(HoverTarget {
+            range: target.range.start + start..target.range.end + start,
+            id: "chemex-compound",
+            card: Rc::new(move |context, _, cx| {
+                let preview = index.upgrade().and_then(|index| {
+                    let revision = (index.entity_id(), index.read(cx).generation());
+                    previews::compound(&root, revision, &compound_id, &context.editor, cx)
+                });
+                image_card(preview, &compound_id, context, cx)
+            }),
+        })
+    }
 }
 
 /// A label's source snippet, or an equation's source while KaTeX has not
@@ -204,6 +276,8 @@ pub fn equation_body(text: &str, reference: &Reference) -> Option<String> {
 pub struct ReferencePreviews {
     /// The figure's graphic, absolute.
     pub figure: Option<PathBuf>,
+    /// Project root used to export a ChemDraw figure into its cached SVG.
+    pub figure_root: Option<PathBuf>,
     /// What the last build numbered the label.
     pub fact: Option<String>,
     /// The equation's math, and the macros to set it with.
@@ -226,6 +300,7 @@ impl ReferencePreviews {
         let index = index.read(cx);
         let body = body.get_or_init(|| equation_body(&text.text(), reference));
         Self {
+            figure_root: Some(index.root().to_path_buf()),
             figure: reference
                 .image_path
                 .as_ref()
@@ -269,27 +344,13 @@ impl HoverProvider for GraphicsCards {
             index.root_document(),
         )?;
         let absolute: Rc<Path> = index.root().join(&resolved).into();
+        let project_root = index.root().to_path_buf();
         Some(HoverTarget {
             range: target.range.start + start..target.range.end + start,
             id: "graphics",
             card: Rc::new(move |context, _, cx| {
-                let palette = cx.palette().clone();
-                card_surface(cx)
-                    .w(card_width(context))
-                    .pt(px(10.))
-                    .px(px(12.))
-                    .pb(px(11.))
-                    .text_role(TextRole::Body, cx)
-                    .children(figure_media(&absolute, context, cx))
-                    .child(
-                        div()
-                            .mt(px(6.))
-                            .text_color(palette.text_secondary)
-                            .text_size(lattice_ui::tokens::TEXT_MICRO)
-                            .truncate()
-                            .child(resolved.clone()),
-                    )
-                    .into_any_element()
+                let preview = previews::figure(&project_root, &absolute, &context.editor, cx);
+                image_card(preview, &resolved, context, cx)
             }),
         })
     }

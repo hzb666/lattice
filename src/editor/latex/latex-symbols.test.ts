@@ -98,6 +98,8 @@ describe("LaTeX symbols", () => {
     const figure = "\\includegraphics[width=\\linewidth]{figures/plot}";
     expect(definitionTargetAt(figure, figure.indexOf("plot") + 1, [], ["figures/plot.png"]))
       .toEqual({ kind: "asset", path: "figures/plot.png" });
+    expect(definitionTargetAt("\\includegraphics{figures/molecule}", 31, [], ["figures/molecule.cdxml"]))
+      .toEqual({ kind: "asset", path: "figures/molecule.cdxml" });
   });
 
   it("resolves symbols under the cursor for find-references and rename", () => {

@@ -722,6 +722,7 @@ impl gpui_base::RootPlugin for WindowState {
         surface.style().refine(
             &gpui::StyleRefinement::default()
                 .font_family(cx.theme().font_family.clone())
+                .not_italic()
                 .bg(cx.theme().tokens.background)
                 .text_color(cx.theme().foreground)
                 .rounded_tl(radii.top_left)
@@ -729,6 +730,7 @@ impl gpui_base::RootPlugin for WindowState {
                 .rounded_bl(radii.bottom_left)
                 .rounded_br(radii.bottom_right),
         );
+        surface.text_style().font_fallbacks = cx.theme().font_fallbacks.clone();
     }
 
     fn decorate(

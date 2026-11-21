@@ -40,7 +40,9 @@ pub(crate) use named_links::citation_keys;
 pub use outline_menu::OutlineState;
 pub use panel::{PdfEvent, PdfPanel, PdfPanelKind, pdf_tab_label};
 pub use text::LinkTarget;
-pub use toolbar_hover::{toolbar_section, toolbar_start_rows};
+pub use toolbar_hover::toolbar_section;
+#[cfg(target_os = "macos")]
+pub use toolbar_hover::toolbar_start_rows;
 pub use view::{
     CitationLookup, CompoundSource, HostLoad, NoteDestination, OfferedSelection, OverleafNotes,
     PdfNotes, PdfView, PdfViewEvent, ReviewSource, ToolbarAction, ViewPlace, note_destination,

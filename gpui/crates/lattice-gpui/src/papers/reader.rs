@@ -46,6 +46,7 @@ mod pdf;
 pub mod quote_page;
 mod selection;
 use pdf::{PdfSource, ShownPdf, browser_url, pdf_source};
+#[cfg(target_os = "macos")]
 pub use selection::QuoteAction;
 
 /// Which of the bundle's texts is on screen.

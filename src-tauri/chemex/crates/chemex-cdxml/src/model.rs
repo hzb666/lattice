@@ -235,6 +235,13 @@ impl DrawingDocument {
         Ok(source)
     }
 
+    /// Return a source-preserving document for one group without its dynamic labels.
+    pub fn compound_group_source_without_fields(&self, compound_id: &str) -> crate::Result<String> {
+        let source = self.compound_group_source(compound_id)?;
+        let document = Self::parse(source)?;
+        document.strip_fields()
+    }
+
     pub(crate) fn warn(&mut self, code: &str, object: usize, message: impl Into<String>) {
         self.diagnostics.push(Diagnostic {
             code: code.into(),

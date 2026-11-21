@@ -12,6 +12,11 @@ body,
   overflow: hidden;
 }
 
+html:root {
+  --ui-font: Geist, "Source Han Sans SC", "思源黑体", var(--ui-font-fallback);
+  --display-font: Geist, "Source Han Sans SC", "思源黑体", var(--display-font-fallback);
+}
+
 body {
   background: var(--editor-bg);
   color: var(--text-primary);

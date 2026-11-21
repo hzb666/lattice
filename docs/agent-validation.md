@@ -16,7 +16,7 @@ node scripts/gpui-build.mjs -- test --release --locked --workspace
 cargo fmt --manifest-path gpui/Cargo.toml --all -- --check
 ```
 
-Only run checks relevant to the change. Send compiling Cargo commands through `scripts/gpui-build.mjs` to reuse the mirrored build tree and machine-wide lock. Keep the shared backend at its current path and preserve Cargo lockfiles.
+Only run checks relevant to the change. Send compiling Cargo commands through `scripts/gpui-build.mjs` to reuse `gpui/target`; it serializes GPUI builds with the machine-wide lock and fetches PDFium into `gpui/vendor`. Keep the shared backend at its current path and preserve Cargo lockfiles.
 
 Generators have `--check`: `scripts/gpui-host-errors.mjs`, `scripts/gpui-animated-icons.mjs`, `scripts/gpui-symbol-glyphs.mjs` and `design-system/code-themes.mjs`. Their TypeScript, CSS, translation and JSON inputs remain part of GPUI even when native code is their only consumer.
 

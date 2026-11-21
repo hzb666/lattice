@@ -4,7 +4,8 @@
 //! Tauri app's `read_project_asset` and `referenceAssetPreviewDataUrl` read
 //! it:
 //!
-//! - a PNG, JPEG, WebP or SVG is shown as it is;
+//! - a PNG, JPEG, WebP or SVG is shown as it is, and a CDXML drawing is shown
+//!   as the SVG Chemex exports for it;
 //! - a PDF shows its first page, at most 720px wide, as PDF.js draws it
 //!   there, through the PDF viewer's PDFium;
 //! - any other format (EPS) has no preview, and a file that cannot be read
@@ -49,6 +50,7 @@ pub fn install(cx: &mut App) {
 enum Kind {
     Image(ImageFormat),
     Pdf,
+    ChemDraw,
     Other,
 }
 
@@ -62,6 +64,7 @@ fn kind_of(path: &Path) -> Kind {
         Some("webp") => Kind::Image(ImageFormat::Webp),
         Some("svg") => Kind::Image(ImageFormat::Svg),
         Some("pdf") => Kind::Pdf,
+        Some("cdxml") => Kind::ChemDraw,
         _ => Kind::Other,
     }
 }
@@ -96,7 +99,7 @@ impl PreviewHost for Host {
         }
     }
 
-    fn figure(&self, path: &Path, cx: &mut App) -> Task<Figure> {
+    fn figure(&self, project_root: &Path, path: &Path, cx: &mut App) -> Task<Figure> {
         let path = path.to_path_buf();
         match kind_of(&path) {
             Kind::Other => Task::ready(if path.is_file() {
@@ -125,7 +128,36 @@ impl PreviewHost for Host {
                     }
                 })
             }
+            Kind::ChemDraw => {
+                let project_root = project_root.to_path_buf();
+                let svg_renderer = cx.svg_renderer();
+                let read = cx.background_spawn(async move {
+                    let relative = path.strip_prefix(&project_root).ok()?.to_str()?;
+                    let svg = lattice_core::chemistry::drawing_preview_svg(&project_root, relative)
+                        .ok()??;
+                    svg_renderer.render_single_frame(&svg, 2.).ok()
+                });
+                cx.spawn(async move |_| match read.await {
+                    Some(image) => Figure::Shown(ImageSource::Render(image)),
+                    None => Figure::Failed,
+                })
+            }
         }
+    }
+
+    fn compound(&self, project_root: &Path, compound_id: &str, cx: &mut App) -> Task<Figure> {
+        let project_root = project_root.to_path_buf();
+        let compound_id = compound_id.to_string();
+        let svg_renderer = cx.svg_renderer();
+        let read = cx.background_spawn(async move {
+            let svg = lattice_core::chemistry::compound_preview_svg(&project_root, &compound_id)
+                .ok()??;
+            svg_renderer.render_single_frame(&svg, 2.).ok()
+        });
+        cx.spawn(async move |_| match read.await {
+            Some(image) => Figure::Shown(ImageSource::Render(image)),
+            None => Figure::Failed,
+        })
     }
 
     fn loader(&self, id: ElementId, size: Pixels, cx: &App) -> AnyElement {
@@ -185,6 +217,8 @@ mod tests {
             Kind::Image(ImageFormat::Svg)
         ));
         assert!(matches!(kind_of(Path::new("a.pdf")), Kind::Pdf));
+        assert!(matches!(kind_of(Path::new("a.cdxml")), Kind::ChemDraw));
+        assert!(matches!(kind_of(Path::new("a.cdx")), Kind::Other));
         assert!(matches!(kind_of(Path::new("a.eps")), Kind::Other));
         assert!(matches!(kind_of(Path::new("a")), Kind::Other));
     }

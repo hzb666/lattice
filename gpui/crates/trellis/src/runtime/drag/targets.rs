@@ -11,7 +11,10 @@ use crate::model::{
 };
 
 use super::super::engine::{Engine, Region};
-use super::{DESKTOP_SPLIT_MAX_PX, DragSession, DropTarget, MIN_SEAM_HIT_WIDTH, OVERLAY_EDGE_BAND};
+use super::{
+    DESKTOP_SPLIT_MAX_PX, DragSession, DropTarget, FRAME_EDGE_HIT_PX, MIN_SEAM_HIT_WIDTH,
+    OVERLAY_EDGE_BAND,
+};
 
 pub(super) fn overlay_edge(p: Point, r: Rect) -> Option<Edge> {
     let x = (p.x - r.x) / r.w;
@@ -239,8 +242,7 @@ impl Engine {
             .and_then(|f| self.nav.entries.get(f))
             .map(|e| e.node.clone());
         if let Some(group) = framed.as_ref().or(doc.root.as_ref())
-            && let Some(frame) =
-                frame_drop_target(group, p, vw, vh, (self.pad() * 2.).max(MIN_SEAM_HIT_WIDTH))
+            && let Some(frame) = frame_drop_target(group, p, vw, vh, FRAME_EDGE_HIT_PX)
             && leaf_ids(Some(group)).iter().any(|id| *id != d.lifted.id)
         {
             next = Some(DropTarget::Dock(frame));

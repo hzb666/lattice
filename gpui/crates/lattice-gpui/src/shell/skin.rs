@@ -127,7 +127,14 @@ fn tab_icon(icon: TabIcon, palette: &Palette) -> AnyElement {
     match icon {
         TabIcon::None => Empty.into_any_element(),
         TabIcon::Icon(icon) => icon
-            .element(ICON, palette.text_secondary)
+            .element(
+                if icon == Icon::CHEMISTRY {
+                    px(18.)
+                } else {
+                    ICON
+                },
+                palette.text_secondary,
+            )
             .into_any_element(),
         TabIcon::Glyph(kind) => file_glyph(kind, ICON, palette),
     }

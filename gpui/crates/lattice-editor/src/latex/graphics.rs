@@ -30,8 +30,9 @@ static DETOKENIZE: LazyLock<Regex> = LazyLock::new(|| {
 
 /// graphicx tries the extensions it knows; the bare name, last, finds a file
 /// saved without one.
-const GRAPHICS_EXTENSIONS: &[&str] =
-    &[".pdf", ".png", ".jpg", ".jpeg", ".svg", ".eps", ".webp", ""];
+const GRAPHICS_EXTENSIONS: &[&str] = &[
+    ".pdf", ".png", ".jpg", ".jpeg", ".svg", ".eps", ".webp", ".cdxml", "",
+];
 
 /// An `\includegraphics` path under the pointer: its span in the text it
 /// was found in, and the path as written, unwrapped.
@@ -221,10 +222,14 @@ mod tests {
         );
         let roots = graphics_roots(["\\graphicspath{{figs/}{images/}}\n"]);
         assert_eq!(roots, vec!["figs".to_string(), "images".to_string()]);
-        let project = paths(&["figs/plot.pdf", "images/other.png"]);
+        let project = paths(&["figs/plot.pdf", "figs/molecule.cdxml", "images/other.png"]);
         assert_eq!(
             resolve_graphics("plot", &project, &roots, "").as_deref(),
             Some("figs/plot.pdf")
+        );
+        assert_eq!(
+            resolve_graphics("molecule", &project, &roots, "").as_deref(),
+            Some("figs/molecule.cdxml")
         );
         assert_eq!(resolve_graphics("missing", &project, &roots, ""), None);
     }

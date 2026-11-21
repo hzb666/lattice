@@ -489,6 +489,7 @@ fn theme(
             });
     }
     let translucency_note: Option<SharedString> = match crate::window_material::backing(cx) {
+        #[cfg(target_os = "macos")]
         crate::window_material::Backing::ReducedTransparency => {
             Some(t!("Off while Reduce transparency is on in System Settings").into())
         }

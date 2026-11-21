@@ -232,6 +232,7 @@ impl SynaraSurface {
         }
     }
 
+    #[cfg(target_os = "macos")]
     pub fn island(&self) -> Option<&Entity<Island>> {
         self.island.as_ref()
     }
@@ -241,10 +242,12 @@ impl SynaraSurface {
     }
 
     /// What the page was last told of the writer's workspace.
+    #[cfg(target_os = "macos")]
     pub fn workspace(&self) -> &Value {
         &self.workspace
     }
 
+    #[cfg(target_os = "macos")]
     pub fn is_drawn(&self) -> bool {
         self.drawn
     }
@@ -325,12 +328,14 @@ impl SynaraSurface {
 
     /// How many paths were ever reported as Lattice's own writes, for a
     /// scenario to count from.
+    #[cfg(target_os = "macos")]
     pub fn host_writes_reported(&self) -> usize {
         self.host_writes_reported
     }
 
     /// The paths reported as Lattice's own writes since `count` were, as far
     /// as the last kept go, for a scenario.
+    #[cfg(target_os = "macos")]
     pub fn host_writes_since(&self, count: usize) -> impl Iterator<Item = &String> {
         let new = self.host_writes_reported.saturating_sub(count);
         let kept = self.host_writes.len();

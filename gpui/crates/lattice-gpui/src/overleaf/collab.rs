@@ -116,6 +116,7 @@ impl OverleafCollabPanel {
     }
 
     /// A composer is open, writing a new thread.
+    #[cfg(target_os = "macos")]
     pub fn composing_comment(&self) -> bool {
         self.composer
             .as_ref()

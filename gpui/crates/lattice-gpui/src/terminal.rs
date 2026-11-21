@@ -21,7 +21,9 @@ mod screen;
 
 use gpui::{KeyBinding, actions};
 
-pub use panel::{SessionState, TerminalPanel, TerminalPanelEvent};
+#[cfg(target_os = "macos")]
+pub use panel::SessionState;
+pub use panel::{TerminalPanel, TerminalPanelEvent};
 
 actions!(
     lattice,

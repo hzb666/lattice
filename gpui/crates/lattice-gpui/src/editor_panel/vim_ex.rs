@@ -68,6 +68,7 @@ impl EditorPanel {
     }
 
     /// Whether Vim's `:` line is open.
+    #[cfg(target_os = "macos")]
     pub(crate) fn vim_ex_open(&self) -> bool {
         self.vim_ex.is_some()
     }

@@ -15,6 +15,7 @@ use std::{path::Path, time::Duration};
 
 use anyhow::Result;
 use gpui::AsyncApp;
+#[cfg(target_os = "macos")]
 use lattice_ui::ActiveLattice as _;
 use serde_json::{Value, json};
 

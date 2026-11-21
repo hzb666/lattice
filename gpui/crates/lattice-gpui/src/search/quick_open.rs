@@ -17,6 +17,8 @@
 
 use std::{collections::HashMap, ops::Range};
 
+use lattice_i18n::t;
+
 use gpui::{
     AnyElement, App, AppContext as _, Context, Entity, EventEmitter, FocusHandle, Focusable,
     HighlightStyle, InteractiveElement as _, IntoElement, KeyDownEvent, MouseButton,
@@ -279,7 +281,7 @@ impl QuickOpen {
     }
 
     /// Type `query` in the field, for a scenario.
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    #[cfg(target_os = "macos")]
     pub fn set_query(&mut self, query: &str, window: &mut Window, cx: &mut Context<Self>) {
         self.input
             .update(cx, |input, cx| input.set_value(query, window, cx));

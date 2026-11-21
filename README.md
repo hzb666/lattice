@@ -22,7 +22,7 @@ pnpm build
 & .\gpui\target\release\lattice-gpui.exe 'path\to\project'
 ```
 
-`pnpm build` builds the WebView pages and the native Release binary. Compiling Cargo commands use `scripts/gpui-build.mjs`, which preserves the shared build cache and fetches PDFium. Set `LATTICE_GPUI_BUILD_DIR` to reuse an existing cache. On macOS the executable has no `.exe` suffix.
+`pnpm build` builds the WebView pages and the native Release binary. The native build keeps Rust artifacts in `gpui/target` and fetches PDFium into `gpui/vendor`, so repeated builds reuse the repository-local Cargo cache. On macOS the executable has no `.exe` suffix.
 
 `pnpm check` checks island types and runs island unit tests; `pnpm test` runs retained shared-module and script tests. Native validation and scratch-project scenarios are documented in [docs/agent-validation.md](docs/agent-validation.md). Feature details are in [gpui/README.md](gpui/README.md) and `gpui/docs/`.
 

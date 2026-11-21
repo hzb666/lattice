@@ -332,7 +332,7 @@ impl ArxivExportSheet {
 
     /// Show `check` as the result, the check under way dropped: the parity
     /// harness stages the Tauri bench's pack (`bench-arxiv.ts`) this way.
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    #[cfg(target_os = "macos")]
     pub fn stage_for_parity(&mut self, check: ArxivCheck, cx: &mut Context<Self>) {
         self.generation += 1;
         self.checks.cancel();

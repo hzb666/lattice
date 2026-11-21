@@ -32,6 +32,7 @@ pub enum Backing {
     #[default]
     Opaque,
     /// Translucency was asked for, but Reduce transparency is on.
+    #[cfg(target_os = "macos")]
     ReducedTransparency,
     /// Not on this platform.
     Unsupported,

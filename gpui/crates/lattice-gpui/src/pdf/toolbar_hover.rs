@@ -99,6 +99,7 @@ pub fn toolbar_section(index: usize) -> Option<usize> {
 
 /// The rows of the host's start control and of Previous page in the
 /// toolbar's hover, for a scripted check of their order.
+#[cfg(target_os = "macos")]
 pub fn toolbar_start_rows() -> (usize, usize) {
     (Slot::Start as usize, Slot::Previous as usize)
 }

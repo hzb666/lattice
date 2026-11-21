@@ -11,9 +11,7 @@
 #   for none), as the pipeline's light pass does through
 #   ../scripts/gpui-e2e-light.mjs; without it the whole scenario runs.
 # Build first, from the repository root: node scripts/gpui-build.mjs (the
-# release build with offscreen-shots, in the machine's shared build tree, copied
-# back to target/release/lattice-gpui; a plain cargo build here starts cold in
-# every new worktree).
+# release build with offscreen-shots, written to gpui/target/release).
 #
 # Several e2e runs proceed side by side (two worktrees, two validation runs).
 # The scenario's native clicks and keys go to its own window (`sendEvent:`,

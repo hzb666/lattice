@@ -228,6 +228,7 @@ impl OverleafCollabPanel {
     }
 
     /// What the composer holds, for a scenario.
+    #[cfg(target_os = "macos")]
     pub fn chat_draft(&self, cx: &App) -> Option<String> {
         let (input, _) = self.chat.input.as_ref()?;
         Some(input.read(cx).value().to_string())

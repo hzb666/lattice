@@ -309,6 +309,8 @@ pub struct ModalLayer {
     scrim_closable: bool,
     initial_focus: Option<FocusHandle>,
     on_close: CloseHandler,
+    /// The layer's order among deferred overlays.
+    priority: usize,
 }
 
 impl ModalLayer {
@@ -326,6 +328,7 @@ impl ModalLayer {
             scrim_closable: true,
             initial_focus: None,
             on_close: Rc::new(on_close),
+            priority: 0,
         }
     }
 
@@ -333,6 +336,12 @@ impl ModalLayer {
     /// surface (a dialog's field, for typing at once) instead of the layer.
     pub fn initial_focus(mut self, handle: FocusHandle) -> Self {
         self.initial_focus = Some(handle);
+        self
+    }
+
+    /// Draw the layer above lower-priority deferred overlays.
+    pub fn priority(mut self, priority: usize) -> Self {
+        self.priority = priority;
         self
     }
 
@@ -559,5 +568,6 @@ impl RenderOnce for ModalLayer {
                 .overlay(overlay)
                 .surface(surface),
         )
+        .with_priority(self.priority)
     }
 }

@@ -2448,7 +2448,11 @@ impl Interactivity {
                     }
                     if let Some(active_tooltip) = element_state.active_tooltip.as_ref() {
                         if self.tooltip_builder.is_some() {
-                            self.tooltip_id = set_tooltip_on_window(active_tooltip, window);
+                            self.tooltip_id = set_tooltip_on_window(
+                                active_tooltip,
+                                Some(bounds),
+                                window,
+                            );
                         } else {
                             // If there is no longer a tooltip builder, remove the active tooltip.
                             if let Some(long_press_tooltip_active) =
@@ -3818,14 +3822,16 @@ pub(crate) fn clear_active_tooltip_if_not_hoverable(
 
 pub(crate) fn set_tooltip_on_window(
     active_tooltip: &Rc<RefCell<Option<ActiveTooltip>>>,
+    anchor_bounds: Option<Bounds<Pixels>>,
     window: &mut Window,
 ) -> Option<TooltipId> {
-    let tooltip = match active_tooltip.borrow().as_ref() {
+    let mut tooltip = match active_tooltip.borrow().as_ref() {
         None => return None,
         Some(ActiveTooltip::WaitingForShow { .. }) => return None,
         Some(ActiveTooltip::Visible { tooltip, .. }) => tooltip.clone(),
         Some(ActiveTooltip::WaitingForHide { tooltip, .. }) => tooltip.clone(),
     };
+    tooltip.anchor_bounds = anchor_bounds;
     Some(window.set_tooltip(tooltip))
 }
 
@@ -4045,6 +4051,7 @@ fn show_tooltip(
         ActiveTooltip::Visible {
             tooltip: AnyTooltip {
                 view,
+                anchor_bounds: None,
                 mouse_position: window.mouse_position(),
                 check_visible_and_update: Rc::new(move |tooltip_bounds, window, cx| {
                     if long_press_tooltip_active

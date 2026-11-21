@@ -11,9 +11,11 @@ use std::collections::HashSet;
 use std::env;
 use std::ffi::OsString;
 use std::fs;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
 use std::sync::{OnceLock, RwLock};
+use std::time::{Duration, Instant};
 
 #[cfg(target_os = "linux")]
 mod appimage;
@@ -39,6 +41,7 @@ pub(crate) use python_tools::{bibcite_output_cancellable, redact_bibcite_output}
 
 pub(crate) const KILL_SIGNAL: libc::c_int = 9;
 pub(crate) const TERM_SIGNAL: libc::c_int = 15;
+pub(crate) const TOOL_PROBE_TIMEOUT: Duration = Duration::from_secs(3);
 
 pub const MANAGED_UV_VERSION: &str = "0.12.3";
 
@@ -86,6 +89,40 @@ pub fn texlive_bins(root: &Path) -> Vec<PathBuf> {
 
 pub fn command(name: &str) -> Command {
     with_child_path(Command::new(resolve(name)))
+}
+
+/// Run a short tool probe, stopping its process group if it does not exit.
+pub(crate) fn output_with_timeout(
+    command: &mut Command, timeout: Duration,
+) -> Result<Output, String> {
+    let mut stdout_file = tempfile::tempfile().map_err(|error| error.to_string())?;
+    let mut stderr_file = tempfile::tempfile().map_err(|error| error.to_string())?;
+    command
+        .stdout(Stdio::from(stdout_file.try_clone().map_err(|error| error.to_string())?))
+        .stderr(Stdio::from(stderr_file.try_clone().map_err(|error| error.to_string())?));
+    in_new_process_group(command);
+    let mut child = command.spawn().map_err(|error| error.to_string())?;
+    let _process_group = track_process_group(&mut child).map_err(|error| error.to_string())?;
+    let deadline = Instant::now() + timeout;
+    loop {
+        if child.try_wait().map_err(|error| error.to_string())?.is_some() {
+            let status = child.wait().map_err(|error| error.to_string())?;
+            stdout_file.seek(SeekFrom::Start(0)).map_err(|error| error.to_string())?;
+            stderr_file.seek(SeekFrom::Start(0)).map_err(|error| error.to_string())?;
+            let mut stdout = Vec::new();
+            let mut stderr = Vec::new();
+            stdout_file.read_to_end(&mut stdout).map_err(|error| error.to_string())?;
+            stderr_file.read_to_end(&mut stderr).map_err(|error| error.to_string())?;
+            return Ok(Output { status, stdout, stderr });
+        }
+        if Instant::now() >= deadline {
+            signal_process_group(child.id(), KILL_SIGNAL);
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(format!("timed out after {} seconds", timeout.as_secs()));
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
 }
 
 /// `command` with the search path `command()` hands its children, and the
@@ -235,9 +272,8 @@ pub(crate) fn uv_tool_status_at(path: &Path, name: &str) -> Result<(), String> {
     {
         return Err(format!("{} is not a regular executable file.", path.display()));
     }
-    let output = with_child_path(Command::new(path))
-        .arg("--version")
-        .output()
+    let mut command = with_child_path(Command::new(path));
+    let output = output_with_timeout(command.arg("--version"), TOOL_PROBE_TIMEOUT)
         .map_err(|error| format!("{} could not run: {error}", path.display()))?;
     if !output.status.success() {
         return Err(format!(
@@ -513,6 +549,17 @@ mod tests {
         assert!(!is_executable(&script));
         fs::set_permissions(&script, fs::Permissions::from_mode(0o700)).unwrap();
         assert!(is_executable(&script));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn output_with_timeout_stops_a_hung_tool() {
+        let mut command = Command::new("sh");
+        command.args(["-c", "sleep 10"]);
+
+        let result = output_with_timeout(&mut command, Duration::from_millis(50));
+
+        assert!(result.unwrap_err().contains("timed out"));
     }
 
     /// A build's Stop is a SIGTERM to its process group. The GPUI app spawns

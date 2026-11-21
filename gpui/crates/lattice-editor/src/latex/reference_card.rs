@@ -65,9 +65,10 @@ impl ReferenceCard {
         } = self;
         let palette = cx.palette().clone();
         let figure = previews
-            .figure
+            .figure_root
             .as_deref()
-            .and_then(|path| preview_cards::figure_media(path, &context, cx));
+            .zip(previews.figure.as_deref())
+            .and_then(|(root, path)| preview_cards::figure_media(root, path, &context, cx));
         let equation = previews
             .equation
             .as_ref()

@@ -71,6 +71,7 @@ pub struct Session {
     pub number: usize,
     pub name: Option<String>,
     /// The shell's program ("zsh").
+    #[cfg(target_os = "macos")]
     pub shell: String,
     pub state: SessionState,
     pub screen: Option<Entity<TerminalScreen>>,
@@ -204,15 +205,18 @@ impl TerminalPanel {
         }
     }
 
+    #[cfg(target_os = "macos")]
     pub fn sessions(&self) -> &[Session] {
         &self.sessions
     }
 
+    #[cfg(target_os = "macos")]
     pub fn active_key(&self) -> Option<usize> {
         self.active
     }
 
     /// The keyboard's place in the terminal in front.
+    #[cfg(target_os = "macos")]
     pub fn active_screen_focus(&self, cx: &App) -> Option<FocusHandle> {
         self.active_screen().map(|screen| screen.focus_handle(cx))
     }
@@ -285,7 +289,7 @@ impl TerminalPanel {
         self.next_key += 1;
         let (exited, exit) = async_channel::bounded::<Option<ExitStatus>>(1);
         let window_id = window.window_handle().window_id().as_u64();
-        let (shell, start) = launch::start(&root, window_id, exited, cx);
+        let (_shell, start) = launch::start(&root, window_id, exited, cx);
         let started = cx.spawn_in(window, async move |panel, cx| {
             let built = start.await;
             panel
@@ -307,7 +311,8 @@ impl TerminalPanel {
             key,
             number,
             name: None,
-            shell,
+            #[cfg(target_os = "macos")]
+            shell: _shell,
             state: SessionState::Starting,
             screen: None,
             tab_focus: cx.focus_handle(),

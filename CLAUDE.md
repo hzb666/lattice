@@ -14,7 +14,7 @@ This checkout builds the GPUI desktop editor. The independent Tauri host and its
 
 Read callers and tests before editing. Preserve user changes, public behavior, saved data, licenses and upstream attribution. Keep changes local; do not move shared modules just to rename directories. Preserve the WebView pages and the mature PDFium renderer.
 
-Compiling Cargo commands run through `node scripts/gpui-build.mjs -- <cargo arguments>` from the repository root. This mirrors the current source, including deletions, under a build lock and reuses the shared cache. Do not create another cold target tree. `cargo fmt` and metadata queries do not need the wrapper.
+Compiling Cargo commands run through `node scripts/gpui-build.mjs -- <cargo arguments>` from the repository root. Builds use the repository-local `gpui/target` under the build lock. `cargo fmt` and metadata queries do not need the wrapper.
 
 Use `pnpm build:islands`, `pnpm build:native`, `pnpm check` and focused shared-module tests. Read `docs/agent-validation.md` before validation or recovering a failed check.
 

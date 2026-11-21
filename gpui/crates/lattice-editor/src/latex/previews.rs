@@ -103,8 +103,10 @@ pub trait PreviewHost {
         request: &MathRequest,
         cx: &mut App,
     ) -> Task<anyhow::Result<Option<MathPicture>>>;
-    /// The figure at `path` (absolute).
-    fn figure(&self, path: &Path, cx: &mut App) -> Task<Figure>;
+    /// The figure at absolute `path`, inside `project_root`.
+    fn figure(&self, project_root: &Path, path: &Path, cx: &mut App) -> Task<Figure>;
+    /// The ChemDraw group named by `compound_id`, inside `project_root`.
+    fn compound(&self, project_root: &Path, compound_id: &str, cx: &mut App) -> Task<Figure>;
     /// The loader a preview shows while it is read (`InfinityLoader`).
     fn loader(&self, id: ElementId, size: Pixels, cx: &App) -> AnyElement;
 }
@@ -155,6 +157,13 @@ struct FigureKey {
     path: PathBuf,
     modified: Option<SystemTime>,
     len: u64,
+}
+
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct CompoundKey {
+    root: PathBuf,
+    revision: (EntityId, u64),
+    compound_id: String,
 }
 
 enum Slot<T> {
@@ -251,6 +260,7 @@ struct Previews {
     host: Rc<dyn PreviewHost>,
     math: Kept<MathKey, Option<MathPicture>>,
     figures: Kept<FigureKey, Figure>,
+    compounds: Kept<CompoundKey, Figure>,
 }
 
 impl Global for Previews {}
@@ -261,6 +271,7 @@ pub fn install(host: Rc<dyn PreviewHost>, cx: &mut App) {
         host,
         math: Kept::new(MATH_KEPT),
         figures: Kept::new(FIGURES_KEPT),
+        compounds: Kept::new(FIGURES_KEPT),
     });
 }
 
@@ -318,9 +329,10 @@ pub fn math_for(
     Some(Preview::Loading)
 }
 
-/// The figure at `path` (absolute), read now if it was not since it last
-/// changed on disk; `None` without a host.
+/// The figure at absolute `path` inside `project_root`, read now if it was
+/// not since it last changed on disk; `None` without a host.
 pub fn figure(
+    project_root: &Path,
     path: &Path,
     editor: &WeakEntity<LatticeEditor>,
     cx: &mut App,
@@ -345,11 +357,48 @@ pub fn figure(
     cx.global_mut::<Previews>()
         .figures
         .start(key.clone(), editor.entity_id());
-    let task = host.figure(path, cx);
+    let task = host.figure(project_root, path, cx);
     cx.spawn(async move |cx| {
         let figure = task.await;
         cx.update(|cx| {
             let waiting = cx.global_mut::<Previews>().figures.finish(key, figure);
+            redraw(waiting, cx);
+        });
+    })
+    .detach();
+    Some(Preview::Loading)
+}
+
+/// The figure group for `compound_id`, read once if it was not cached;
+/// `None` without a preview host.
+pub fn compound(
+    project_root: &Path,
+    revision: (EntityId, u64),
+    compound_id: &str,
+    editor: &WeakEntity<LatticeEditor>,
+    cx: &mut App,
+) -> Option<Preview<Figure>> {
+    let key = CompoundKey {
+        root: project_root.to_path_buf(),
+        revision,
+        compound_id: compound_id.to_string(),
+    };
+    let host = cx.try_global::<Previews>()?.host.clone();
+    if let Some(kept) = cx
+        .global_mut::<Previews>()
+        .compounds
+        .get(&key, editor.entity_id())
+    {
+        return Some(kept);
+    }
+    cx.global_mut::<Previews>()
+        .compounds
+        .start(key.clone(), editor.entity_id());
+    let task = host.compound(project_root, compound_id, cx);
+    cx.spawn(async move |cx| {
+        let figure = task.await;
+        cx.update(|cx| {
+            let waiting = cx.global_mut::<Previews>().compounds.finish(key, figure);
             redraw(waiting, cx);
         });
     })

@@ -22,6 +22,35 @@ msgstr "此项目中没有 CDXML 文件"
 msgid "Choose a CDXML file to preview"
 msgstr "选择一个 CDXML 文件进行预览"
 
+#: lattice-gpui/src/shell/chemistry.rs
+msgid "Rendered"
+msgstr "渲染后"
+
+#: lattice-gpui/src/shell/chemistry.rs
+msgid "Source"
+msgstr "渲染前"
+
+#: lattice-gpui/src/shell/chemistry.rs
+msgid "Zoom in"
+msgstr "放大"
+
+#: lattice-gpui/src/shell/chemistry.rs
+msgid "Zoom out"
+msgstr "缩小"
+
+#: lattice-gpui/src/shell/chemistry.rs
+#: lattice-gpui/src/file_tree/menu.rs
+msgid "Open in ChemDraw"
+msgstr "在 ChemDraw 中打开"
+
+#: lattice-gpui/src/shell/chemistry.rs
+msgid "Fit page to width"
+msgstr "适合页面宽度"
+
+#: lattice-gpui/src/shell/chemistry.rs
+msgid "Fit page to height"
+msgstr "适合页面高度"
+
 #: lattice-gpui/src/shell/commands.rs
 msgid "Bibliography layout"
 msgstr "参考文献布局"

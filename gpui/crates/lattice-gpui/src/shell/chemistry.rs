@@ -1,22 +1,36 @@
 //! CDXML browsing and numbered chemistry previews.
 
-use std::{any::Any, path::Path, path::PathBuf, sync::Arc};
+use std::{
+    any::Any,
+    cell::Cell,
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+    rc::Rc,
+    sync::Arc,
+};
 
 use chemex_cdxml::DrawingDocument;
 use gpui::{
-    App, AppContext as _, Context, Entity, FocusHandle, Focusable, ImageSource,
+    App, AppContext as _, Bounds, Context, Entity, FocusHandle, Focusable, ImageSource,
     InteractiveElement as _, IntoElement, ParentElement as _, Render, RenderImage, ScrollHandle,
     SharedString, StatefulInteractiveElement as _, Styled as _, Task, UniformListScrollHandle,
-    Window, actions, div, img, prelude::FluentBuilder as _, px, uniform_list,
+    Window, actions, canvas, div, img, prelude::FluentBuilder as _, px, relative, size,
+    uniform_list,
 };
 use gpui_kit::component::{
     Selectable as _,
     dock::{BasePanel, Panel, PanelEvent, panel_handle},
+    h_flex,
+    menu::{ContextMenuExt as _, PopupMenuItem},
     v_flex,
 };
 use lattice_core::{chemistry, models::FileNode, project};
 use lattice_i18n::t;
-use lattice_ui::{ActiveLattice as _, components::Button};
+use lattice_ui::{
+    ActiveLattice as _, Icon, TextRole, TextRoleStyle as _,
+    components::{Button, EmptyState, IconButton, LatticeTooltip, TreeRow},
+    tokens::{SPACING_2, SPACING_4},
+};
 
 use super::{
     Shell,
@@ -29,7 +43,36 @@ mod warmup;
 use preview_cache::PreviewCache;
 use warmup::Warmup;
 
+const MIN_SCALE: f32 = 0.3;
+const MAX_SCALE: f32 = 5.;
+const ZOOM_STEP: f32 = 0.1;
+const RENDER_SCALE: f32 = 2.;
+const GROUPS_WIDTH: f32 = 152.;
+const NARROW_WIDTH: f32 = 520.;
+const WIDE_ASPECT: f32 = 1.5;
+
 actions!(lattice, [OpenChemistry, ToggleChemistry]);
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum AllPreview {
+    Source,
+    Rendered,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PreviewFit {
+    Both,
+    Width,
+    Height,
+    Manual,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ChemistryLayout {
+    Stacked,
+    Standard,
+    Wide,
+}
 
 pub(crate) struct ChemistryPanel {
     focus_handle: FocusHandle,
@@ -37,17 +80,24 @@ pub(crate) struct ChemistryPanel {
     paper: Option<String>,
     files: Vec<String>,
     selected_file: Option<String>,
+    show_details: bool,
     document: Option<Arc<DrawingDocument>>,
     groups: Vec<String>,
+    numbers: Option<BTreeMap<String, String>>,
     warmup: Warmup,
     compound_id: Option<String>,
+    all_preview: AllPreview,
     preview: Option<Arc<RenderImage>>,
+    scale: f32,
+    fit: PreviewFit,
     cache: Arc<PreviewCache>,
     error: Option<String>,
     loading: bool,
     generation: u64,
     files_scroll: UniformListScrollHandle,
     preview_scroll: ScrollHandle,
+    preview_stage: Rc<Cell<Bounds<gpui::Pixels>>>,
+    panel_bounds: Rc<Cell<Bounds<gpui::Pixels>>>,
     _load: Option<Task<()>>,
 }
 
@@ -86,25 +136,24 @@ impl Panel for ChemistryPanel {
 impl Render for ChemistryPanel {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = cx.palette().clone();
+        let root = self.root.clone();
+        let layout = chemistry_layout(
+            self.panel_bounds.get().size.width,
+            self.panel_bounds.get().size.height,
+        );
         let files = render_file_list(
             "chemistry-files",
             &self.files,
-            self.selected_file.as_deref(),
+            if layout != ChemistryLayout::Stacked || self.show_details {
+                self.selected_file.as_deref()
+            } else {
+                None
+            },
+            root.clone(),
             &self.files_scroll,
             cx,
             |this, path, cx| this.select_file(path, cx),
         );
-        let all = Button::new("chemistry-compound-all", t!("All"))
-            .compact()
-            .selected(self.compound_id.is_none())
-            .on_click(cx.listener(|this, _, _, cx| this.select_compound(None, cx)));
-        let compounds = self.groups.iter().map(|compound_id| {
-            let id = compound_id.clone();
-            Button::new(format!("chemistry-compound:{id}"), id.clone())
-                .compact()
-                .selected(self.compound_id.as_deref() == Some(id.as_str()))
-                .on_click(cx.listener(move |this, _, _, cx| this.select_compound(Some(&id), cx)))
-        });
         let stage = preview_stage(
             "chemistry-preview-stage",
             self.preview.as_ref(),
@@ -117,36 +166,183 @@ impl Render for ChemistryPanel {
             },
             &self.preview_scroll,
             palette.clone(),
+            self.scale,
+            self.fit,
+            self.preview_stage.clone(),
         );
+        let content = div()
+            .id("chemistry-preview-content")
+            .flex()
+            .flex_1()
+            .min_w_0()
+            .min_h_0()
+            .when(layout != ChemistryLayout::Wide, |content| {
+                content.flex_col()
+            })
+            .when(self.document.is_some(), |content| {
+                content.child(self.group_list(layout, cx))
+            })
+            .child(stage);
         let preview = v_flex()
             .flex_1()
             .min_w_0()
             .min_h_0()
-            .when(!self.groups.is_empty(), |preview| {
-                preview.child(
-                    div()
-                        .id("chemistry-compounds")
-                        .flex()
-                        .items_center()
-                        .gap(px(4.))
-                        .p(px(8.))
-                        .overflow_x_scroll()
-                        .child(all)
-                        .children(compounds),
-                )
-            })
-            .child(stage);
+            .child(self.preview_toolbar(cx))
+            .child(content);
         workspace(
             &self.focus_handle,
             palette,
             "chemistry-file-browser",
             files,
             preview,
+            layout,
+            layout != ChemistryLayout::Stacked || self.show_details,
+            self.panel_bounds.clone(),
         )
     }
 }
 
 impl ChemistryPanel {
+    fn preview_toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let scale = self.display_scale();
+        let no_preview = self.preview.is_none();
+        let zoom = h_flex()
+            .flex_none()
+            .child(
+                IconButton::new("chemistry-zoom-out", Icon::ZOOM_OUT)
+                    .tooltip(t!("Zoom out"))
+                    .disabled(no_preview || scale <= MIN_SCALE)
+                    .on_click(cx.listener(|this, _, _, cx| this.step_zoom(-1., cx))),
+            )
+            .child(
+                div()
+                    .min_w(px(42.))
+                    .text_center()
+                    .text_role(TextRole::Caption, cx)
+                    .text_color(cx.palette().text_secondary)
+                    .child(format!("{}%", (scale * 100.).round() as i64)),
+            )
+            .child(
+                IconButton::new("chemistry-zoom-in", Icon::ZOOM_IN)
+                    .tooltip(t!("Zoom in"))
+                    .disabled(no_preview || scale >= MAX_SCALE)
+                    .on_click(cx.listener(|this, _, _, cx| this.step_zoom(1., cx))),
+            );
+        let fit = h_flex()
+            .flex_none()
+            .child(
+                IconButton::new("chemistry-fit-width", Icon::RECTANGLE_HORIZONTAL)
+                    .tooltip(t!("Fit page to width"))
+                    .on(matches!(self.fit, PreviewFit::Width | PreviewFit::Both))
+                    .disabled(no_preview)
+                    .on_click(cx.listener(|this, _, _, cx| this.set_fit(PreviewFit::Width, cx))),
+            )
+            .child(
+                IconButton::new("chemistry-fit-height", Icon::RECTANGLE_VERTICAL)
+                    .tooltip(t!("Fit page to height"))
+                    .on(self.fit == PreviewFit::Height)
+                    .disabled(no_preview)
+                    .on_click(cx.listener(|this, _, _, cx| this.set_fit(PreviewFit::Height, cx))),
+            );
+        h_flex()
+            .id("chemistry-preview-toolbar")
+            .w_full()
+            .min_w_0()
+            .flex_none()
+            .flex_wrap()
+            .gap(SPACING_2)
+            .px(SPACING_4)
+            .py(SPACING_2)
+            .border_b_1()
+            .border_color(cx.palette().line)
+            .bg(cx.palette().editor)
+            .child(zoom)
+            .child(fit)
+            .child(
+                Button::new("chemistry-open-chemdraw", t!("Open in ChemDraw"))
+                    .compact()
+                    .ghost()
+                    .trailing_icon(Icon::EXTERNAL_LINK)
+                    .max_w_full()
+                    .truncate()
+                    .tooltip(t!("Open in ChemDraw"))
+                    .disabled(self.selected_file.is_none())
+                    .on_click(cx.listener(|this, _, _, cx| this.open_selected(cx))),
+            )
+    }
+
+    fn group_list(&self, layout: ChemistryLayout, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let all = Button::new("chemistry-compound-all", t!("All"))
+            .compact()
+            .ghost()
+            .selected(self.compound_id.is_none())
+            .on_click(cx.listener(|this, _, _, cx| this.select_compound(None, cx)));
+        let source = Button::new("chemistry-all-source", t!("Source"))
+            .compact()
+            .ghost()
+            .selected(self.compound_id.is_none() && self.all_preview == AllPreview::Source)
+            .on_click(
+                cx.listener(|this, _, _, cx| this.select_all_preview(AllPreview::Source, cx)),
+            );
+        let rendered = Button::new("chemistry-all-rendered", t!("Rendered"))
+            .compact()
+            .ghost()
+            .selected(self.compound_id.is_none() && self.all_preview == AllPreview::Rendered)
+            .disabled(self.numbers.as_ref().is_none_or(BTreeMap::is_empty))
+            .on_click(
+                cx.listener(|this, _, _, cx| this.select_all_preview(AllPreview::Rendered, cx)),
+            );
+        let compounds = self.groups.iter().map(|compound_id| {
+            let id = compound_id.clone();
+            let label = self
+                .numbers
+                .as_ref()
+                .and_then(|numbers| numbers.get(&id))
+                .map_or_else(|| id.clone(), |number| format!("{id} · {number}"));
+            Button::new(format!("chemistry-compound:{id}"), label.clone())
+                .compact()
+                .ghost()
+                .max_w_full()
+                .truncate()
+                .tooltip(label)
+                .selected(self.compound_id.as_deref() == Some(id.as_str()))
+                .on_click(cx.listener(move |this, _, _, cx| this.select_compound(Some(&id), cx)))
+        });
+        let buttons = div()
+            .flex()
+            .w_full()
+            .min_w_0()
+            .flex_none()
+            .gap(SPACING_2)
+            .p(SPACING_4)
+            .when(layout == ChemistryLayout::Wide, |buttons| {
+                buttons.flex_col().items_start()
+            })
+            .when(layout != ChemistryLayout::Wide, |buttons| {
+                buttons.flex_wrap().items_center().content_start()
+            })
+            .child(all)
+            .when(self.compound_id.is_none(), |bar| {
+                bar.child(source).child(rendered)
+            })
+            .children(compounds);
+        v_flex()
+            .id("chemistry-compounds")
+            .flex_none()
+            .min_w_0()
+            .min_h_0()
+            .border_color(cx.palette().line)
+            .when(layout == ChemistryLayout::Wide, |list| {
+                list.w(px(GROUPS_WIDTH)).border_r_1()
+            })
+            .when(layout != ChemistryLayout::Wide, |list| {
+                list.w_full().max_h(relative(0.4)).border_b_1()
+            })
+            .overflow_y_scroll()
+            .child(buttons)
+            .into_any_element()
+    }
+
     fn new(cx: &mut Context<Self>) -> Self {
         Self {
             focus_handle: cx.focus_handle(),
@@ -154,17 +350,24 @@ impl ChemistryPanel {
             paper: None,
             files: Vec::new(),
             selected_file: None,
+            show_details: false,
             document: None,
             groups: Vec::new(),
+            numbers: None,
             warmup: Warmup::default(),
             compound_id: None,
+            all_preview: AllPreview::Source,
             preview: None,
+            scale: 1.,
+            fit: PreviewFit::Both,
             cache: Arc::default(),
             error: None,
             loading: false,
             generation: 0,
             files_scroll: UniformListScrollHandle::new(),
             preview_scroll: ScrollHandle::new(),
+            preview_stage: Rc::default(),
+            panel_bounds: Rc::default(),
             _load: None,
         }
     }
@@ -186,9 +389,11 @@ impl ChemistryPanel {
         } else {
             self.root = Some(root.to_path_buf());
             self.paper = None;
+            self.numbers = None;
             self.files = files.to_vec();
         }
         self.selected_file = self.files.first().cloned();
+        self.show_details = false;
         self.reset_drawing();
         cx.notify();
     }
@@ -197,13 +402,14 @@ impl ChemistryPanel {
         self.document = None;
         self.groups.clear();
         self.compound_id = None;
+        self.all_preview = AllPreview::Source;
         self.warmup.reset();
         self.invalidate();
+        self.preview = None;
     }
 
     fn invalidate(&mut self) {
         self.cancel_load();
-        self.preview = None;
         self.error = None;
     }
 
@@ -211,9 +417,15 @@ impl ChemistryPanel {
         if !self.files.iter().any(|file| file == relative) {
             return;
         }
+        let size = self.panel_bounds.get().size;
+        let opening_details = !self.show_details
+            && chemistry_layout(size.width, size.height) == ChemistryLayout::Stacked;
+        self.show_details = true;
         if self.selected_file.as_deref() == Some(relative) {
             if self.compound_id.is_some() || (!self.loading && self.preview.is_none()) {
                 self.select_compound(None, cx);
+            } else if opening_details {
+                cx.notify();
             }
             return;
         }
@@ -232,6 +444,62 @@ impl ChemistryPanel {
         self.load_preview(compound_id.map(str::to_owned), cx);
     }
 
+    fn select_all_preview(&mut self, mode: AllPreview, cx: &mut Context<Self>) {
+        if self.compound_id.is_some() || self.all_preview == mode {
+            return;
+        }
+        self.all_preview = mode;
+        self.load_preview(None, cx);
+    }
+
+    fn set_scale(&mut self, scale: f32, cx: &mut Context<Self>) {
+        let scale = ((scale * 10.).round() / 10.).clamp(MIN_SCALE, MAX_SCALE);
+        if (scale - self.scale).abs() <= f32::EPSILON {
+            return;
+        }
+        self.scale = scale;
+        cx.notify();
+    }
+
+    fn step_zoom(&mut self, direction: f32, cx: &mut Context<Self>) {
+        let scale = self.display_scale() + direction * ZOOM_STEP;
+        self.fit = PreviewFit::Manual;
+        self.set_scale(scale, cx);
+    }
+
+    fn set_fit(&mut self, fit: PreviewFit, cx: &mut Context<Self>) {
+        self.fit = fit;
+        self.scale = 1.;
+        cx.notify();
+    }
+
+    fn display_scale(&self) -> f32 {
+        let Some(preview) = &self.preview else {
+            return self.scale;
+        };
+        let image_size = preview.size(0);
+        let natural = size(
+            image_size.width.0 as f32 / RENDER_SCALE,
+            image_size.height.0 as f32 / RENDER_SCALE,
+        );
+        let bounds = self.preview_stage.get().size;
+        let room = size(
+            (f32::from(bounds.width) - 40.).max(1.),
+            (f32::from(bounds.height) - 40.).max(1.),
+        );
+        if self.fit == PreviewFit::Manual {
+            self.scale
+        } else {
+            self.scale * fit_scale(natural, room, self.fit)
+        }
+    }
+
+    fn open_selected(&self, cx: &mut Context<Self>) {
+        if let (Some(root), Some(file)) = (&self.root, &self.selected_file) {
+            crate::opener::open_cdxml(root, file, cx);
+        }
+    }
+
     fn load_preview(&mut self, compound_id: Option<String>, cx: &mut Context<Self>) {
         let Some(root) = self.root.clone() else {
             return;
@@ -240,8 +508,10 @@ impl ChemistryPanel {
             return;
         };
         let paper = self.paper.clone();
+        let all_preview = self.all_preview;
         let cache = self.cache.clone();
         let document = self.document.clone();
+        let cached_numbers = self.numbers.clone();
         self.cancel_load();
         self.warmup.pause();
         let generation = self.generation;
@@ -253,26 +523,43 @@ impl ChemistryPanel {
         self._load = Some(cx.spawn(async move |this, cx| {
             let result = cx
                 .background_spawn(async move {
+                    let numbers = cached_numbers.unwrap_or_else(|| {
+                        paper
+                            .as_deref()
+                            .and_then(|paper| chemistry::built_compound_numbers(&root, paper))
+                            .unwrap_or_default()
+                    });
                     let (document, parsed) = match document {
                         Some(document) => (document, None),
                         None => {
                             let path = project::safe_path(&root, &file)?;
                             let document = Arc::new(chemistry::read_document(&path)?);
                             let groups = compound_groups(&document);
-                            (document.clone(), Some((document, groups)))
+                            (document.clone(), Some((document, groups, numbers.clone())))
                         }
                     };
                     let svg = match compound_id.as_deref() {
                         Some(id) => chemistry::preview_group_svg(&root, &document, id),
-                        None => paper
-                            .as_deref()
-                            .and_then(|paper| {
-                                chemistry::built_preview_svg(&root, paper, document.source())
-                            })
-                            .map_or_else(|| chemistry::preview_svg(&root, document.source()), Ok),
+                        None => match all_preview {
+                            AllPreview::Source => chemistry::preview_svg(&root, document.source()),
+                            AllPreview::Rendered => paper
+                                .as_deref()
+                                .and_then(|paper| {
+                                    chemistry::built_preview_svg(&root, paper, document.source())
+                                })
+                                .map_or_else(
+                                    || {
+                                        chemistry::render_compound_numbers(&document, &numbers)
+                                            .and_then(|source| {
+                                                chemistry::preview_svg(&root, &source)
+                                            })
+                                    },
+                                    Ok,
+                                ),
+                        },
                     };
                     let preview = svg.and_then(|svg| cache.render(&svg, &renderer));
-                    Ok::<_, String>((parsed, preview))
+                    Ok::<_, String>((parsed, preview, numbers))
                 })
                 .await;
             this.update(cx, |this, cx| {
@@ -280,10 +567,13 @@ impl ChemistryPanel {
                     return;
                 }
                 this.loading = false;
-                let result = result.and_then(|(parsed, preview)| {
-                    if let Some((document, groups)) = parsed {
+                let result = result.and_then(|(parsed, preview, numbers)| {
+                    if let Some((document, groups, numbers)) = parsed {
                         this.document = Some(document);
                         this.groups = groups;
+                        this.numbers = Some(numbers);
+                    } else {
+                        this.numbers = Some(numbers);
                     }
                     preview
                 });
@@ -321,6 +611,7 @@ fn render_file_list<T, F>(
     id: &'static str,
     files: &[String],
     selected: Option<&str>,
+    root: Option<PathBuf>,
     scroll: &UniformListScrollHandle,
     cx: &mut Context<T>,
     select: F,
@@ -340,8 +631,34 @@ where
                     let path = files[index].clone();
                     let selected = selected.as_deref() == Some(path.as_str());
                     let select = select.clone();
-                    file_row((id, index), &path, selected, cx)
-                        .on_click(cx.listener(move |this, _, _, cx| select(this, &path, cx)))
+                    let selected_path = path.clone();
+                    let menu_root = root.clone();
+                    TreeRow::file(format!("{id}:{path}"), path.clone(), 0)
+                        .selected(selected)
+                        .into_list_item(cx)
+                        .tooltip({
+                            let path = path.clone();
+                            move |_, cx| LatticeTooltip::view(path.clone(), None, cx)
+                        })
+                        .on_click(
+                            cx.listener(move |this, _, _, cx| select(this, &selected_path, cx)),
+                        )
+                        .context_menu(move |menu, _, _| {
+                            if !is_cdxml(Path::new(&path)) {
+                                return menu;
+                            }
+                            let menu_path = path.clone();
+                            let menu_root = menu_root.clone();
+                            menu.item(
+                                PopupMenuItem::new(t!("Open in ChemDraw"))
+                                    .icon(Icon::EXTERNAL_LINK.kit())
+                                    .on_click(move |_, _, cx| {
+                                        if let Some(root) = &menu_root {
+                                            crate::opener::open_cdxml(root, &menu_path, cx);
+                                        }
+                                    }),
+                            )
+                        })
                 })
                 .collect()
         }),
@@ -351,52 +668,80 @@ where
     .into_any_element()
 }
 
-fn file_row(
-    id: impl Into<gpui::ElementId>,
-    path: &str,
-    selected: bool,
-    cx: &App,
-) -> gpui::Stateful<gpui::Div> {
-    let palette = cx.palette();
-    div()
-        .id(id)
-        .min_w_0()
-        .mx(px(5.))
-        .my(px(2.))
-        .px(px(8.))
-        .py(px(7.))
-        .rounded(px(5.))
-        .when(selected, |row| row.bg(palette.row_selected))
-        .when(!selected, |row| row.hover(|style| style.bg(palette.hover)))
-        .text_color(palette.text)
-        .child(div().truncate().child(path.to_owned()))
-}
-
 fn workspace(
     focus: &FocusHandle,
     palette: lattice_ui::Palette,
     browser_id: &'static str,
     files: impl IntoElement,
     preview: impl IntoElement,
+    layout: ChemistryLayout,
+    selected: bool,
+    bounds: Rc<Cell<Bounds<gpui::Pixels>>>,
 ) -> impl IntoElement {
+    let content = if layout == ChemistryLayout::Stacked {
+        div()
+            .flex()
+            .flex_col()
+            .flex_1()
+            .min_w_0()
+            .min_h_0()
+            .child(file_browser(browser_id, files, layout, selected))
+            .when(selected, |this| this.child(preview))
+            .into_any_element()
+    } else {
+        div()
+            .flex()
+            .flex_1()
+            .min_w_0()
+            .min_h_0()
+            .child(file_browser(browser_id, files, layout, true))
+            .child(preview)
+            .into_any_element()
+    };
     v_flex()
         .track_focus(focus)
         .size_full()
         .bg(palette.panel)
-        .flex_row()
-        .child(file_browser(browser_id, files))
-        .child(preview)
+        .child(content)
+        .child(
+            canvas(
+                move |next, window, _| {
+                    if bounds.get().size != next.size {
+                        window.request_animation_frame();
+                    }
+                    bounds.set(next);
+                },
+                |_, _, _, _| {},
+            )
+            .absolute()
+            .inset_0(),
+        )
 }
 
-fn file_browser(id: &'static str, rows: impl IntoElement) -> impl IntoElement {
+fn file_browser(
+    id: &'static str,
+    rows: impl IntoElement,
+    layout: ChemistryLayout,
+    has_preview: bool,
+) -> impl IntoElement {
     div()
         .id(id)
-        .w(px(208.))
-        .flex_none()
+        .when(layout == ChemistryLayout::Stacked, |browser| {
+            browser.w_full().flex_1()
+        })
+        .when(layout != ChemistryLayout::Stacked, |browser| {
+            browser.w(px(176.)).flex_none()
+        })
         .min_h_0()
+        .min_w_0()
         .flex()
         .flex_col()
-        .border_r_1()
+        .when(layout == ChemistryLayout::Stacked, |browser| {
+            browser.when(has_preview, |browser| browser.border_b_1())
+        })
+        .when(layout != ChemistryLayout::Stacked, |browser| {
+            browser.border_r_1()
+        })
         .border_color(gpui::transparent_black())
         .child(div().flex_1().min_h_0().child(rows))
 }
@@ -406,26 +751,65 @@ fn preview_stage(
     preview: Option<&Arc<RenderImage>>,
     error: Option<&str>,
     loading: bool,
-    empty: impl IntoElement,
+    empty: impl Into<SharedString>,
     scroll: &ScrollHandle,
     palette: lattice_ui::Palette,
+    scale: f32,
+    fit: PreviewFit,
+    stage_bounds: Rc<Cell<Bounds<gpui::Pixels>>>,
 ) -> gpui::Stateful<gpui::Div> {
+    let stage_size = stage_bounds.get().size;
     let mut stage = div()
         .id(id)
+        .relative()
         .flex_1()
         .min_w_0()
         .min_h_0()
-        .overflow_scroll()
-        .track_scroll(scroll)
+        .overflow_hidden()
         .flex()
         .items_center()
         .justify_center()
         .p(px(20.));
     if let Some(preview) = preview {
+        let image_size = preview.size(0);
+        let natural = size(
+            image_size.width.0 as f32 / RENDER_SCALE,
+            image_size.height.0 as f32 / RENDER_SCALE,
+        );
+        let room = size(
+            (f32::from(stage_size.width) - 40.).max(1.),
+            (f32::from(stage_size.height) - 40.).max(1.),
+        );
+        let display_scale = if fit == PreviewFit::Manual {
+            scale
+        } else {
+            fit_scale(natural, room, fit) * scale
+        };
+        let width = natural.width * display_scale;
+        let height = natural.height * display_scale;
+        let content_width = f32::from(stage_size.width).max(width + 40.);
+        let content_height = f32::from(stage_size.height).max(height + 40.);
         stage = stage.child(
-            img(ImageSource::Render(preview.clone()))
-                .max_w_full()
-                .max_h_full(),
+            div()
+                .id("chemistry-preview-scroll")
+                .absolute()
+                .inset_0()
+                .overflow_scroll()
+                .track_scroll(scroll)
+                .child(
+                    div()
+                        .w(px(content_width))
+                        .h(px(content_height))
+                        .p(px(20.))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .child(
+                            img(ImageSource::Render(preview.clone()))
+                                .w(px(width))
+                                .h(px(height)),
+                        ),
+                ),
         );
     } else if let Some(error) = error {
         stage = stage.child(
@@ -440,9 +824,46 @@ fn preview_stage(
                 .child(t!("Exporting with ChemDraw…")),
         );
     } else {
-        stage = stage.child(div().text_color(palette.text_secondary).child(empty));
+        stage = stage.child(EmptyState::new(empty));
     }
-    stage
+    let bounds = stage_bounds.clone();
+    stage.child(
+        canvas(
+            move |next, window, _| {
+                if bounds.get().size != next.size {
+                    window.request_animation_frame();
+                }
+                bounds.set(next);
+            },
+            |_, _, _, _| {},
+        )
+        .absolute()
+        .inset_0(),
+    )
+}
+
+fn fit_scale(natural: gpui::Size<f32>, room: gpui::Size<f32>, fit: PreviewFit) -> f32 {
+    let width = natural.width.max(1.);
+    let height = natural.height.max(1.);
+    match fit {
+        PreviewFit::Both => (room.width / width).min(room.height / height).min(1.),
+        PreviewFit::Width => room.width / width,
+        PreviewFit::Height => room.height / height,
+        PreviewFit::Manual => 1.,
+    }
+    .clamp(MIN_SCALE, MAX_SCALE)
+}
+
+fn chemistry_layout(width: gpui::Pixels, height: gpui::Pixels) -> ChemistryLayout {
+    let width = f32::from(width);
+    let height = f32::from(height);
+    if width < NARROW_WIDTH || height / width.max(1.) >= WIDE_ASPECT {
+        ChemistryLayout::Stacked
+    } else if width / height.max(1.) >= WIDE_ASPECT {
+        ChemistryLayout::Wide
+    } else {
+        ChemistryLayout::Standard
+    }
 }
 
 fn compound_groups(document: &chemex_cdxml::DrawingDocument) -> Vec<String> {
@@ -531,12 +952,14 @@ impl Shell {
         self.parts
             .get::<Entity<ChemistryPanel>>()
             .update(cx, |panel, cx| {
-                if panel.paper != paper && panel.compound_id.is_none() {
+                let paper_changed = panel.paper != paper;
+                if paper_changed {
                     panel.invalidate();
+                    panel.numbers = None;
                 }
                 panel.paper = paper;
                 panel.warmup.allowed = true;
-                if !panel.loading && panel.preview.is_none() && panel.error.is_none() {
+                if paper_changed || (!panel.loading && (panel.preview.is_none() || panel.error.is_some())) {
                     panel.load_preview(panel.compound_id.clone(), cx);
                 } else {
                     panel.warm_groups(cx);
@@ -586,10 +1009,11 @@ impl Shell {
             self.parts
                 .get::<Entity<ChemistryPanel>>()
                 .update(cx, |panel, cx| {
-                    if panel.compound_id.is_none() {
-                        panel.invalidate();
-                        cx.notify();
-                    }
+                    panel.paper = None;
+                    panel.numbers = None;
+                    panel.invalidate();
+                    panel.paper = Some(document.to_owned());
+                    panel.load_preview(panel.compound_id.clone(), cx);
                 });
         }
     }
@@ -663,5 +1087,40 @@ mod tests {
                 .iter()
                 .all(|id| { !id.is_empty() && document.compound_group_source(id).is_ok() })
         );
+    }
+
+    #[test]
+    fn panel_layout_adapts_to_portrait_standard_and_wide_sizes() {
+        assert_eq!(
+            ChemistryLayout::Stacked,
+            chemistry_layout(px(360.), px(640.))
+        );
+        assert_eq!(ChemistryLayout::Wide, chemistry_layout(px(960.), px(520.)));
+        assert_eq!(
+            ChemistryLayout::Standard,
+            chemistry_layout(px(760.), px(640.))
+        );
+        assert_eq!(
+            ChemistryLayout::Stacked,
+            chemistry_layout(px(480.), px(300.))
+        );
+        assert_eq!(
+            ChemistryLayout::Standard,
+            chemistry_layout(px(520.), px(520.))
+        );
+    }
+
+    #[test]
+    fn preview_fit_modes_respect_the_requested_axis_and_manual_mode() {
+        let natural = size(400., 200.);
+        let room = size(100., 300.);
+        assert_eq!(fit_scale(natural, room, PreviewFit::Both), MIN_SCALE);
+        assert_eq!(fit_scale(natural, room, PreviewFit::Width), MIN_SCALE);
+        assert_eq!(fit_scale(natural, room, PreviewFit::Height), 1.5);
+        assert_eq!(
+            fit_scale(natural, size(800., 100.), PreviewFit::Height),
+            0.5
+        );
+        assert_eq!(fit_scale(natural, room, PreviewFit::Manual), 1.);
     }
 }

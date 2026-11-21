@@ -101,8 +101,10 @@ pub(crate) use annotations::PINS as ANNOTATION_PINS;
 use disk_sync::vanished_key;
 pub use events::EditorPanelEvent;
 pub use latex_view::choose_latex_view;
+#[cfg(target_os = "macos")]
+pub use margin_review::MarginLayout;
 pub use margin_review::{
-    LeaveReviewItem, MARGIN_CONTEXT, MarginLayout, MarginMode, NextReviewItem, PreviousReviewItem,
+    LeaveReviewItem, MARGIN_CONTEXT, MarginMode, NextReviewItem, PreviousReviewItem,
 };
 use outline_rail::OutlineRail;
 pub use overleaf_carets::OverleafCaret;

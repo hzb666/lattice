@@ -20,7 +20,9 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
 
 use gpui::{App, AppContext as _, Context, Entity, Window};
 use gpui_kit::component::dock::{BasePanelView, panel_handle};
-use trellis::model::{LayoutDocument, LayoutNode, Scaling, Size, ViewRules};
+#[cfg(target_os = "macos")]
+use trellis::model::LayoutNode;
+use trellis::model::{LayoutDocument, Scaling, Size, ViewRules};
 use trellis::runtime::engine::{NavigationMode, ViewType};
 use trellis::runtime::keymap::{Command, keymap_with};
 
@@ -151,6 +153,7 @@ impl Shell {
     }
 
     /// The smallest a view of `kind` may be laid out.
+    #[cfg(target_os = "macos")]
     pub(crate) fn view_min_size(&self, kind: &str, cx: &App) -> Option<Size> {
         let workspace = self.workspace.read(cx);
         workspace.engine().options().types.get(kind)?.rules.min_size
@@ -365,6 +368,7 @@ impl Shell {
     }
 
     /// The width the panel holding `view` is drawn at.
+    #[cfg(target_os = "macos")]
     pub fn view_width(&self, view: &str, cx: &App) -> Option<gpui::Pixels> {
         let workspace = self.workspace.read(cx);
         let panel = workspace.engine().view_state(view)?.panel_id.clone();
@@ -376,6 +380,7 @@ impl Shell {
     /// Give the top-level column holding `view` `width` px as a drag of its
     /// trailing divider would (the last column's leading one): only its
     /// neighbour gives or takes the room. For the scenarios' sized shots.
+    #[cfg(target_os = "macos")]
     pub fn set_view_width(&mut self, view: &str, width: f32, cx: &mut Context<Self>) {
         let Some(current) = self.view_width(view, cx).map(f32::from) else {
             return;

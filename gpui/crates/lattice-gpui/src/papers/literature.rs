@@ -1,10 +1,10 @@
 //! Discover literature (`literature-discovery-panel.tsx`): a drawer that
-//! searches OpenAlex and alphaXiv through lattice-core (`literature::search`)
+//! searches OpenAlex, PubMed and alphaXiv through lattice-core (`literature::search`)
 //! and lists what it found as Papers lists the library, each result opening
 //! its preview (the abstract, or the passage alphaXiv matched, then who,
-//! where from and which id) in place. A result with an arXiv id adds to
-//! Papers in one click; any result can be added as a citation only, through
-//! Add papers. The same work from both sources, or on two pages, is shown
+//! where from and which id) in place. A result with an arXiv id or DOI adds
+//! to Papers in one click; any result can be added as a citation only, through
+//! Add papers. The same work from different sources or on two pages is shown
 //! once. Ten show at first and ten more as a scroll brings the list's end
 //! near (or Load more is pressed); a deeper page is fetched only once those
 //! run out.
@@ -19,7 +19,10 @@ use gpui::{
 use gpui_kit::component::input::{InputEvent, InputState};
 use lattice_core::models::LiteratureHit;
 
-use super::{PapersPanel, model::base_arxiv_id};
+use super::{
+    PapersPanel,
+    model::{WorkIdentity, base_arxiv_id, find_in_library},
+};
 
 mod view;
 
@@ -32,14 +35,6 @@ pub enum LiteratureEvent {
     AddCitation(String),
 }
 
-/// Identity across pages and sources, so the same paper is shown once.
-fn dedup_key(hit: &LiteratureHit) -> String {
-    match &hit.arxiv_id {
-        Some(id) => base_arxiv_id(id).to_string(),
-        None => hit.doi.clone().unwrap_or_else(|| hit.title.clone()),
-    }
-}
-
 pub(super) fn hit_key(hit: &LiteratureHit) -> String {
     format!(
         "{}:{}",
@@ -47,6 +42,7 @@ pub(super) fn hit_key(hit: &LiteratureHit) -> String {
         hit.arxiv_id
             .as_deref()
             .or(hit.doi.as_deref())
+            .or(hit.external_id.as_deref())
             .unwrap_or(&hit.title)
     )
 }
@@ -70,13 +66,14 @@ pub struct Literature {
     pub(super) loading_more: bool,
     pub(super) error: Option<String>,
     pub(super) notice: Option<String>,
+    pub(super) pubmed_unavailable: bool,
     pub(super) shown_query: String,
     /// The result whose preview is open; one at a time.
     pub(super) open: Option<String>,
     /// The result being added to Papers, and its import's ticket.
     pub(super) busy: Option<String>,
     busy_ticket: Option<u64>,
-    /// The arXiv ids (versionless) this drawer added (`justImported`).
+    /// The identities this drawer added (`justImported`).
     just_imported: HashSet<String>,
     searched: Option<Searched>,
     page: u32,
@@ -127,6 +124,7 @@ impl Literature {
             loading_more: false,
             error: None,
             notice: None,
+            pubmed_unavailable: false,
             shown_query: String::new(),
             open: None,
             busy: None,
@@ -158,9 +156,17 @@ impl Literature {
     }
 
     fn fresh(&mut self, hits: Vec<LiteratureHit>) -> Vec<LiteratureHit> {
-        hits.into_iter()
-            .filter(|hit| self.seen.insert(dedup_key(hit)))
-            .collect()
+        let mut fresh = Vec::new();
+        for hit in hits {
+            let keys = hit.identity_keys();
+            if keys.iter().any(|key| self.seen.contains(key)) {
+                self.seen.extend(keys);
+                continue;
+            }
+            self.seen.extend(keys);
+            fresh.push(hit);
+        }
+        fresh
     }
 
     pub(super) fn search(&mut self, cx: &mut Context<Self>) {
@@ -177,6 +183,7 @@ impl Literature {
         self._load_more = None;
         self.error = None;
         self.notice = None;
+        self.pubmed_unavailable = false;
         self.page = 0;
         self.seen.clear();
         self.searched = Some(searched.clone());
@@ -196,6 +203,7 @@ impl Literature {
                     Ok(page) => {
                         this.results = this.fresh(page.hits);
                         this.has_more = page.has_more;
+                        this.pubmed_unavailable = page.pubmed_unavailable;
                         this.shown_query = searched.query.clone();
                         if this.results.is_empty() {
                             this.notice = Some(
@@ -259,6 +267,7 @@ impl Literature {
                         let fresh = this.fresh(page.hits);
                         this.results.extend(fresh);
                         this.has_more = page.has_more;
+                        this.pubmed_unavailable |= page.pubmed_unavailable;
                         this.visible += REVEAL_STEP;
                     }
                     Err(error) => {
@@ -287,33 +296,52 @@ impl Literature {
         cx.notify();
     }
 
-    /// Whether Papers already holds the work: its full text is in the
-    /// library (`importedArxivIds`: a cited entry with an arXiv id and no
-    /// text still offers Add), or this drawer added it. An import that
-    /// failed or was cancelled leaves the result to add again.
+    /// Whether Papers already holds this work's full text, or this drawer
+    /// added it. An import that failed or was cancelled leaves it available.
     pub(super) fn imported(&self, hit: &LiteratureHit, cx: &App) -> bool {
-        let Some(id) = hit.arxiv_id.as_deref() else {
-            return false;
-        };
-        let base = base_arxiv_id(id);
-        self.just_imported
+        if hit
+            .identity_keys()
             .iter()
-            .any(|added| added.eq_ignore_ascii_case(base))
-            || self.papers.read(cx).papers.iter().any(|paper| {
+            .any(|key| self.just_imported.contains(key))
+        {
+            return true;
+        }
+        if let Some(id) = hit.arxiv_id.as_deref() {
+            let base = base_arxiv_id(id);
+            if self.papers.read(cx).papers.iter().any(|paper| {
                 paper.has_full_text
                     && !paper.arxiv_id.is_empty()
                     && base_arxiv_id(&paper.arxiv_id).eq_ignore_ascii_case(base)
-            })
+            }) {
+                return true;
+            }
+        }
+        find_in_library(
+            &self.papers.read(cx).papers,
+            &WorkIdentity {
+                doi: hit.doi.clone(),
+                title: Some(hit.title.clone()),
+                ..WorkIdentity::default()
+            },
+        )
+        .is_some_and(|paper| paper.has_full_text || paper.has_blog)
     }
 
-    /// Add the result to Papers by its arXiv id; one at a time.
+    /// Add an arXiv or DOI result to Papers; one import at a time.
     pub(super) fn add(&mut self, hit: &LiteratureHit, cx: &mut Context<Self>) {
-        let (Some(id), None) = (hit.arxiv_id.clone(), self.busy.as_ref()) else {
+        let Some(id) = hit.arxiv_id.clone().or_else(|| hit.doi.clone()) else {
             return;
         };
-        let ticket = self
-            .papers
-            .update(cx, |papers, cx| papers.import_id(format!("arXiv:{id}"), cx));
+        if self.busy.is_some() {
+            return;
+        }
+        let ticket = self.papers.update(cx, |papers, cx| {
+            let input = hit
+                .arxiv_id
+                .as_ref()
+                .map_or_else(|| id.clone(), |arxiv| format!("arXiv:{arxiv}"));
+            papers.import_id(input, cx)
+        });
         if ticket.is_some() {
             self.busy = Some(hit_key(hit));
             self.busy_ticket = ticket;
@@ -339,13 +367,17 @@ impl Literature {
             .iter()
             .find(|hit| Some(hit_key(hit)) == key)
             .filter(|_| landed)
-            .and_then(|hit| hit.arxiv_id.clone());
-        if let Some(id) = added {
-            self.just_imported.insert(base_arxiv_id(&id).to_string());
+            .map(|hit| (hit.clone(), hit.identity_keys()));
+        if let Some((hit, keys)) = added {
+            self.just_imported.extend(keys);
+            if let Some(id) = hit.arxiv_id.as_deref() {
+                self.just_imported
+                    .insert(format!("arxiv:{}", base_arxiv_id(id).to_lowercase()));
+            }
             crate::notices::show(
                 crate::notices::Notice::new(
                     lattice_ui::components::ToastLevel::Success,
-                    t!("Imported arXiv:{0}", id),
+                    t!("Added to Papers: {0}", hit.title),
                 ),
                 cx,
             );

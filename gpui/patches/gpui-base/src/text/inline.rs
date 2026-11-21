@@ -930,6 +930,7 @@ impl Inline {
         let links = self.links.clone();
         window.set_tooltip(AnyTooltip {
             view: tooltip,
+            anchor_bounds: None,
             mouse_position: position,
             check_visible_and_update: Rc::new(move |_, window, _| {
                 let position = window.mouse_position();

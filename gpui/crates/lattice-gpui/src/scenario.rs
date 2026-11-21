@@ -22,20 +22,27 @@ mod e2e;
 mod input_lock;
 #[cfg(target_os = "macos")]
 mod measure;
+#[cfg(target_os = "macos")]
 mod overleaf_history_mock;
+#[cfg(target_os = "macos")]
 mod overleaf_mock;
+#[cfg(target_os = "macos")]
 mod overleaf_realtime_mock;
+#[cfg(target_os = "macos")]
 mod overleaf_review_mock;
 #[cfg(target_os = "macos")]
 mod parity;
 #[cfg(target_os = "macos")]
 mod parity_find;
+#[cfg(target_os = "macos")]
 mod parity_help;
 #[cfg(target_os = "macos")]
 mod parity_history;
+#[cfg(target_os = "macos")]
 mod parity_notices;
 #[cfg(target_os = "macos")]
 mod parity_overleaf;
+#[cfg(target_os = "macos")]
 mod parity_submission;
 #[cfg(target_os = "macos")]
 mod parity_welcome;

@@ -470,6 +470,7 @@ impl EditorPanel {
 
     /// Focus the split's divider, for a scenario.
     #[cfg(any(target_os = "macos", target_os = "windows"))]
+    #[cfg(target_os = "macos")]
     pub fn focus_split_divider(&self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(views) = &self.views {
             window.focus(&views.divider_focus, cx);

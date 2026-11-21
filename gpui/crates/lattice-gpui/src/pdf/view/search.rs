@@ -237,6 +237,7 @@ impl PdfView {
     }
 
     /// Type `query` into the find field, as a scenario stages it.
+    #[cfg(target_os = "macos")]
     pub fn show_query(&mut self, query: &str, window: &mut Window, cx: &mut Context<Self>) {
         let query = query.to_string();
         self.find

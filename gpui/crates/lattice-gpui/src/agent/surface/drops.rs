@@ -66,6 +66,7 @@ impl SynaraSurface {
 
     /// How many files the page's last read of a drop took, or why it took
     /// none, for a scenario.
+    #[cfg(target_os = "macos")]
     pub fn drop_read(&self) -> Option<&Result<usize, String>> {
         self.drop_read.as_ref()
     }

@@ -4,7 +4,9 @@
 //! width with what is wrong, and the install when something required is
 //! missing.
 
-use gpui::{AnyElement, App, Hsla, IntoElement, ParentElement as _, Styled as _, div, px};
+use gpui::{
+    AnyElement, App, Hsla, IntoElement, ParentElement as _, Styled as _, div, px, relative,
+};
 use lattice_core::doctor::{DoctorCheck, DoctorReport};
 use lattice_ui::{ActiveLattice as _, TextRole, TextRoleStyle as _, tokens::FONT_WEIGHT_SEMIBOLD};
 
@@ -17,7 +19,7 @@ pub fn check_label(name: &str) -> &str {
     match name {
         "project-root" => t!("Root document"),
         "bibliography" => t!("Bibliography"),
-        "latexmk-version" => t!("latexmk version"),
+        "chemdraw" => "ChemDraw",
         "conference-fonts" => t!("Conference fonts"),
         "icml-packages" => t!("ICML packages"),
         "neurips-packages" => t!("NeurIPS packages"),
@@ -41,6 +43,7 @@ fn tool_description(name: &str) -> Option<&'static str> {
         "texcount" => t!("TeXcount body word counts (optional status bar)"),
         "uv" => t!("Python tooling used for literature and bibliography tools"),
         "uvx" => t!("Runner used for Lattice's pinned literature tools"),
+        "chemdraw" => "ChemDraw",
         _ => return None,
     })
 }
@@ -148,6 +151,13 @@ pub fn check_detail(check: &DoctorCheck) -> String {
                 error = param("error")
             )
         }),
+        Some("chemdraw-failed") => description.map(|description| {
+            t!(
+                "{description}: {error}",
+                description = description,
+                error = param("error")
+            )
+        }),
         Some("root-document-missing") => Some(t!(
             "Project {project}, engine {engine}, root {document} (missing)",
             project = param("project"),
@@ -202,6 +212,7 @@ pub enum TileState {
 pub struct Tile {
     pub state: TileState,
     pub label: String,
+    pub version: Option<String>,
     pub details: Vec<String>,
 }
 
@@ -215,6 +226,7 @@ impl Tile {
         Self {
             state,
             label: check_label(&check.name).to_string(),
+            version: check.version.clone(),
             details: (!check.ok)
                 .then(|| check_detail(check))
                 .into_iter()
@@ -268,11 +280,30 @@ fn tile(tile: Tile, cx: &App) -> AnyElement {
                 .gap(px(2.))
                 .child(
                     div()
-                        .truncate()
-                        .text_role(TextRole::Caption, cx)
-                        .font_weight(FONT_WEIGHT_SEMIBOLD)
-                        .text_color(palette.text)
-                        .child(tile.label),
+                        .flex()
+                        .items_center()
+                        .min_w_0()
+                        .gap(px(8.))
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .truncate()
+                                .text_role(TextRole::Caption, cx)
+                                .font_weight(FONT_WEIGHT_SEMIBOLD)
+                                .text_color(palette.text)
+                                .child(tile.label),
+                        )
+                        .children(tile.version.map(|version| {
+                            div()
+                                .flex_none()
+                                .min_w_0()
+                                .max_w(relative(0.45))
+                                .truncate()
+                                .text_role(TextRole::Caption, cx)
+                                .text_color(palette.text_secondary)
+                                .child(version)
+                        })),
                 )
                 .children(tile.details.into_iter().map(|detail| {
                     div()
@@ -386,6 +417,7 @@ mod tests {
             name: "project-root".into(),
             detail: "Project /p · engine pdf · root main.tex (missing)".into(),
             ok: false,
+            version: None,
             code: Some("root-document-missing"),
             params: [
                 ("project", "/p".to_string()),

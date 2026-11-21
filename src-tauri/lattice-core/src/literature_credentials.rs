@@ -253,6 +253,25 @@ pub(crate) fn crossref_contact() -> Result<Option<String>, String> {
     Ok(contact(&loaded_vault()?))
 }
 
+pub(crate) fn ncbi_email() -> Result<Option<String>, String> {
+    let runtime = std::env::var("LATTICE_NCBI_EMAIL")
+        .ok()
+        .filter(|email| !email.trim().is_empty());
+    let saved = if runtime.is_none() { contact(&loaded_vault()?) } else { None };
+    ncbi_email_from(runtime, saved, option_env!("LATTICE_NCBI_EMAIL"))
+}
+
+fn ncbi_email_from(
+    runtime: Option<String>, saved: Option<String>, bundled: Option<&str>,
+) -> Result<Option<String>, String> {
+    for candidate in [runtime, saved, bundled.map(str::to_string)].into_iter().flatten() {
+        if let Some(email) = normalized_email(candidate)? {
+            return Ok(Some(email));
+        }
+    }
+    Ok(None)
+}
+
 /// Keychain reads and provider requests block, so each command runs off the
 /// async runtime; `failure` reports a task that stopped unexpectedly.
 async fn off_thread<T: Send + 'static>(
@@ -395,6 +414,33 @@ mod tests {
             Some("person@example.org".into())
         );
         assert!(normalized_email("person@localhost".into()).is_err());
+    }
+
+    #[test]
+    fn ncbi_email_prefers_runtime_then_saved_contact_then_release_default() {
+        assert_eq!(
+            ncbi_email_from(
+                Some("runtime@example.org".into()),
+                Some("saved@example.org".into()),
+                Some("release@example.org"),
+            )
+            .unwrap()
+            .as_deref(),
+            Some("runtime@example.org")
+        );
+        assert_eq!(
+            ncbi_email_from(None, Some("saved@example.org".into()), Some("release@example.org"))
+                .unwrap()
+                .as_deref(),
+            Some("saved@example.org")
+        );
+        assert_eq!(
+            ncbi_email_from(Some(String::new()), Some("saved@example.org".into()), None)
+                .unwrap()
+                .as_deref(),
+            Some("saved@example.org")
+        );
+        assert_eq!(ncbi_email_from(None, None, None).unwrap(), None);
     }
 
     /// Saved keys win, and the status the frontend sees never carries them.

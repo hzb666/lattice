@@ -179,6 +179,17 @@ impl FileTreePanel {
                 .icon(if chosen { Icon::CHECK } else { Icon::FILE_PLAY }),
             );
         }
+        if !folder && path.to_ascii_lowercase().ends_with(".cdxml") {
+            let (root, relative) = (root.clone(), path.clone());
+            menu = menu.separator().item(
+                MenuAction::new(t!("Open in ChemDraw"), move |_, cx| {
+                    if let Some(root) = &root {
+                        crate::opener::open_cdxml(root, &relative, cx);
+                    }
+                })
+                .icon(Icon::CHEMISTRY),
+            );
+        }
         let absolute = root.map(|root| root.join(&path));
         let rename = path.clone();
         menu = menu

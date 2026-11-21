@@ -40,6 +40,7 @@ pub fn apply(cx: &mut App) {
     Theme::update(cx, |theme| {
         theme.light_theme = light;
         theme.dark_theme = dark;
+        theme.font_fallbacks = Some(Fonts::ui_fallbacks());
     });
     // Loads the installed file for `mode`, even when the mode is unchanged.
     Theme::change(mode, None, cx);

@@ -12,7 +12,7 @@
 //! the system's place ([`stand_in`]) that answers as they choose and keeps
 //! the addresses it was handed.
 
-use std::rc::Rc;
+use std::{path::Path, rc::Rc};
 
 use gpui::{App, Global};
 
@@ -32,12 +32,22 @@ pub fn open_url(url: &str, cx: &mut App) -> Result<(), String> {
     system_open(url, cx)
 }
 
+/// Open a project CDXML file after applying the project's path restrictions.
+pub(crate) fn open_cdxml(root: &Path, relative: &str, cx: &mut App) {
+    match lattice_core::project::safe_path(root, relative) {
+        Ok(path) => cx.open_with_system(&path),
+        Err(error) => crate::notices::error(lattice_i18n::t!("Could not open the file"), error, cx),
+    }
+}
+
 /// Put `open` in the system's place, until [`give_back`].
+#[cfg(target_os = "macos")]
 pub fn stand_in(open: impl Fn(&str) -> Result<(), String> + 'static, cx: &mut App) {
     cx.set_global(StandIn(Rc::new(open)));
 }
 
 /// Give the system its place back.
+#[cfg(target_os = "macos")]
 pub fn give_back(cx: &mut App) {
     if cx.has_global::<StandIn>() {
         cx.remove_global::<StandIn>();

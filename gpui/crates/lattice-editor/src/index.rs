@@ -190,6 +190,10 @@ impl ProjectIndex {
         &self.root
     }
 
+    pub(crate) fn generation(&self) -> u64 {
+        self.generation
+    }
+
     /// The manuscript's root document, project-relative; empty before the
     /// host names one.
     pub fn root_document(&self) -> &str {

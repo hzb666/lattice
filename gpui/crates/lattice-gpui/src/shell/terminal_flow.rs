@@ -14,6 +14,11 @@ use super::Shell;
 use crate::terminal::{TerminalPanel, TerminalPanelEvent};
 
 impl Shell {
+    #[cfg(target_os = "macos")]
+    pub fn terminal(&self) -> &Entity<TerminalPanel> {
+        &self.terminal
+    }
+
     /// The window's Terminal panel, heard from as its shells end.
     pub(super) fn new_terminal_panel(
         window: &mut Window,
@@ -28,10 +33,6 @@ impl Shell {
     }
 
     #[cfg(any(target_os = "macos", target_os = "windows"))]
-    pub fn terminal(&self) -> &Entity<TerminalPanel> {
-        &self.terminal
-    }
-
     /// Another project ends every shell of the last one. True when the
     /// project changed.
     pub(super) fn terminal_follows(&mut self, root: PathBuf, cx: &mut Context<Self>) -> bool {

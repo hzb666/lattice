@@ -84,6 +84,7 @@ impl EditorPanel {
     }
 
     /// Whether the palette is open.
+    #[cfg(target_os = "macos")]
     pub(crate) fn symbol_palette_open(&self) -> bool {
         self.symbols.is_some()
     }
@@ -91,6 +92,7 @@ impl EditorPanel {
     /// The commands the palette lists now, the highlighted one's index, and
     /// how many of the cells drawn last hold KaTeX's picture, for the e2e
     /// checks.
+    #[cfg(target_os = "macos")]
     pub(crate) fn symbol_palette_shown(&self) -> Option<(Vec<&'static str>, usize, usize)> {
         let palette = self.symbols.as_ref()?;
         Some((
@@ -102,6 +104,7 @@ impl EditorPanel {
 
     /// Whether the highlighted cell lies wholly inside the grid's visible
     /// part, for the e2e checks.
+    #[cfg(target_os = "macos")]
     pub(crate) fn symbol_palette_highlight_in_view(&self) -> Option<bool> {
         let palette = self.symbols.as_ref()?;
         let cell = palette.scroll.bounds_for_item(palette.active)?;

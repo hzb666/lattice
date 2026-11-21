@@ -210,6 +210,7 @@ impl TerminalScreen {
     }
 
     /// The caret is in the shown phase of its blink.
+    #[cfg(target_os = "macos")]
     pub fn caret_shown(&self) -> bool {
         self.blink_on
     }

@@ -6,7 +6,7 @@
  * It is held for one GPUI release build or test run: the host has 16 GB of
  * memory, a GPUI release build takes several GB of rustc per job, and two of
  * them at once, from two worktrees, swapped the machine to a crawl.
- * `scripts/gpui-build.mjs` holds it around the shared build tree as well,
+ * `scripts/gpui-build.mjs` holds it while compiling into gpui/target as well,
  * which only one build may write at a time.
  *
  * The e2e input lock (`/tmp/lattice-gpui-e2e.lock`) follows the same

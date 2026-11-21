@@ -59,8 +59,9 @@ fn graphicspath_pattern() -> &'static Regex {
 
 /// graphicx tries the extensions it knows; the bare name, last, finds a
 /// file saved without one.
-const GRAPHICS_EXTENSIONS: &[&str] =
-    &[".pdf", ".png", ".jpg", ".jpeg", ".svg", ".eps", ".webp", ""];
+const GRAPHICS_EXTENSIONS: &[&str] = &[
+    ".pdf", ".png", ".jpg", ".jpeg", ".svg", ".eps", ".webp", ".cdxml", "",
+];
 
 /// The value `read` makes of the argument of `pattern` (its group 1) that
 /// `position` is in, from its first character to just past its last.

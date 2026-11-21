@@ -342,7 +342,7 @@ pub fn entries(has_project: bool, known_author: Option<&str>) -> Vec<Entry> {
             t!("Contact email"),
         )
         .terms("Crossref")
-        .description(t!("Sent to Crossref")),
+        .description(t!("Sent to Crossref and NCBI")),
     );
     out.push(Entry::page(Doctor, t!("TeX doctor"), t!("Diagnostics")));
     out.push(Entry::page(Logs, t!("Logs"), t!("Diagnostics")));

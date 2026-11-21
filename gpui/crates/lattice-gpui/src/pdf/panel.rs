@@ -693,6 +693,7 @@ impl PdfPanel {
         self.live_view().read(cx).pages_drawn()
     }
 
+    #[cfg(target_os = "macos")]
     pub fn scroll_to_page(&mut self, page: usize, cx: &mut Context<Self>) {
         self.live_view()
             .clone()

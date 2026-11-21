@@ -343,7 +343,7 @@ pub(crate) fn window_showing_except(
 }
 
 /// The window showing the project at `root`, and its shell, for a scenario.
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(target_os = "macos")]
 pub(crate) fn shell_showing(
     root: &std::path::Path,
     cx: &App,

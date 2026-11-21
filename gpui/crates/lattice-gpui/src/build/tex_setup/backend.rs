@@ -198,6 +198,7 @@ impl StubTexSetup {
                     format!("{name}: present")
                 },
                 ok: !missing.contains(name),
+                version: None,
                 code: None,
                 params: Default::default(),
             })

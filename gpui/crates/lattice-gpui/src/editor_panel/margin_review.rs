@@ -174,26 +174,31 @@ impl EditorPanel {
     }
 
     /// How margin review is laid out now, if it shows.
+    #[cfg(target_os = "macos")]
     pub fn margin_layout(&self) -> Option<MarginLayout> {
         self.margin.layout
     }
 
     /// The item whose card is open over its pip (or in the rail).
+    #[cfg(target_os = "macos")]
     pub fn margin_open(&self) -> Option<&str> {
         self.margin.open.as_ref().map(|(key, _)| key.as_str())
     }
 
     /// Each item's card or pip as last drawn.
+    #[cfg(target_os = "macos")]
     pub fn margin_painted(&self) -> Vec<(String, Bounds<Pixels>)> {
         self.margin.painted.borrow().clone()
     }
 
     /// The source view the layer is drawn over, as last drawn.
+    #[cfg(target_os = "macos")]
     pub fn margin_view(&self) -> Option<Bounds<Pixels>> {
         self.margin.view.get()
     }
 
     /// The lines of room kept under the last line for stacked cards.
+    #[cfg(target_os = "macos")]
     pub fn margin_room(&self) -> u32 {
         self.margin.room
     }

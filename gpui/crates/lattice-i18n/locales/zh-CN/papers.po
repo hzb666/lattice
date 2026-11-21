@@ -24,6 +24,27 @@ msgstr "没能添加论文"
 msgid "Could not download the paper"
 msgstr "没能下载论文"
 
+#: lattice-gpui/src/papers/literature/view.rs
+msgid "PubMed is unavailable; check the Lattice NCBI contact configuration."
+msgstr "PubMed 暂不可用；请检查 Lattice 的 NCBI 联系方式配置。"
+
+#: lattice-gpui/src/papers/literature/view.rs
+msgid "PubMed abstracts may be copyrighted by publishers or authors. PubMed does not provide medical advice."
+msgstr "PubMed 摘要可能受出版商或作者版权保护。PubMed 不提供医疗建议。"
+
+#: lattice-gpui/src/papers/literature.rs
+msgid "Added to Papers: {0}"
+msgstr "已加入 Papers：{0}"
+
+#: lattice-gpui/src/settings/literature_pane.rs
+#: lattice-gpui/src/settings/search.rs
+msgid "Sent to Crossref and NCBI"
+msgstr "发送给 Crossref 和 NCBI"
+
+#: lattice-gpui/src/settings/literature_pane.rs
+msgid "Crossref and NCBI"
+msgstr "Crossref 和 NCBI"
+
 #: lattice-gpui/src/papers/removal.rs
 msgid "Could not remove the paper"
 msgstr "没能删除论文"

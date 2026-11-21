@@ -399,7 +399,11 @@ impl Run {
                         && navigator_alpha < 1.
                 }
                 // Off, Reduce transparency, or not on this platform: opaque.
-                Backing::Opaque | Backing::ReducedTransparency | Backing::Unsupported => {
+                #[cfg(target_os = "macos")]
+                Backing::ReducedTransparency => {
+                    // The system accessibility setting disables translucency.
+                }
+                Backing::Opaque | Backing::Unsupported => {
                     now == Glass::Off
                         && !shown
                         && window_alpha == 1.

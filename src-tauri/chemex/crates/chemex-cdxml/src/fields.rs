@@ -127,6 +127,50 @@ pub(crate) struct Patch {
 }
 
 impl DrawingDocument {
+    /// Remove all dynamic field text from a new string. The authoritative source is never mutated.
+    pub fn strip_fields(&self) -> Result<String> {
+        let xml = crate::parser::xml(&self.source)?;
+        let mut patches = Vec::new();
+        let mut grouped: BTreeMap<usize, Vec<&DynamicField>> = BTreeMap::new();
+        for field in &self.fields {
+            grouped.entry(field.text_object).or_default().push(field);
+        }
+        for (object, fields) in grouped {
+            let failure = |message: String| Error::TextMapping { object, message };
+            let node = xml
+                .get_node(self.xml_nodes[object])
+                .ok_or_else(|| failure("missing XML node".into()))?;
+            let mapped = crate::text::map(node, &self.source).map_err(failure)?;
+            for field in fields {
+                for unit in &mapped.units {
+                    if let Some(range) = unit.intersection(&field.value_range) {
+                        patches.push(Patch {
+                            range,
+                            text: String::new(),
+                        });
+                    }
+                }
+                for remove_range in &field.syntax_ranges {
+                    for unit in &mapped.units {
+                        if let Some(range) = unit.intersection(remove_range) {
+                            patches.push(Patch {
+                                range,
+                                text: String::new(),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        patches.sort_by_key(|patch| std::cmp::Reverse(patch.range.start));
+        let mut output = self.source.clone();
+        for patch in patches {
+            output.replace_range(patch.range, &patch.text);
+        }
+        crate::parser::xml(&output)?;
+        Ok(output)
+    }
+
     /// Replace fields in a new string. The authoritative source is never mutated.
     pub fn render_fields(&self, values: &FieldValues) -> Result<String> {
         if let Some(issue) = self

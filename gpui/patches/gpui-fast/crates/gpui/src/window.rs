@@ -90,6 +90,9 @@ pub const DEFAULT_ADDITIONAL_WINDOW_SIZE: Size<Pixels> = Size {
     height: Pixels(750.),
 };
 
+const TOOLTIP_ANCHOR_GAP: Pixels = px(8.);
+const TOOLTIP_WINDOW_MARGIN: Pixels = px(4.);
+
 /// Represents the two different phases when dispatching events.
 #[derive(Default, Copy, Clone, Debug, Eq, PartialEq)]
 pub enum DispatchPhase {
@@ -2507,6 +2510,87 @@ impl ContentMask<Pixels> {
     }
 }
 
+fn position_tooltip(
+    anchor_bounds: Option<Bounds<Pixels>>,
+    mouse_position: Point<Pixels>,
+    tooltip_size: Size<Pixels>,
+    viewport_size: Size<Pixels>,
+) -> Bounds<Pixels> {
+    let Some(anchor) = anchor_bounds else {
+        return position_tooltip_at_cursor(mouse_position, tooltip_size, viewport_size);
+    };
+
+    let above = anchor.origin.y - tooltip_size.height - TOOLTIP_ANCHOR_GAP;
+    let below = anchor.bottom() + TOOLTIP_ANCHOR_GAP;
+    let y = if above >= TOOLTIP_WINDOW_MARGIN {
+        above
+    } else {
+        below
+    };
+    let mut bounds = Bounds::new(
+        point(anchor.center().x - tooltip_size.width * 0.5, y),
+        tooltip_size,
+    );
+
+    let right_limit = (viewport_size.width - TOOLTIP_WINDOW_MARGIN).max(TOOLTIP_WINDOW_MARGIN);
+    let bottom_limit = (viewport_size.height - TOOLTIP_WINDOW_MARGIN).max(TOOLTIP_WINDOW_MARGIN);
+    if bounds.right() > right_limit {
+        bounds.origin.x -= bounds.right() - right_limit;
+    }
+    if bounds.left() < TOOLTIP_WINDOW_MARGIN {
+        bounds.origin.x = TOOLTIP_WINDOW_MARGIN;
+    }
+    if bounds.bottom() > bottom_limit {
+        let above = anchor.origin.y - bounds.size.height - TOOLTIP_ANCHOR_GAP;
+        bounds.origin.y = if above >= TOOLTIP_WINDOW_MARGIN {
+            above
+        } else {
+            bottom_limit - bounds.size.height
+        };
+    }
+    if bounds.top() < TOOLTIP_WINDOW_MARGIN {
+        bounds.origin.y = TOOLTIP_WINDOW_MARGIN;
+    }
+    bounds
+}
+
+fn position_tooltip_at_cursor(
+    mouse_position: Point<Pixels>,
+    tooltip_size: Size<Pixels>,
+    viewport_size: Size<Pixels>,
+) -> Bounds<Pixels> {
+    let mut bounds = Bounds::new(mouse_position + point(px(1.), px(1.)), tooltip_size);
+    let window_bounds = Bounds {
+        origin: Point::default(),
+        size: viewport_size,
+    };
+
+    if bounds.right() > window_bounds.right() {
+        let new_x = mouse_position.x - bounds.size.width - px(1.);
+        if new_x >= Pixels::ZERO {
+            bounds.origin.x = new_x;
+        } else {
+            bounds.origin.x = cmp::max(
+                Pixels::ZERO,
+                bounds.origin.x - bounds.right() - window_bounds.right(),
+            );
+        }
+    }
+
+    if bounds.bottom() > window_bounds.bottom() {
+        let new_y = mouse_position.y - bounds.size.height - px(1.);
+        if new_y >= Pixels::ZERO {
+            bounds.origin.y = new_y;
+        } else {
+            bounds.origin.y = cmp::max(
+                Pixels::ZERO,
+                bounds.origin.y - bounds.bottom() - window_bounds.bottom(),
+            );
+        }
+    }
+    bounds
+}
+
 impl Window {
     fn mark_view_dirty(&mut self, view_id: EntityId) {
         // Mark ancestor views as dirty. If already in the `dirty_views` set, then all its ancestors
@@ -4108,37 +4192,12 @@ impl Window {
             let mut element = tooltip_request.tooltip.view.clone().into_any_element();
             let mouse_position = tooltip_request.tooltip.mouse_position;
             let tooltip_size = element.layout_as_root(AvailableSpace::min_size(), self, cx);
-
-            let mut tooltip_bounds =
-                Bounds::new(mouse_position + point(px(1.), px(1.)), tooltip_size);
-            let window_bounds = Bounds {
-                origin: Point::default(),
-                size: self.viewport_size(),
-            };
-
-            if tooltip_bounds.right() > window_bounds.right() {
-                let new_x = mouse_position.x - tooltip_bounds.size.width - px(1.);
-                if new_x >= Pixels::ZERO {
-                    tooltip_bounds.origin.x = new_x;
-                } else {
-                    tooltip_bounds.origin.x = cmp::max(
-                        Pixels::ZERO,
-                        tooltip_bounds.origin.x - tooltip_bounds.right() - window_bounds.right(),
-                    );
-                }
-            }
-
-            if tooltip_bounds.bottom() > window_bounds.bottom() {
-                let new_y = mouse_position.y - tooltip_bounds.size.height - px(1.);
-                if new_y >= Pixels::ZERO {
-                    tooltip_bounds.origin.y = new_y;
-                } else {
-                    tooltip_bounds.origin.y = cmp::max(
-                        Pixels::ZERO,
-                        tooltip_bounds.origin.y - tooltip_bounds.bottom() - window_bounds.bottom(),
-                    );
-                }
-            }
+            let tooltip_bounds = position_tooltip(
+                tooltip_request.tooltip.anchor_bounds,
+                mouse_position,
+                tooltip_size,
+                self.viewport_size(),
+            );
 
             // It's possible for an element to have an active tooltip while not being painted (e.g.
             // via the `visible_on_hover` method). Since mouse listeners are not active in this
@@ -8276,6 +8335,66 @@ mod tests {
         UnderlineStyle, Window, WindowAppearance, WindowOptions, canvas, div, hsla, point, px,
         size,
     };
+
+    #[test]
+    fn tooltip_anchors_above_its_trigger_independently_of_cursor_position() {
+        let anchor = Bounds::new(point(px(120.), px(100.)), size(px(32.), px(28.)));
+        let first_position = position_tooltip(
+            Some(anchor),
+            point(px(125.), px(110.)),
+            size(px(80.), px(24.)),
+            size(px(400.), px(300.)),
+        );
+        let second_position = position_tooltip(
+            Some(anchor),
+            point(px(145.), px(124.)),
+            size(px(80.), px(24.)),
+            size(px(400.), px(300.)),
+        );
+
+        assert_eq!(first_position.origin, point(px(96.), px(68.)));
+        assert_eq!(second_position.origin, first_position.origin);
+    }
+
+    #[test]
+    fn tooltip_uses_space_below_trigger_when_above_does_not_fit() {
+        let anchor = Bounds::new(point(px(8.), px(5.)), size(px(32.), px(28.)));
+        let tooltip = position_tooltip(
+            Some(anchor),
+            point(px(10.), px(10.)),
+            size(px(80.), px(24.)),
+            size(px(400.), px(300.)),
+        );
+
+        assert_eq!(tooltip.origin, point(px(4.), px(41.)));
+    }
+
+    #[test]
+    fn tooltip_flips_above_trigger_when_below_does_not_fit() {
+        let anchor = Bounds::new(point(px(120.), px(250.)), size(px(32.), px(28.)));
+        let tooltip = position_tooltip(
+            Some(anchor),
+            point(px(125.), px(260.)),
+            size(px(80.), px(24.)),
+            size(px(400.), px(300.)),
+        );
+
+        assert_eq!(tooltip.origin, point(px(96.), px(218.)));
+    }
+
+    #[test]
+    fn tooltip_clamps_to_left_and_right_window_edges() {
+        let left_anchor = Bounds::new(point(px(0.), px(100.)), size(px(20.), px(28.)));
+        let right_anchor = Bounds::new(point(px(370.), px(100.)), size(px(25.), px(28.)));
+        let viewport = size(px(400.), px(300.));
+        let tooltip_size = size(px(80.), px(24.));
+
+        let left = position_tooltip(Some(left_anchor), point(px(1.), px(110.)), tooltip_size, viewport);
+        let right = position_tooltip(Some(right_anchor), point(px(390.), px(110.)), tooltip_size, viewport);
+
+        assert_eq!(left.left(), TOOLTIP_WINDOW_MARGIN);
+        assert_eq!(right.right(), viewport.width - TOOLTIP_WINDOW_MARGIN);
+    }
 
     #[gpui::test]
     async fn test_focus_handle_release(cx: &mut TestAppContext) {

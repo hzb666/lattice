@@ -127,7 +127,7 @@ function imageWidth(options: string): number | null {
 }
 
 /** The pictures an editable figure may draw: what the reference-image loader previews. */
-const FIGURE_GRAPHIC = /\.(?:pdf|png|jpe?g|gif|svg)$/i;
+const FIGURE_GRAPHIC = /\.(?:pdf|png|jpe?g|gif|svg|cdxml)$/i;
 
 /**
  * The graphic an entry includes, from the project root: beside the entry,
@@ -140,7 +140,7 @@ function entryGraphic(entry: string, written: string | null, projectPaths: reado
   const fallback = `${folder}${entry.slice(folder.length).replace(/\.tex$/i, "")}.pdf`;
   if (!written || written.includes("..") || written.startsWith("/")) return fallback;
   const path = `${folder}${written.replace(/^\.\//, "")}`;
-  const candidates = FIGURE_GRAPHIC.test(path) ? [path] : [".pdf", ".png", ".jpg", ".jpeg"].map((extension) => path + extension);
+  const candidates = FIGURE_GRAPHIC.test(path) ? [path] : [".pdf", ".png", ".jpg", ".jpeg", ".cdxml"].map((extension) => path + extension);
   return candidates.find((candidate) => projectPaths.includes(candidate)) ?? fallback;
 }
 

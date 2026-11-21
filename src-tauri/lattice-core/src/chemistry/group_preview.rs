@@ -15,11 +15,11 @@ fn group_svg_with(
 ) -> Result<Vec<u8>, String> {
     let revision = sha256_hex(document.source());
     let group_key = sha256_hex(format!("{revision}:{compound_id}"));
-    let path = svg_cache_path(root, &format!("group-v1-{group_key}"))?;
+    let path = svg_cache_path(root, &format!("group-v2-{group_key}"))?;
     if let Some(bytes) = read_svg(&path) {
         return Ok(bytes);
     }
-    let source = document.compound_group_source(compound_id).map_err(err)?;
+    let source = document.compound_group_source_without_fields(compound_id).map_err(err)?;
     let key = sha256_hex(&source);
     if let Some(bytes) = read_svg(&svg_cache_path(root, &key)?) {
         return Ok(bytes);
@@ -41,7 +41,7 @@ fn group_svg_with(
 
 #[cfg(windows)]
 fn direct_export(
-    document: &DrawingDocument, compound_id: &str, revision: &str,
+    document: &DrawingDocument, compound_id: &str, _revision: &str,
 ) -> Result<Vec<u8>, String> {
     let group = document.compound_group(compound_id).map_err(err)?;
     let id = group.id.as_deref().ok_or("ChemDraw group has no ID")?;
@@ -49,7 +49,8 @@ fn direct_export(
         return Err("ChemDraw group ID is ambiguous".into());
     }
     let id = id.parse::<i32>().map_err(err)?;
-    super::preview_worker::export(document.source(), revision, id)
+    let source = document.compound_group_source_without_fields(compound_id).map_err(err)?;
+    super::preview_worker::export(&source, &sha256_hex(&source), id)
 }
 
 #[cfg(not(windows))]

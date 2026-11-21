@@ -14,6 +14,8 @@ const MAX_SOURCE_BYTES: u64 = 64 * 1024 * 1024;
 pub enum Error {
     #[error("ChemDraw automation requires Windows")]
     UnsupportedPlatform,
+    #[error("ChemDraw environment probe failed: {0}")]
+    Probe(String),
     #[error("ChemDraw export preparation: {0}")]
     Io(#[from] std::io::Error),
     #[error("invalid ChemDraw export input: {0}")]
@@ -28,6 +30,77 @@ pub enum ExportStatus {
     Success,
     Failed,
     TimedOut,
+}
+
+/// Ask ChemDraw whether its automation server is available and return its
+/// advertised application name, which includes the installed version.
+pub fn probe() -> Result<String, Error> {
+    if !cfg!(windows) {
+        return Err(Error::UnsupportedPlatform);
+    }
+    let system = std::env::var_os("SystemRoot")
+        .ok_or_else(|| Error::Probe("SystemRoot is not set".into()))?;
+    let program = Path::new(&system).join("System32/WindowsPowerShell/v1.0/powershell.exe");
+    let script = r#"
+$ErrorActionPreference = 'Stop'
+$app = $null
+try {
+    $app = New-Object -ComObject ChemDraw_x64.Application
+    [Console]::Out.WriteLine([string]$app.Name)
+} catch {
+    [Console]::Error.WriteLine($_.Exception.ToString())
+    exit 1
+} finally {
+    if ($null -ne $app) { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($app) }
+}
+"#;
+    let mut command = Command::new(program);
+    command
+        .args(["-NoProfile", "-NonInteractive", "-STA", "-Command", script])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt as _;
+        // GUI-launched doctor checks must not flash a PowerShell console.
+        command.creation_flags(0x08000000);
+    }
+    let mut child = command
+        .spawn()
+        .map_err(|error| Error::Probe(error.to_string()))?;
+    let started = Instant::now();
+    loop {
+        if child
+            .try_wait()
+            .map_err(|error| Error::Probe(error.to_string()))?
+            .is_some()
+        {
+            break;
+        }
+        if started.elapsed() >= Duration::from_secs(5) {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(Error::Probe("PowerShell probe timed out".into()));
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    let output = child
+        .wait_with_output()
+        .map_err(|error| Error::Probe(error.to_string()))?;
+    if !output.status.success() {
+        let error = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(Error::Probe(if error.is_empty() {
+            format!("PowerShell exited with {}", output.status)
+        } else {
+            error
+        }));
+    }
+    let name = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if name.is_empty() {
+        return Err(Error::Probe("ChemDraw returned no application name".into()));
+    }
+    Ok(name)
 }
 
 /// Prepare an SVG export from `drawing.cdxml` in a private build directory.

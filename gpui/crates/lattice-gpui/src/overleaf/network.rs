@@ -26,6 +26,7 @@ pub fn returns() -> mpsc::UnboundedReceiver<()> {
 
 /// The network is reachable again: every listener hears it (also what a
 /// scenario calls, as the system would).
+#[cfg(target_os = "macos")]
 pub fn announce_return() {
     if let Ok(mut listeners) = LISTENERS.lock() {
         listeners.retain(|listener| listener.unbounded_send(()).is_ok());

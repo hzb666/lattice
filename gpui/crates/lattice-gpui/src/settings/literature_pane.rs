@@ -1,6 +1,6 @@
 //! Settings › Integrations › Literature services (`literature-settings.tsx`):
 //! whether adding a paper saves its full text, a personal key for OpenAlex,
-//! Semantic Scholar and Firecrawl, and the contact address Crossref is sent.
+//! Semantic Scholar and Firecrawl, and the contact address Crossref and NCBI use.
 //!
 //! The keys go to the keychain through lattice-core (`literature_credentials`,
 //! the Tauri app's `get_literature_credentials`, `set_literature_credential`,
@@ -53,7 +53,7 @@ struct Notice {
 }
 
 pub struct LiteraturePane {
-    /// Where each key comes from, and the Crossref address.
+    /// Where each key comes from, and the Crossref/NCBI contact address.
     credentials: Option<Value>,
     drafts: [Entity<InputState>; 3],
     email: Entity<InputState>,
@@ -507,7 +507,7 @@ impl LiteraturePane {
             rows.extend(self.message(provider, cx));
             groups.push(controls::group(Some(name.into()), rows, cx));
         }
-        // Crossref's contact address.
+        // The contact address used by Crossref and PubMed.
         self.email
             .update(cx, |input, cx| input.set_disabled(disabled, cx));
         let unchanged = self.email.read(cx).value().trim() == self.saved_email();
@@ -523,7 +523,7 @@ impl LiteraturePane {
         let mut rows = vec![
             marks.row(
                 Row::new("literature-email", t!("Contact email"))
-                    .description(t!("Sent to Crossref"), cx),
+                    .description(t!("Sent to Crossref and NCBI"), cx),
                 width,
                 cx,
             ),
@@ -547,7 +547,7 @@ impl LiteraturePane {
             ),
         ];
         rows.extend(self.message("crossref", cx));
-        groups.push(controls::group(Some("Crossref".into()), rows, cx));
+        groups.push(controls::group(Some(t!("Crossref and NCBI").into()), rows, cx));
         controls::page(t!("Literature services"), width, groups, cx)
     }
 }

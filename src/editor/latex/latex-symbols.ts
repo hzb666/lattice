@@ -22,7 +22,7 @@ export const REFERENCE = new RegExp(`\\\\(?:${REFERENCE_COMMANDS})\\*?\\{([^}]*)
 export const INCLUDE = /\\(?:input|include)\{([^}]*)\}/g;
 export const GRAPHICS = /\\includegraphics(?:\[[^\]]*\])?\{((?:\\detokenize\{[^}]*\}|[^}]+))\}/g;
 // graphicx tries the extensions it knows; the bare name, last, finds a file saved without one.
-const GRAPHICS_EXTENSIONS = [".pdf", ".png", ".jpg", ".jpeg", ".svg", ".eps", ".webp", ""];
+const GRAPHICS_EXTENSIONS = [".pdf", ".png", ".jpg", ".jpeg", ".svg", ".eps", ".webp", ".cdxml", ""];
 
 export type KeySpan = { from: number; to: number; key: string };
 

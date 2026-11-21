@@ -408,6 +408,7 @@ impl TexSetupCenter {
                 doctor::TileState::Ready
             },
             label: t!("TeX packages").into(),
+            version: None,
             details,
         })
     }

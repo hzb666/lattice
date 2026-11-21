@@ -37,6 +37,8 @@ use crate::{editor_panel::EditorPanel, native, scenario::Run};
 const CHAPTER: &str = "previews.tex";
 const FIGURE: &str = "figures/curve.png";
 const VECTOR: &str = "figures/sketch.eps";
+const DRAWING: &str = "figures/hover.cdxml";
+const COMPOUND: &str = "hover-compound";
 const SOURCE: &str = r"\newcommand{\area}{\mathcal{A}}
 \section{Previews}
 \begin{figure}
@@ -55,7 +57,23 @@ const SOURCE: &str = r"\newcommand{\area}{\mathcal{A}}
 \end{figure}
 See Figure~\ref{fig:curve}, Equation~\eqref{eq:area} and Figure~\ref{fig:sketch}.
 Together, \cref{fig:curve,eq:area,eq:nowhere} show the area.
+The structure is \chemex{hover-compound}.
 ";
+
+fn seed_compound_preview(root: &Path) -> Result<()> {
+    let source = "<CDXML><page><group id='10'><fragment/><t><s>[[@hover-compound]]</s></t></group></page></CDXML>";
+    std::fs::write(root.join(DRAWING), source)?;
+    let group = chemex_cdxml::DrawingDocument::parse(source.into())?
+        .compound_group_source_without_fields(COMPOUND)?;
+    let assets = root.join(".research/cache/chemex-v1/assets");
+    std::fs::create_dir_all(&assets)?;
+    let hash = lattice_core::util::sha256_hex(group);
+    std::fs::write(
+        assets.join(format!("{hash}.svg")),
+        r#"<svg xmlns="http://www.w3.org/2000/svg" width="120" height="80"><path d="M 15 60 L 45 20 L 75 60 L 105 20" fill="none" stroke="black" stroke-width="4"/></svg>"#,
+    )?;
+    Ok(())
+}
 
 /// A 320 by 160 picture: a dark curve over a pale grid.
 fn curve_png() -> Result<Vec<u8>> {
@@ -115,8 +133,9 @@ impl Run {
             "%!PS-Adobe-3.0 EPSF-3.0\n%%BoundingBox: 0 0 10 10\n",
         )?;
         std::fs::write(root.join(CHAPTER), SOURCE)?;
+        seed_compound_preview(root)?;
         let result = self.card_preview_checks(cx, steps, root).await;
-        for file in [CHAPTER, FIGURE, VECTOR] {
+        for file in [CHAPTER, FIGURE, VECTOR, DRAWING] {
             std::fs::remove_file(root.join(file)).ok();
         }
         std::fs::remove_dir(root.join("figures")).ok();
@@ -192,6 +211,7 @@ impl Run {
                         .reference("fig:curve")
                         .is_some_and(|reference| reference.image_path.as_deref() == Some(FIGURE))
                         && index.paths().iter().any(|path| path == VECTOR)
+                        && index.paths().iter().any(|path| path == DRAWING)
                         && index
                             .macro_sources()
                             .sources
@@ -207,6 +227,7 @@ impl Run {
         );
 
         self.figure_cards(cx, steps, root, &panel, &lattice).await?;
+        self.compound_card(cx, steps, &panel, &lattice).await?;
         self.equation_card(cx, steps, &panel, &lattice).await?;
         self.reference_card_source(cx, steps, &panel, &lattice)
             .await?;
@@ -215,6 +236,29 @@ impl Run {
 
     fn lattice_of(&self, cx: &mut AsyncApp, panel: &Entity<EditorPanel>) -> Entity<LatticeEditor> {
         cx.update(|cx| panel.read(cx).lattice_editor().clone())
+    }
+
+    async fn compound_card(
+        &self,
+        cx: &mut AsyncApp,
+        steps: &mut Steps,
+        panel: &Entity<EditorPanel>,
+        lattice: &Entity<LatticeEditor>,
+    ) -> Result<()> {
+        self.reveal(cx, panel, COMPOUND).await?;
+        let (_, at) = self.text_point(cx, panel, lattice, COMPOUND, 4).await?;
+        self.hover_at(cx, at.center()).await?;
+        let shown = self
+            .wait_for_card(cx, lattice, "chemex-compound")
+            .await
+            .is_some();
+        self.card_looks(cx, "chemex-compound-card").await;
+        steps.check(
+            "hovering a Chemex reference opens its compound preview card",
+            shown,
+            json!({ "shown": shown }),
+        );
+        self.card_park(cx)
     }
 
     async fn figure_cards(
@@ -239,7 +283,7 @@ impl Run {
             let read = self
                 .wait_for(cx, Duration::from_secs(5), |_, cx| {
                     matches!(
-                        previews::figure(&figure, &editor, cx),
+                        previews::figure(root, &figure, &editor, cx),
                         Some(Preview::Ready(Figure::Shown(_)))
                     )
                 })
@@ -257,7 +301,7 @@ impl Run {
         let unavailable = self
             .wait_for(cx, Duration::from_secs(5), |_, cx| {
                 matches!(
-                    previews::figure(&vector, &editor, cx),
+                    previews::figure(root, &vector, &editor, cx),
                     Some(Preview::Ready(Figure::Unavailable))
                 )
             })

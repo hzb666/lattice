@@ -4,6 +4,13 @@ The `lattice-literature` Cloudflare Worker lives in `literature-worker/`.
 Its public endpoint is `https://lattice-literature.paperlattice.workers.dev/v1/query`.
 Desktop builds use this endpoint for OpenAlex and Crossref fallback requests.
 Semantic Scholar is personal-key-only and is never proxied by this service.
+PubMed search uses NCBI E-utilities directly from the desktop, not this shared
+worker. Its `email` parameter uses, in order, the runtime `LATTICE_NCBI_EMAIL`,
+the contact saved under Settings > Literature services, and the release's
+`LATTICE_NCBI_EMAIL` build value. The desktop sends `Lattice` as the `tool`
+parameter and paces requests below three per second. The worker receives
+neither PubMed queries nor the contact address. Without a configured contact,
+PubMed search is skipped while other sources remain available.
 Previously installed desktop releases do not gain this routing just because the Worker is deployed.
 
 ## Manage credentials

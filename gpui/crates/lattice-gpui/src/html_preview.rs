@@ -251,14 +251,17 @@ impl HtmlPreview {
         &self.island
     }
 
+    #[cfg(target_os = "macos")]
     pub fn view_state(&self) -> HtmlViewState {
         self.view
     }
 
+    #[cfg(target_os = "macos")]
     pub fn scroll_metrics(&self) -> ScrollMetrics {
         self.scroll.shared.borrow().1
     }
 
+    #[cfg(target_os = "macos")]
     pub fn is_loaded(&self) -> bool {
         self.loaded
     }

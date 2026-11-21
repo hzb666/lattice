@@ -99,6 +99,7 @@ impl PaperReader {
     }
 
     /// The actions on offer, and the one under way (for scenarios).
+    #[cfg(target_os = "macos")]
     pub fn quote_offer(&self) -> Option<(String, Option<QuoteAction>)> {
         let offer = self.selecting.offer.as_ref()?;
         Some((offer.selection.text.clone(), offer.busy))
@@ -106,6 +107,7 @@ impl PaperReader {
 
     /// Where `action`'s button was last drawn on the window, while the
     /// actions are on offer (for scenarios).
+    #[cfg(target_os = "macos")]
     pub fn quote_action_center(&self, action: QuoteAction) -> Option<gpui::Point<Pixels>> {
         self.selecting.offer.as_ref()?;
         self.selecting.buttons.get()[action as usize].map(|bounds| bounds.center())

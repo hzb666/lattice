@@ -343,6 +343,7 @@ impl EditorPanel {
 
     /// Where the drop caret for a paper is drawn now, for a scenario.
     #[cfg(any(target_os = "macos", target_os = "windows"))]
+    #[cfg(target_os = "macos")]
     pub fn paper_drop_caret(&self, cx: &App) -> Option<Bounds<Pixels>> {
         self.drop_hover
             .borrow()

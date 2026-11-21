@@ -5,9 +5,11 @@
 use crate::commands;
 use crate::models::{MessageParams, ProjectManifest};
 use crate::{latex, pdf_fonts, project};
+use regex::Regex;
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::process::Output;
 
 /// Times and Helvetica metrics and Type1 outlines. Conference templates set
 /// `\rmdefault` to Times (`ptm`); without these, bare BasicTeX compiles without
@@ -27,19 +29,24 @@ const RUNNABLE_TOOLS: [(&str, &str, &str); 6] = [
 ];
 
 /// Tools that only need to be found.
-const PRESENT_TOOLS: [(&str, &str); 4] = [
-    ("biber", "Biber bibliography processor"),
-    ("texlab", "TexLab language server (optional editor diagnostics)"),
-    ("git", "Git (optional project status / commit panel)"),
-    ("texcount", "TeXcount body word counts (optional status bar)"),
+const PRESENT_TOOLS: [(&str, &str, &str); 4] = [
+    ("biber", "--version", "Biber bibliography processor"),
+    ("texlab", "--version", "TexLab language server (optional editor diagnostics)"),
+    ("git", "--version", "Git (optional project status / commit panel)"),
+    ("texcount", "-version", "TeXcount body word counts (optional status bar)"),
 ];
-
 pub fn run(root: Option<&Path>) -> DoctorReport {
     let mut checks: Vec<DoctorCheck> =
         RUNNABLE_TOOLS.iter().map(|(name, arg, detail)| runnable_tool(name, arg, detail)).collect();
-    for (name, detail) in PRESENT_TOOLS {
+    for (name, version_arg, detail) in PRESENT_TOOLS {
         checks.push(if commands::available(name) {
-            check(name, format!("{detail}: {}", commands::resolve(name).display()), true)
+            let path = commands::resolve(name);
+            checked(
+                name,
+                format!("{detail}: {}", path.display()),
+                true,
+                tool_version(name, version_arg),
+            )
         } else {
             coded(check(name, format!("{detail}: not found on PATH"), false), "tool-not-found", &[])
         });
@@ -49,7 +56,12 @@ pub fn run(root: Option<&Path>) -> DoctorReport {
         ("uvx", "Runner used for Lattice's pinned literature tools"),
     ] {
         checks.push(match commands::managed_uv_tool_status(name) {
-            Ok(path) => check(name, format!("{detail}: {}", path.display()), true),
+            Ok(path) => checked(
+                name,
+                format!("{detail}: {}", path.display()),
+                true,
+                Some(commands::MANAGED_UV_VERSION.to_string()),
+            ),
             Err(error) => coded(
                 check(name, format!("{detail}: {error}"), false),
                 "managed-tool-failed",
@@ -68,11 +80,23 @@ pub fn run(root: Option<&Path>) -> DoctorReport {
         )),
     }
 
-    if let Ok(output) = commands::command("latexmk").arg("-v").output() {
-        let text = commands::combined_output(&output);
-        let line = text.lines().next().unwrap_or("latexmk available").trim();
-        checks.push(check("latexmk-version", line.to_string(), output.status.success()));
-    }
+    #[cfg(windows)]
+    checks.push(match chemex_chemdraw::probe() {
+        Ok(name) => checked(
+            "chemdraw",
+            "ChemDraw automation is available".into(),
+            true,
+            version_from_output(&name),
+        ),
+        Err(error) => {
+            let error = error.to_string();
+            coded(
+                check("chemdraw", format!("ChemDraw is unavailable: {error}"), false),
+                "chemdraw-failed",
+                &[("error", &error)],
+            )
+        }
+    });
 
     checks.push(kpsewhich_check(
         "conference-fonts",
@@ -151,15 +175,37 @@ fn project_checks(root: &Path, manifest: &ProjectManifest) -> Vec<DoctorCheck> {
 
 fn runnable_tool(name: &str, version_arg: &str, detail: &str) -> DoctorCheck {
     let path = commands::resolve(name).display().to_string();
-    let error = match commands::command(name).arg(version_arg).output() {
+    let error = match tool_output(name, version_arg) {
         Ok(output) if output.status.success() => {
-            return check(name, format!("{detail}: {path}"), true)
+            return checked(
+                name,
+                format!("{detail}: {path}"),
+                true,
+                version_from_output(&commands::combined_output(&output)),
+            );
         }
         Ok(output) => String::from_utf8_lossy(&output.stderr).trim().to_string(),
-        Err(error) => error.to_string(),
+        Err(error) => error,
     };
     let failed = check(name, format!("{detail}: {path} could not run: {error}"), false);
     coded(failed, "tool-failed", &[("path", &path), ("error", &error)])
+}
+
+fn tool_version(name: &str, version_arg: &str) -> Option<String> {
+    let output = tool_output(name, version_arg).ok()?;
+    output.status.success().then(|| version_from_output(&commands::combined_output(&output)))?
+}
+
+fn tool_output(name: &str, version_arg: &str) -> Result<Output, String> {
+    commands::output_with_timeout(
+        commands::command(name).arg(version_arg),
+        commands::TOOL_PROBE_TIMEOUT,
+    )
+}
+
+fn version_from_output(output: &str) -> Option<String> {
+    let pattern = Regex::new(r"\d+(?:\.\d+)+(?:[-+][0-9A-Za-z.-]+)?").ok()?;
+    output.lines().find_map(|line| pattern.find(line).map(|version| version.as_str().to_string()))
 }
 
 /// Whether kpsewhich finds every one of `files`. `found` describes success
@@ -259,8 +305,12 @@ fn kpsewhich(name: &str) -> Option<PathBuf> {
 }
 
 fn check(name: &str, detail: String, ok: bool) -> DoctorCheck {
+    checked(name, detail, ok, None)
+}
+
+fn checked(name: &str, detail: String, ok: bool, version: Option<String>) -> DoctorCheck {
     let (code, params) = (None, Default::default());
-    DoctorCheck { name: name.to_string(), detail, ok, code, params }
+    DoctorCheck { name: name.to_string(), detail, ok, version, code, params }
 }
 
 /// `check` with the message code the interface translates its detail by
@@ -291,6 +341,8 @@ pub struct DoctorCheck {
     pub detail: String,
     pub ok: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub code: Option<&'static str>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub params: MessageParams,
@@ -312,5 +364,15 @@ mod tests {
     fn doctor_reports_tex_environment() {
         let report = run(None);
         assert!(report.summary.contains("Lattice TeX doctor"));
+    }
+
+    #[test]
+    fn extracts_versions_from_tool_output() {
+        assert_eq!(version_from_output("git version 2.48.1\n"), Some("2.48.1".into()));
+        assert_eq!(
+            version_from_output("ChemDraw Professional 26.0.0.6141"),
+            Some("26.0.0.6141".into())
+        );
+        assert_eq!(version_from_output("no version reported"), None);
     }
 }

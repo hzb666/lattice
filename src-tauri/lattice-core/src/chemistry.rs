@@ -2,7 +2,8 @@
 
 use crate::project;
 use crate::util::{err, sha256_hex};
-use chemex_cdxml::{DrawingDocument, MAX_SOURCE_BYTES};
+use chemex_cdxml::{DrawingDocument, FieldValues, MAX_SOURCE_BYTES};
+use std::collections::BTreeMap;
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
@@ -74,6 +75,74 @@ pub fn preview_svg(root: &Path, source: &str) -> Result<Vec<u8>, String> {
         chemex_chemdraw::export_svg(directory, std::time::Duration::from_secs(120)).map_err(err)
     })
     .map(|(_, bytes)| bytes)
+}
+
+/// Export a project CDXML drawing as its cached SVG.
+pub fn drawing_preview_svg(root: &Path, relative: &str) -> Result<Option<Vec<u8>>, String> {
+    if !Path::new(relative)
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("cdxml"))
+    {
+        return Ok(None);
+    }
+    let path = project::safe_path(root, relative)?;
+    let document = read_document(&path)?;
+    preview_svg(root, document.source()).map(Some)
+}
+
+/// Export the unique ChemDraw group named by a `\chemex{key}` reference.
+pub fn compound_preview_svg(root: &Path, compound_id: &str) -> Result<Option<Vec<u8>>, String> {
+    if compound_id.is_empty() || compound_id.chars().count() > 200 {
+        return Ok(None);
+    }
+    let tree = project::scan_tree(root, project::TreeView::Project)?;
+    let mut matching = None;
+    for file in project::tree_files(&tree).into_iter().filter(|file| {
+        Path::new(&file.path)
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("cdxml"))
+    }) {
+        let Ok(path) = project::safe_path(root, &file.path) else { continue };
+        let Ok(document) = read_document(&path) else { continue };
+        if !document.fields().iter().any(|field| field.compound_id == compound_id) {
+            continue;
+        }
+        if matching.is_some() {
+            return Err(format!("ChemDraw key {compound_id} occurs in more than one drawing"));
+        }
+        matching = Some(document);
+    }
+    matching.map(|document| preview_group_svg(root, &document, compound_id)).transpose()
+}
+
+/// Read the compound labels produced by the latest Chemex numbering pass.
+pub fn built_compound_numbers(root: &Path, paper: &str) -> Option<BTreeMap<String, String>> {
+    let namespace = sha256_hex(paper);
+    let path = cache_file(root, &format!("{namespace}/number/chemex-numbers.dat")).ok()?;
+    chemex_cli::read_numbers(&path).ok()
+}
+
+/// Render the latest LaTeX compound numbers into a new CDXML source string.
+pub fn render_compound_numbers(
+    document: &DrawingDocument,
+    numbers: &BTreeMap<String, String>,
+) -> Result<String, String> {
+    let mut values = FieldValues::new();
+    for field in document.fields() {
+        if values
+            .insert(
+                field.compound_id.clone(),
+                numbers
+                    .get(&field.compound_id)
+                    .ok_or_else(|| format!("No rendered number for {}", field.compound_id))?
+                    .clone(),
+            )
+            .is_err()
+        {
+            continue;
+        }
+    }
+    document.render_fields(&values).map_err(err)
 }
 
 pub(crate) fn svg_with(
@@ -197,5 +266,57 @@ mod tests {
         assert_eq!(vec![0.0, 0.0, 72.0, 36.0], dimensions);
         let content = document.get_and_decode_page_content(page).unwrap();
         assert!(content.operations.iter().any(|op| op.operator == "l"));
+    }
+
+    #[test]
+    fn drawing_preview_reuses_the_cached_svg_for_cdxml_only() {
+        let fixture = crate::project::test_support::Fixture::project("drawing-preview");
+        let source = "<CDXML><page/></CDXML>";
+        let svg = b"<svg><path d='M 0 0 L 1 1'/></svg>";
+        fixture.write("figure.cdxml", source);
+        let cache = svg_cache_path(&fixture.root, &sha256_hex(source)).unwrap();
+        write_if_changed(&cache, svg).unwrap();
+
+        assert_eq!(
+            Some(svg.as_slice()),
+            drawing_preview_svg(&fixture.root, "figure.cdxml").unwrap().as_deref()
+        );
+        assert_eq!(None, drawing_preview_svg(&fixture.root, "figure.svg").unwrap());
+        assert_eq!(None, drawing_preview_svg(&fixture.root, "figure.cdx").unwrap());
+        assert!(drawing_preview_svg(&fixture.root, "../outside.cdxml").is_err());
+    }
+
+    #[test]
+    fn compound_preview_resolves_and_caches_the_unique_cdxml_group() {
+        let fixture = crate::project::test_support::Fixture::project("compound-preview");
+        let source = "<CDXML><page><group id='10'><fragment/><t><s>[[@target]]</s></t></group></page></CDXML>";
+        fixture.write("scheme.cdxml", source);
+        let document = read_document(&fixture.root.join("scheme.cdxml")).unwrap();
+        let group = document.compound_group_source_without_fields("target").unwrap();
+        let svg = b"<svg><path d='M 0 0 L 1 1'/></svg>";
+        let cache = svg_cache_path(&fixture.root, &sha256_hex(&group)).unwrap();
+        write_if_changed(&cache, svg).unwrap();
+
+        assert_eq!(
+            Some(svg.as_slice()),
+            compound_preview_svg(&fixture.root, "target").unwrap().as_deref()
+        );
+        assert_eq!(None, compound_preview_svg(&fixture.root, "missing").unwrap());
+        fixture.write("duplicate.cdxml", source);
+        assert!(compound_preview_svg(&fixture.root, "target").is_err());
+    }
+
+    #[test]
+    fn renders_compound_numbers_without_mutating_the_drawing() {
+        let source = "<CDXML><page><t id='1'><s>[[@x]]</s></t></page></CDXML>";
+        let document = DrawingDocument::parse(source.into()).unwrap();
+        let numbers = BTreeMap::from([("x".to_string(), "3a".to_string())]);
+
+        let rendered = render_compound_numbers(&document, &numbers).unwrap();
+
+        assert!(rendered.contains(">3a</s>"));
+        assert!(!rendered.contains("[[@x]]"));
+        assert_eq!(source, document.source());
+        assert!(render_compound_numbers(&document, &BTreeMap::new()).is_err());
     }
 }

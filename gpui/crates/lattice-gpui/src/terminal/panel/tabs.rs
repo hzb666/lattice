@@ -5,8 +5,10 @@
 //! name, Escape drops it); its × closes it, shown on the tab in front and
 //! under the pointer but holding its width, so hovering never resizes a tab.
 
+#[cfg(target_os = "macos")]
+use gpui::FocusHandle;
 use gpui::{
-    AnyElement, AppContext as _, ClickEvent, Context, Entity, FocusHandle, Focusable as _,
+    AnyElement, AppContext as _, ClickEvent, Context, Entity, Focusable as _,
     InteractiveElement as _, IntoElement, KeyDownEvent, ParentElement as _,
     StatefulInteractiveElement as _, Styled as _, Subscription, Window, div,
     prelude::FluentBuilder as _, px,
@@ -99,11 +101,13 @@ impl TerminalPanel {
     }
 
     /// The field a tab is being renamed in.
+    #[cfg(target_os = "macos")]
     pub fn rename_input(&self) -> Option<Entity<InputState>> {
         self.rename.as_ref().map(|rename| rename.input.clone())
     }
 
     /// The tab in front's place for the keyboard, while the strip shows.
+    #[cfg(target_os = "macos")]
     pub fn active_tab_focus(&self) -> Option<FocusHandle> {
         let session = self
             .sessions

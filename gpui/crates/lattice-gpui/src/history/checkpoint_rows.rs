@@ -125,6 +125,7 @@ impl HistoryPanel {
     }
 
     /// Open the checkpoint `id`'s summary, for a scenario.
+    #[cfg(target_os = "macos")]
     pub fn open_agent_checkpoint_for_scenario(&mut self, id: &str, cx: &mut Context<Self>) {
         let key = timeline::activity_key(id);
         if self.expanded.as_deref() != Some(&key) {

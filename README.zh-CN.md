@@ -22,7 +22,7 @@ pnpm build
 & .\gpui\target\release\lattice-gpui.exe '论文项目路径'
 ```
 
-`pnpm build` 依次构建 WebView 页面和原生 Release 程序。Cargo 编译统一经过 `scripts/gpui-build.mjs`，复用共享缓存并下载 PDFium。可以设置 `LATTICE_GPUI_BUILD_DIR` 复用已有缓存。macOS 的程序名没有 `.exe` 后缀。
+`pnpm build` 依次构建 WebView 页面和原生 Release 程序。Cargo 编译产物保存在仓库的 `gpui/target`，PDFium 下载到 `gpui/vendor`。macOS 的程序名没有 `.exe` 后缀。
 
 `pnpm check` 执行 WebView 类型检查和页面单元测试；`pnpm test` 执行保留的共享模块与脚本测试。原生验证和测试项目运行方法见 [docs/agent-validation.md](docs/agent-validation.md)。功能说明见 [gpui/README.md](gpui/README.md) 和 `gpui/docs/`。
 

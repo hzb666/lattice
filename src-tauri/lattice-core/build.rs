@@ -9,4 +9,6 @@ fn main() {
     // The bundled Firecrawl key is compile-time (option_env! in literature_credentials.rs);
     // without this line cargo would keep a stale binary when the key changes.
     println!("cargo:rerun-if-env-changed=LATTICE_FIRECRAWL_KEY");
+    // The release contact address is also embedded at compile time.
+    println!("cargo:rerun-if-env-changed=LATTICE_NCBI_EMAIL");
 }

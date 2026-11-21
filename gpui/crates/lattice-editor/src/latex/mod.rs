@@ -137,6 +137,9 @@ pub fn attach(
     editor.add_hover_provider(Rc::new(preview_cards::GraphicsCards {
         index: weak.clone(),
     }));
+    editor.add_hover_provider(Rc::new(preview_cards::ChemexCards {
+        index: weak.clone(),
+    }));
     editor.add_completion_source(Rc::new(completions::CitationSource {
         index: weak.clone(),
     }));

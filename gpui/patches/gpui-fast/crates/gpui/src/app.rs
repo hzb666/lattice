@@ -3584,6 +3584,9 @@ pub struct AnyTooltip {
     /// The view used to display the tooltip
     pub view: AnyView,
 
+    /// The hovered element's bounds, when the tooltip should be anchored to it.
+    pub anchor_bounds: Option<Bounds<Pixels>>,
+
     /// The absolute position of the mouse when the tooltip was deployed.
     pub mouse_position: Point<Pixels>,
 

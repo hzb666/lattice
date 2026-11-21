@@ -28,6 +28,7 @@
 
 use std::path::Path;
 
+use base64::Engine as _;
 use gpui::{App, AppContext as _, Context, Entity};
 use lattice_core::models::FileNode;
 use serde_json::{Value, json};
@@ -550,8 +551,22 @@ impl StructuredDocument {
             }
             "md:load-asset" => {
                 let path = text(payload, "path").unwrap_or_default();
-                let url = self.asset_url(&path, cx);
-                self.respond(id, Ok(url.map_or(Value::Null, Value::String)), cx);
+                if self.kind == super::StructuredKind::LatexVisual && is_chem_draw_path(&path) {
+                    let root = self.root.clone();
+                    self.answer_off_thread(id, cx, move || {
+                        let Some(svg) = lattice_core::chemistry::drawing_preview_svg(&root, &path)?
+                        else {
+                            return Ok(Value::Null);
+                        };
+                        let encoded = base64::engine::general_purpose::STANDARD.encode(svg);
+                        Ok(Value::String(format!(
+                            "data:image/svg+xml;base64,{encoded}"
+                        )))
+                    });
+                } else {
+                    let url = self.asset_url(&path, cx);
+                    self.respond(id, Ok(url.map_or(Value::Null, Value::String)), cx);
+                }
             }
             "md:import-asset" => {
                 let base64 = text(payload, "base64").unwrap_or_default();
@@ -660,9 +675,22 @@ impl StructuredDocument {
     }
 }
 
+fn is_chem_draw_path(path: &str) -> bool {
+    Path::new(path)
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("cdxml"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn chem_draw_asset_detection_accepts_cdxml_but_not_cdx() {
+        assert!(is_chem_draw_path("figures/scheme.CDXML"));
+        assert!(!is_chem_draw_path("figures/scheme.cdx"));
+        assert!(!is_chem_draw_path("figures/scheme.svg"));
+    }
 
     fn node(path: &str, kind: &str, size: u64, children: Vec<FileNode>) -> FileNode {
         FileNode {

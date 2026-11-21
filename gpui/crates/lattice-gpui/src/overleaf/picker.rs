@@ -59,6 +59,7 @@ use crate::{
 mod list;
 mod render;
 #[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(target_os = "macos")]
 mod scenario;
 mod stage;
 mod transfer;

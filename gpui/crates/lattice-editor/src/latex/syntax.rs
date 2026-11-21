@@ -29,6 +29,10 @@ static CITATION: LazyLock<Regex> = LazyLock::new(|| {
     ))
     .expect("the citation pattern compiles")
 });
+static CHEMEX_REFERENCE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\\chemex\s*(?:\[[^\]]*\]\s*)?\{\s*([A-Za-z0-9._:-]{1,200})\s*\}")
+        .expect("the Chemex reference pattern compiles")
+});
 static REFERENCE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(&format!(r"\\(?:{REFERENCE_COMMANDS})\*?\{{([^}}]*)\}}"))
         .expect("the reference pattern compiles")
@@ -188,6 +192,11 @@ fn floor_boundary(text: &str, mut index: usize) -> usize {
 /// The citation key under `position`.
 pub fn citation_target(text: &str, position: usize) -> Option<KeySpan> {
     key_at(text, &CITATION, position)
+}
+
+/// The compound key under `position` in a `\chemex` reference.
+pub fn chemex_target(text: &str, position: usize) -> Option<KeySpan> {
+    key_at(text, &CHEMEX_REFERENCE, position)
 }
 
 /// The label under `position` in a `\ref`-like command.
@@ -389,6 +398,20 @@ mod tests {
         assert_eq!(reference.key, "fig:model");
         assert_eq!(citation_target(text, 1), None);
         assert_eq!(reference_target(text, text.find("devlin").unwrap()), None);
+    }
+
+    #[test]
+    fn chemex_hover_targets_support_an_optional_counter() {
+        let text = r"See \chemex{amine} and \chemex [compoundmain] { ester }.";
+        for key in ["amine", "ester"] {
+            let at = text.find(key).unwrap() + 1;
+            let target = chemex_target(text, at).unwrap();
+            assert_eq!(target.key, key);
+            assert_eq!(&text[target.range], key);
+        }
+        assert_eq!(chemex_target(text, 0), None);
+        let list = r"\chemex{amine,ester}";
+        assert_eq!(None, chemex_target(list, list.find("amine").unwrap()));
     }
 
     #[test]

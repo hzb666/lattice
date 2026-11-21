@@ -2,11 +2,10 @@
 //!
 //! The Tauri app's font roles (`src/styles/theme.css`) are:
 //!
-//! - interface: Timeless Sans (Grotesk) in builds that have it, else Inter,
-//!   with PingFang SC for Chinese;
+//! - interface: installed Geist with Source Han Sans SC for Chinese, with
+//!   bundled Timeless Sans or Inter available as fallbacks;
 //! - editor: Ioskeley Mono, bundled with the app;
-//! - display: Timeless Serif in builds that have it, else Instrument Serif,
-//!   with Songti SC for Chinese.
+//! - display: installed Geist, else Timeless Serif or Instrument Serif.
 //!
 //! Inter, Ioskeley Mono and Instrument Serif are bundled here as static faces
 //! (`script/make-fonts`). Timeless's license forbids putting it in a public
@@ -133,6 +132,21 @@ impl Fonts {
 
     /// Register the bundled faces, and Timeless when this build embeds it.
     pub fn load(cx: &mut App) -> Self {
+        let mut fonts = Self::load_bundled(cx);
+        if cx
+            .text_system()
+            .all_font_names()
+            .iter()
+            .any(|family| family == "Geist")
+        {
+            fonts.ui = "Geist".into();
+            fonts.display = fonts.ui.clone();
+            fonts.ui_size_adjust = 1.;
+        }
+        fonts
+    }
+
+    fn load_bundled(cx: &App) -> Self {
         let bundled = BUNDLED.iter().map(|bytes| Cow::Borrowed(*bytes)).collect();
         if let Err(error) = cx.text_system().add_fonts(bundled) {
             log::error!("could not load the bundled fonts: {error:#}");
@@ -154,15 +168,19 @@ impl Fonts {
         }
     }
 
-    /// Chinese in the interface sets in PingFang SC (Microsoft YaHei on
-    /// Windows), as in the Tauri app.
+    /// Prefer Source Han Sans SC, including its localized Windows family name.
     pub fn ui_fallbacks() -> FontFallbacks {
-        FontFallbacks::from_fonts(vec!["PingFang SC".into(), "Microsoft YaHei".into()])
+        FontFallbacks::from_fonts(vec![
+            "Source Han Sans SC".into(),
+            "思源黑体".into(),
+            "PingFang SC".into(),
+            "Microsoft YaHei".into(),
+        ])
     }
 
-    /// A serif title in Chinese falls to Songti SC, so it stays a serif.
+    /// Display text uses the same Chinese face as the rest of the interface.
     pub fn display_fallbacks() -> FontFallbacks {
-        FontFallbacks::from_fonts(vec!["Songti SC".into(), "SimSun".into()])
+        Self::ui_fallbacks()
     }
 }
 

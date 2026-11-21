@@ -131,11 +131,13 @@ impl IndexLint {
     }
 
     /// What the completion reads of the project, for the e2e checks.
+    #[cfg(target_os = "macos")]
     pub fn facts(&self) -> &Facts {
         &self.facts
     }
 
     /// The marks and cards, for the e2e checks.
+    #[cfg(target_os = "macos")]
     pub fn marks(&self) -> &Entity<LintMarks> {
         &self.marks
     }
@@ -371,6 +373,7 @@ impl super::EditorPanel {
     }
 
     /// The `.tex` file's lint, when it has one.
+    #[cfg(target_os = "macos")]
     pub fn index_lint(&self) -> Option<&Entity<IndexLint>> {
         self.index_lint.as_ref()
     }
