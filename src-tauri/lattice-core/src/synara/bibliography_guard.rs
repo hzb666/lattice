@@ -4,9 +4,9 @@
 //! text is not an authorization boundary. On macOS the complete sidecar runs
 //! inside one Seatbelt profile, so in-process agents, provider CLIs, scripts,
 //! and delayed descendants all inherit the same protected-project write denial;
-//! the trusted parent app brokers the allowed bibliography mutations. No other
-//! platform has a guard yet, and there the agent does not start: it fails
-//! closed, with a notice, rather than running with the guarantee silently gone.
+//! the trusted parent app brokers the allowed bibliography mutations.
+//! The optional Windows backend uses the installed write guard and enrolls a
+//! suspended child before it runs. Other builds report the Agent as unavailable.
 
 use std::path::Path;
 use std::process::Command;
@@ -21,7 +21,8 @@ pub(crate) const AGENT_PROTECTION_SANDBOX_PROFILE: &str = concat!(
 /// or other protected project assets itself. Without the guard the agent could
 /// write unverified references or overwrite private chemistry state, so it
 /// stays off.
-pub(super) const AVAILABLE: bool = cfg!(target_os = "macos");
+pub(super) const AVAILABLE: bool =
+    cfg!(any(target_os = "macos", all(windows, feature = "windows-agent-guard")));
 /// The `unsupported` state's message: English for logs and copied reports;
 /// the agent surfaces show their own localized notice for the state.
 pub(super) const MISSING: &str = "The built-in agent is off on this platform until Lattice \
@@ -45,9 +46,15 @@ pub(super) fn command(node: &Path, home_dir: &Path, executable: &Path) -> Result
     Ok(command)
 }
 
-/// No guard, so no launch. `ensure_ready` stops first; this keeps an
-/// unguarded sidecar from starting by any other path.
-#[cfg(not(target_os = "macos"))]
+#[cfg(all(windows, feature = "windows-agent-guard"))]
+pub(super) fn command(
+    node: &Path, _home_dir: &Path, _executable: &Path,
+) -> Result<Command, String> {
+    Ok(Command::new(node))
+}
+
+/// Keep other platforms from launching the sidecar without a guard.
+#[cfg(not(any(target_os = "macos", all(windows, feature = "windows-agent-guard"))))]
 pub(super) fn command(
     _node: &Path, _home_dir: &Path, _executable: &Path,
 ) -> Result<Command, String> {

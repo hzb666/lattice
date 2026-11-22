@@ -16,11 +16,8 @@ Windows security protections. See the matching `.README.txt` asset for setup.
 There is no Windows auto-update: download each new version manually.
 Authenticode signing and Windows updater support are separate future work.
 The existing macOS/Linux release jobs are unchanged.
-The embedded Agent remains disabled because Windows has no hard write guard
-for `.bib`, `.chem/`, ChemDraw or MestReNova files. AppContainer and ACLs can
-limit access to named paths, but cannot enforce this extension rule for files
-the Agent creates later. A complete Windows implementation needs a host write
-broker or a signed file-system minifilter; Lattice does not ship either yet.
+The embedded Agent remains disabled until the Windows write guard is shipped
+and verified. It must protect `.bib`, `.chem/`, ChemDraw and MestReNova files.
 One-click setup installs TeX Live for the current user
 (no administrator prompt, cancellable) and the managed paper tools, and installs
 a missing package with `tlmgr` or MiKTeX's package manager. The optional rtex
@@ -40,13 +37,69 @@ guide](https://learn.microsoft.com/en-us/windows/win32/secauthz/implementing-an-
 [sandbox process API](https://learn.microsoft.com/en-us/windows/win32/secauthz/createprocessinsandbox)
 and [file security and access rights](https://learn.microsoft.com/en-us/windows/win32/fileio/file-security-and-access-rights).
 
-The two viable designs are a host write broker, where the Agent can only stage
-validated changes for the parent to apply, or a signed kernel file-system
-minifilter that rejects create/write/rename operations for the protected
-extensions and `.chem` directories. A minifilter can prevent I/O in the file
-system stack, as described in Microsoft's [minifilter overview](https://learn.microsoft.com/en-us/windows-hardware/drivers/ifs/about-file-system-filter-drivers),
-but it adds a signed driver and installer lifecycle. Lattice therefore keeps
-Windows Agent fail-closed until one of those designs is implemented and tested.
+To preserve the macOS editing workflow on Windows, use a signed [file-system
+minifilter](https://learn.microsoft.com/en-us/windows-hardware/drivers/ifs/about-file-system-filter-drivers).
+The GPUI installer should carry the driver package and request elevation for
+driver setup. The editor and Agent should then run as the ordinary user.
+GPUI currently has a Windows build and CI smoke run. The NSIS notes elsewhere
+in this document describe the former Tauri host. The GPUI Agent setup targets
+x64 Windows 11 24H2 and later. Its
+[`package-installer.ps1`](../gpui/windows/package-installer.ps1) packages the
+prebuilt editor and Synara resources with the signed driver INF, CAT and SYS.
+It checks the staged Synara and Node versions and the runtime architecture
+against the release configuration.
+Release packaging requires
+[driver signing](https://learn.microsoft.com/en-us/windows-hardware/drivers/dashboard/driver-signing-offerings)
+and a Microsoft-assigned [filter altitude](https://learn.microsoft.com/en-us/windows-hardware/drivers/ifs/minifilter-altitude-request).
+The first installer expects the previous release to be uninstalled before
+installing a replacement.
+
+The GPUI launcher checks the driver's protocol and verifies the project and
+Synara state volumes before creating Synara suspended. It enrolls the process
+before resuming it. Its Windows Job Object owns the process tree through
+shutdown. `windows-agent-guard` is off in standard builds pending driver
+validation. An opted-in build refuses to start the Agent if the driver cannot
+verify coverage or enroll the process. The launcher opens each directory
+without following a final reparse point. The filter checks mutation targets
+before opening them, and refuses targets it cannot verify.
+The GPUI panel, Synara sidecar and project review flow are shared with macOS.
+The filter must allow ordinary project edits and the
+trusted Lattice host's writes, while denying direct changes to protected
+assets, including new files, replacements, deletion, renames and aliases.
+The existing citation tools remain the supported Agent path to update `.bib`.
+
+The Windows guard smoke test requires Node 24 and a local NTFS temporary
+directory. The script in
+[`scripts/check-windows-agent-guard.mjs`](../scripts/check-windows-agent-guard.mjs)
+takes an absolute launcher path followed by its arguments.
+
+```powershell
+node scripts/check-windows-agent-guard.mjs (Resolve-Path gpui/target/release/lattice-gpui.exe).Path --lattice-guard-probe
+```
+
+The launcher receives
+`-- <node.exe> <probe-script> --worker <scratch-project>` after those arguments,
+starts that workload through the same protection as Synara and returns its
+exit status. The probe checks ordinary edits and protected reads and writes
+from the launched process and a child. It includes assets created by the host
+after enrollment and checks that the host can still write. It also exercises
+the pinned Synara runtime's SQLite configuration: `locking_mode=EXCLUSIVE`
+before the first WAL access keeps the WAL index in memory, without a `-shm`
+mapping. Validate startup and persistence with the bundled Synara runtime too.
+
+Before enabling the Agent, close the remaining gaps in the prototype:
+
+- Ensure that decisions about file identity and rename targets stay valid
+  through the mutation, including concurrent link and namespace changes.
+- Verify coverage for writes targeting unfiltered volumes, existing writable
+  mappings, and operations with no safely attributable requestor. The local
+  NTFS check and preflight name query do not prove cross-volume coverage.
+- Review writes delegated to processes outside the enrolled tree. The Job
+  Object manages lifetime and does not establish a file access boundary.
+
+Run the probe against the signed driver on a disposable Windows installation.
+Exercise the same chat, citation tools, Review, Undo, build and preview flow as
+on macOS, and verify install, replacement, uninstall and restart behavior.
 
 ## TeX distributions
 

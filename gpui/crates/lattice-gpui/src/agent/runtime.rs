@@ -2,14 +2,8 @@
 //! (`synara::SynaraRuntime`), the Tauri app's own, made once per process from
 //! the resources the GPUI app runs with (`structured::resources`).
 //!
-//! Everything that makes the service safe to run is the supervisor's and is
-//! not restated here: it starts the sidecar only inside the macOS
-//! protected-project sandbox (`synara/bibliography_guard.rs`: no process in
-//! the Agent's tree may write protected bibliography or chemistry assets; its
-//! bibliography mutations are brokered by this app, `commands.rs`), with Lattice's own
-//! `ps` replacement (the process inspector, which this binary serves,
-//! `main.rs`), and anywhere else it does not start at all and says so
-//! (`unsupported`), as the Tauri app keeps the Agent off there.
+//! The supervisor runs the sidecar under the platform write guard.
+//! Bibliography mutations go through this app (`commands.rs`).
 //!
 //! The service is started by the first surface that asks for it and then
 //! runs for the rest of the process, as the Tauri app's does: a hidden
@@ -20,7 +14,10 @@
 //! restarted) go to every Synara surface's page, as the Tauri backend emits
 //! them to every window, and the restart offer is the app's notice.
 
-use std::sync::{Arc, Mutex};
+use std::{
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
 
 use futures::{StreamExt as _, channel::mpsc};
 use gpui::{App, AppContext as _, Global, Task, WeakEntity};
@@ -106,11 +103,11 @@ impl AgentRuntime {
 
     /// Start the service if it is not running, off the main thread (a start
     /// verifies the sandbox and polls the service's health for seconds).
-    pub fn ensure_ready(&self, cx: &App) -> Task<Result<Value, String>> {
+    pub fn ensure_ready(&self, root: PathBuf, cx: &App) -> Task<Result<Value, String>> {
         let runtime = self.runtime.clone();
         cx.background_spawn(async move {
             runtime
-                .ensure_ready()
+                .ensure_ready(Some(&root))
                 .and_then(|info| serde_json::to_value(info).map_err(|error| error.to_string()))
         })
     }

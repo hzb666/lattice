@@ -112,7 +112,7 @@ pub fn invoke(
     let args = payload.get("args").cloned().unwrap_or(Value::Null);
     let runtime = AgentRuntime::get(cx);
     match command {
-        "synara_ensure_ready" => runtime.ensure_ready(cx),
+        "synara_ensure_ready" => runtime.ensure_ready(root.to_path_buf(), cx),
         "synara_restart" => {
             let restart = runtime.restart(cx);
             cx.background_spawn(async move {

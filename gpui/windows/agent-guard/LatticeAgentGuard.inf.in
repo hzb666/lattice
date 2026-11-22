@@ -1,0 +1,47 @@
+[Version]
+Signature = "$WINDOWS NT$"
+Class = ContentScreener
+ClassGuid = {3e3f0674-c83c-4558-bb26-9820e1eba5c5}
+Provider = %Provider%
+CatalogFile = LatticeAgentGuard.cat
+DriverVer = @DRIVER_DATE@,@DRIVER_VERSION@
+PnpLockdown = 1
+
+[DestinationDirs]
+DriverFiles = 13
+
+[SourceDisksNames]
+1 = %DisplayName%,,,
+
+[SourceDisksFiles]
+LatticeAgentGuard.sys = 1
+
+[DefaultInstall.NTamd64]
+CopyFiles = DriverFiles
+
+[DefaultInstall.NTamd64.Services]
+AddService = LatticeAgentGuard,0,GuardService
+
+[DriverFiles]
+LatticeAgentGuard.sys
+
+[GuardService]
+DisplayName = %DisplayName%
+ServiceType = 2
+StartType = 2
+ErrorControl = 1
+ServiceBinary = %13%\LatticeAgentGuard.sys
+LoadOrderGroup = "FSFilter Content Screener"
+Dependencies = FltMgr
+AddReg = GuardInstances
+
+[GuardInstances]
+HKR,"Parameters\Instances","DefaultInstance",0,%InstanceName%
+HKR,"Parameters\Instances\LatticeAgentGuard Instance","Altitude",0,%Altitude%
+HKR,"Parameters\Instances\LatticeAgentGuard Instance","Flags",0x00010001,0
+
+[Strings]
+Provider = "Lattice"
+DisplayName = "Lattice Agent Guard"
+InstanceName = "LatticeAgentGuard Instance"
+Altitude = "@MICROSOFT_ASSIGNED_ALTITUDE@"

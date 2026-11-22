@@ -67,6 +67,8 @@ mod window_material;
 mod window_place;
 
 fn main() {
+    #[cfg(all(windows, feature = "windows-agent-guard"))]
+    lattice_core::synara::run_windows_guard_probe_if_requested();
     // The Agent's sidecar runs this binary as its helpers, as it runs the
     // Tauri app's (`src-tauri/src/lib.rs`): Lattice's own `ps` inside the
     // protected-project sandbox (only macOS has one, so only there), and the

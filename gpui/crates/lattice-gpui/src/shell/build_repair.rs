@@ -276,8 +276,14 @@ impl Shell {
             }
             loop {
                 let status = this.update(cx, |this, cx| {
-                    this.owns_repair(id, cx)
-                        .then(|| relay("status", Some(thread_id.clone()), Value::Null, cx))
+                    this.owns_repair(id, cx).then(|| {
+                        relay(
+                            "status",
+                            Some(thread_id.clone()),
+                            json!({ "workspaceRoot": root.to_string_lossy() }),
+                            cx,
+                        )
+                    })
                 });
                 let Ok(Some(status)) = status else {
                     return;

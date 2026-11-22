@@ -18,6 +18,7 @@ perf-lab = []
 # `test_support`'s fixtures for a shell's own unit tests (its dev-dependency
 # turns this on); the core's tests always have them.
 test-support = []
+windows-agent-guard = ["windows-sys/Win32_Storage_InstallableFileSystems"]
 
 [build-dependencies]
 cc = "1"
