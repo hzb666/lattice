@@ -3,9 +3,9 @@
 //!
 //! These are the host brokers of the Agent: what it may do in the project
 //! only through Lattice, because the sidecar runs where it cannot do it
-//! itself (`runtime.rs`). The bibliography is the boundary: the sandbox
-//! denies every `.bib` write from the Agent's processes, and the only ways a
-//! reference reaches or leaves a bibliography are the three mutations here,
+//! itself (`runtime.rs`). The sandbox denies direct writes to protected
+//! bibliography and chemistry assets; the only ways a reference reaches or
+//! leaves a bibliography are the three mutations here,
 //! as closed as the Tauri app's (`ipc/bibliography.rs`):
 //!
 //! - `agent_bibliography_mutation`: `cite` (a reference resolved and

@@ -117,7 +117,7 @@ const RELAY_LINES: &[&str] = &[
     n!("Repair has no active turn."),
     n!("The agent service is unavailable."),
     n!(
-        "The built-in agent is off on this platform until Lattice can keep it from editing bibliography (.bib) files directly."
+        "The built-in agent is off on this platform until Lattice can keep it from editing protected project assets directly."
     ),
     n!("The repair request failed."),
 ];

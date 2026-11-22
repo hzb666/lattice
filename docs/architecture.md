@@ -185,9 +185,10 @@ it emits **no** Tauri events, only three commands (`synara_ensure_ready`,
   (`sidecar::NodeRuntime`) — against
   `synara-runtime/server/dist/index.mjs`, on the previous port when it is still
   free and otherwise with `--dynamic-port`, and `SYNARA_HOST=127.0.0.1`. The
-  whole process tree runs inside `BIBLIOGRAPHY_SANDBOX_PROFILE`
-  (`synara/bibliography_guard.rs`), a Seatbelt profile only macOS has. Linux
-  builds have no such guard, so there `synara_ensure_ready` answers the
+  whole process tree runs inside `AGENT_PROTECTION_SANDBOX_PROFILE`
+  (`synara/bibliography_guard.rs`), a Seatbelt profile only macOS has. It
+  denies writes to `.bib`, `.chem/`, ChemDraw and MestReNova source files. Linux
+  and Windows builds have no such guard, so there `synara_ensure_ready` answers the
   `unsupported` state without starting anything, and the agent surfaces say
   why (`SynaraLoadingSurface`).
 - Port discovery is out-of-band: Node writes
@@ -221,7 +222,8 @@ any Tauri or AppKit initialisation. Two more modes return early the same way:
 `research_env::run_cli()` (`env`) and `model_endpoint::run_cli()`
 (`agent-endpoint-key`, which Pi runs to read the model endpoint's key from the
 keychain; see the module doc of `src-tauri/lattice-core/src/model_endpoint.rs`). The rest of
-this section is the literature mode.
+this section is the read-only literature CLI. Bibliography mutations use the
+authenticated host-tool bridge instead.
 
 It handles exactly one argv subcommand — `literature` — and takes its real
 input as a single JSON blob:
@@ -232,9 +234,10 @@ $LATTICE_BIN literature '{"tool":"search_literature","params":{"query":"…"}}'
 ```
 
 The dispatcher is `enum LiteratureRequest` (`agent_literature.rs`,
-`#[serde(tag = "tool", content = "params")]`) with **7** variants:
-`search_literature`, `fetch_paper`, `list_papers`, `search_library`,
-`fetch_web_reference`, `cite`, `upgrade_bibliography`. The agent's
+`#[serde(tag = "tool", content = "params")]`) with **5** read-only variants:
+`search_literature`, `fetch_paper`, `list_papers`, `search_library`, and
+`fetch_web_reference`. Bibliography mutations use the authenticated host-tool
+bridge and `AgentBibliographyMutation`; they are not accepted by this CLI. The agent's
 `remove_reference` deletes nothing itself: the app answers it and asks the
 writer (`src/agent/agent-reference-removal.ts`).
 Success prints JSON to stdout and exits 0; an error prints to stderr and exits
@@ -246,9 +249,9 @@ line is the only occurrence of the name in the Rust tree; the consumer lives in
 the packaged sidecar JavaScript, which is not in this repository.
 
 Why it exists, per the module doc of `agent_literature.rs`: the agent runs in a
-sidecar and cannot call Tauri commands, and reimplementing search/fetch/cite in
-TypeScript would immediately drift from the UI's behaviour. Mutating tools use
-`HistoryMode::Defer` so agent edits fold into the app's own transaction history
+sidecar and cannot call Tauri commands, and reimplementing search/fetch in
+TypeScript would immediately drift from the UI's behaviour. The host mutation
+path uses `HistoryMode::Defer` so agent edits fold into the app's own transaction history
 instead of committing independently.
 
 [`synara-runtime.md`](synara-runtime.md) covers the other side of this call —

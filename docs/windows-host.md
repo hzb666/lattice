@@ -16,11 +16,37 @@ Windows security protections. See the matching `.README.txt` asset for setup.
 There is no Windows auto-update: download each new version manually.
 Authenticode signing and Windows updater support are separate future work.
 The existing macOS/Linux release jobs are unchanged.
-The embedded Agent remains disabled because its bibliography protection relies
-on the macOS sandbox. One-click setup installs TeX Live for the current user
+The embedded Agent remains disabled because Windows has no hard write guard
+for `.bib`, `.chem/`, ChemDraw or MestReNova files. AppContainer and ACLs can
+limit access to named paths, but cannot enforce this extension rule for files
+the Agent creates later. A complete Windows implementation needs a host write
+broker or a signed file-system minifilter; Lattice does not ship either yet.
+One-click setup installs TeX Live for the current user
 (no administrator prompt, cancellable) and the managed paper tools, and installs
 a missing package with `tlmgr` or MiKTeX's package manager. The optional rtex
 live preview is still macOS-only.
+
+### Agent write boundary
+
+Windows AppContainer is useful for reducing a process to an explicit identity
+and a set of ACL-granted directories. Windows 11 also exposes the experimental
+`Experimental_CreateProcessInSandbox` API with Bound File System path grants,
+but it is still path-based and not an extension filter. ACLs
+are attached to file and directory objects and are inherited by newly created
+objects; they cannot say "allow every project write except a future `.bib` or
+`.cdxml` file". Renames also do not acquire a new default ACL merely because
+the destination directory has one. See Microsoft's [AppContainer launch
+guide](https://learn.microsoft.com/en-us/windows/win32/secauthz/implementing-an-appcontainer),
+[sandbox process API](https://learn.microsoft.com/en-us/windows/win32/secauthz/createprocessinsandbox)
+and [file security and access rights](https://learn.microsoft.com/en-us/windows/win32/fileio/file-security-and-access-rights).
+
+The two viable designs are a host write broker, where the Agent can only stage
+validated changes for the parent to apply, or a signed kernel file-system
+minifilter that rejects create/write/rename operations for the protected
+extensions and `.chem` directories. A minifilter can prevent I/O in the file
+system stack, as described in Microsoft's [minifilter overview](https://learn.microsoft.com/en-us/windows-hardware/drivers/ifs/about-file-system-filter-drivers),
+but it adds a signed driver and installer lifecycle. Lattice therefore keeps
+Windows Agent fail-closed until one of those designs is implemented and tested.
 
 ## TeX distributions
 

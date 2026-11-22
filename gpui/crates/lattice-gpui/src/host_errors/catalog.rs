@@ -2486,8 +2486,8 @@ pub(super) static ENTRIES: &[Entry] = &[
     },
     Entry {
         file: "synara/bibliography_guard.rs",
-        literal: "The built-in agent is off on this platform until Lattice can keep it from editing bibliography (.bib) files directly.",
-        text: Text::Message("The built-in agent is off on this platform until Lattice can keep it from editing bibliography (.bib) files directly.", &[]),
+        literal: "The built-in agent is off on this platform until Lattice can keep it from editing protected project assets directly.",
+        text: Text::Message("The built-in agent is off on this platform until Lattice can keep it from editing protected project assets directly.", &[]),
     },
     Entry {
         file: "terminal/windows.rs",

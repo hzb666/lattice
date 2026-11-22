@@ -2,8 +2,8 @@ import { isRecord } from "../app-utils";
 import { hasOnlyKeys, isWorkspaceRelativePath } from "./agent-protocol";
 
 /**
- * `unsupported`: this platform cannot keep the Agent from writing .bib files
- * itself (synara/bibliography_guard.rs), so it never starts there.
+ * `unsupported`: this platform cannot keep the Agent from writing protected
+ * project assets itself (synara/bibliography_guard.rs), so it never starts.
  */
 type SynaraRuntimeState = "starting" | "ready" | "stopped" | "unsupported";
 

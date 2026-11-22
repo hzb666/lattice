@@ -1996,6 +1996,14 @@ msgstr "Agent isn’t available on Linux yet"
 msgid "Agent isn’t available on Windows yet"
 msgstr "Agent isn’t available on Windows yet"
 
+#: src/agent/synara-loading-surface.tsx
+msgid "This Windows build cannot yet protect .bib, .chem, ChemDraw, or MestReNova files from direct agent edits. Use Claude Code or Codex in the Terminal panel. Features that require the built-in agent are unavailable."
+msgstr "This Windows build cannot yet protect .bib, .chem, ChemDraw, or MestReNova files from direct agent edits. Use Claude Code or Codex in the Terminal panel. Features that require the built-in agent are unavailable."
+
+#: src/agent/synara-loading-surface.tsx
+msgid "On macOS, Lattice stops the Agent from editing .bib, .chem, ChemDraw, and MestReNova files directly, so every reference it adds is checked first. Linux doesn’t have that protection yet, so the Agent stays off here instead of running without it. Agent support for Linux is coming."
+msgstr "On macOS, Lattice stops the Agent from editing .bib, .chem, ChemDraw, and MestReNova files directly, so every reference it adds is checked first. Linux doesn’t have that protection yet, so the Agent stays off here instead of running without it. Agent support for Linux is coming."
+
 #: src/agent/synara-permission-picker.tsx
 msgid "Agent permissions: {label}"
 msgstr "Agent permissions: {label}"
@@ -15964,8 +15972,8 @@ msgstr "The built-in agent did not become ready within {seconds} seconds."
 
 #: src/build/compile-repair-messages.ts
 #: src/platform/host-errors-setup.ts
-msgid "The built-in agent is off on this platform until Lattice can keep it from editing bibliography (.bib) files directly."
-msgstr "The built-in agent is off on this platform until Lattice can keep it from editing bibliography (.bib) files directly."
+msgid "The built-in agent is off on this platform until Lattice can keep it from editing protected project assets directly."
+msgstr "The built-in agent is off on this platform until Lattice can keep it from editing protected project assets directly."
 
 #: src/platform/host-errors-setup.ts
 msgid "The built-in agent stopped during startup with status {status}."

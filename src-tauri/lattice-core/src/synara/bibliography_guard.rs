@@ -3,8 +3,8 @@
 //! The prompt tells providers to use Lattice's bibliography tools, but prompt
 //! text is not an authorization boundary. On macOS the complete sidecar runs
 //! inside one Seatbelt profile, so in-process agents, provider CLIs, scripts,
-//! and delayed descendants all inherit the same .bib write denial; the trusted
-//! parent app brokers the three allowed bibliography mutations. No other
+//! and delayed descendants all inherit the same protected-project write denial;
+//! the trusted parent app brokers the allowed bibliography mutations. No other
 //! platform has a guard yet, and there the agent does not start: it fails
 //! closed, with a notice, rather than running with the guarantee silently gone.
 
@@ -12,19 +12,20 @@ use std::path::Path;
 use std::process::Command;
 
 #[cfg(target_os = "macos")]
-pub(crate) const BIBLIOGRAPHY_SANDBOX_PROFILE: &str = concat!(
+pub(crate) const AGENT_PROTECTION_SANDBOX_PROFILE: &str = concat!(
     "(version 1)\n",
     "(allow default)\n",
-    "(deny file-write* (regex #\".*[.][bB][iI][bB]$\"))",
+    "(deny file-write* (regex #\"(^|/)[.][cC][hH][eE][mM](/|$)|.*[.][bB][iI][bB]$|.*[.][cC][dD][xX]$|.*[.][cC][dD][xX][mM][lL]$|.*[.][mM][nN][oO][vV][aA]$|.*[.][mM][nN][jJ][sS]$|.*[.][mM][nN][lL]$|.*[.][mM][nN][lL][tT]$\"))",
 );
 /// Whether this platform can keep the sidecar from writing `.bib` files
-/// itself. Without the guard the agent could write unverified references
-/// straight into a bibliography, so it stays off.
+/// or other protected project assets itself. Without the guard the agent could
+/// write unverified references or overwrite private chemistry state, so it
+/// stays off.
 pub(super) const AVAILABLE: bool = cfg!(target_os = "macos");
 /// The `unsupported` state's message: English for logs and copied reports;
 /// the agent surfaces show their own localized notice for the state.
 pub(super) const MISSING: &str = "The built-in agent is off on this platform until Lattice \
-     can keep it from editing bibliography (.bib) files directly.";
+     can keep it from editing protected project assets directly.";
 
 /// The sidecar's launch: `node` inside the guard, with Lattice's own `ps`
 /// replacement (`process_inspector`), which works only inside it.
@@ -35,7 +36,7 @@ pub(super) fn command(node: &Path, home_dir: &Path, executable: &Path) -> Result
     let mut command = Command::new("/usr/bin/sandbox-exec");
     command
         .arg("-p")
-        .arg(BIBLIOGRAPHY_SANDBOX_PROFILE)
+        .arg(AGENT_PROTECTION_SANDBOX_PROFILE)
         .arg(node)
         // Children inherit this profile. A second sandbox-exec can fail
         // sandbox_apply on older macOS before Codex even starts.
@@ -62,9 +63,9 @@ mod tests {
     use std::thread;
     use std::time::Duration;
 
-    fn run_bibliography_sandbox(script: &str, args: &[&PathBuf]) -> bool {
+    fn run_agent_sandbox(script: &str, args: &[&PathBuf]) -> bool {
         Command::new("/usr/bin/sandbox-exec")
-            .args(["-p", BIBLIOGRAPHY_SANDBOX_PROFILE, "/bin/sh", "-c", script, "sandbox-test"])
+            .args(["-p", AGENT_PROTECTION_SANDBOX_PROFILE, "/bin/sh", "-c", script, "sandbox-test"])
             .args(args)
             .status()
             .expect("run sandboxed command")
@@ -72,7 +73,7 @@ mod tests {
     }
 
     #[test]
-    fn bibliography_sandbox_blocks_direct_and_indirect_bib_writes() {
+    fn agent_sandbox_blocks_direct_and_indirect_bibliography_writes() {
         let root = TempDir::new("bib-sandbox");
         let path = |name: &str| root.join(name);
         let (bibliography, uppercase, ordinary) = (
@@ -100,21 +101,57 @@ mod tests {
             ("ln -s \"$1\" \"$2\" && printf changed > \"$2\"", &[&ordinary, &bib_alias]),
         ];
         for (script, args) in attempts {
-            assert!(!run_bibliography_sandbox(script, args), "sandbox allowed: {script}");
+            assert!(!run_agent_sandbox(script, args), "sandbox allowed: {script}");
         }
 
         assert_eq!(fs::read_to_string(&bibliography).unwrap(), "original");
         assert_eq!(fs::read_to_string(&uppercase).unwrap(), "uppercase");
-        assert!(run_bibliography_sandbox("printf changed > \"$1\"", &[&ordinary]));
+        assert!(run_agent_sandbox("printf changed > \"$1\"", &[&ordinary]));
         assert_eq!(fs::read_to_string(&ordinary).unwrap(), "changed");
 
         // Background descendants that outlive the sandboxed shell inherit it.
-        assert!(run_bibliography_sandbox(
+        assert!(run_agent_sandbox(
             "(sleep 0.05; printf changed > \"$1\") >/dev/null 2>&1 &",
             &[&bibliography],
         ));
         thread::sleep(Duration::from_millis(150));
         assert_eq!(fs::read_to_string(&bibliography).unwrap(), "original");
+    }
+
+    #[test]
+    fn agent_sandbox_blocks_chemistry_caches_and_native_documents() {
+        let root = TempDir::new("chemistry-sandbox");
+        let protected = [
+            root.write(".chem/molecules.sqlite", "cache"),
+            root.write(".CHEM/cache/preview.svg", "preview"),
+            root.write("drawings/scheme.CDX", "cdx"),
+            root.write("drawings/scheme.cdxml", "cdxml"),
+            root.write("spectra/sample.MnOvA", "mnova"),
+            root.write("scripts/process.MNJS", "mnjs"),
+            root.write("templates/report.MNL", "mnl"),
+            root.write("templates/report.mnlt", "mnlt"),
+        ];
+        let ordinary = root.write("drawings/notes.tex", "notes");
+
+        for path in &protected {
+            assert!(
+                !run_agent_sandbox("printf changed >> \"$1\"", &[path]),
+                "sandbox allowed: {}",
+                path.display()
+            );
+        }
+        assert!(run_agent_sandbox("printf changed >> \"$1\"", &[&ordinary]));
+        assert_eq!(fs::read_to_string(&protected[0]).unwrap(), "cache");
+        assert_eq!(fs::read_to_string(&protected[2]).unwrap(), "cdx");
+        assert_eq!(fs::read_to_string(&protected[4]).unwrap(), "mnova");
+    }
+
+    #[test]
+    fn agent_sandbox_blocks_creating_a_chemistry_cache_directory() {
+        let root = TempDir::new("chemistry-sandbox-create");
+        let directory = root.join(".CHEM");
+        assert!(!run_agent_sandbox("mkdir \"$1\"", &[&directory]));
+        assert!(!directory.exists());
     }
 
     /// The broker writes a bibliography through a temporary beside it and
@@ -124,7 +161,7 @@ mod tests {
     /// the real bibliography after the rename. The temporary must already be
     /// a name the guard refuses.
     #[test]
-    fn bibliography_sandbox_cannot_write_through_the_brokers_temporary() {
+    fn agent_sandbox_cannot_write_through_the_brokers_temporary() {
         let root = TempDir::new("bib-sandbox-temporary");
         root.write("references.bib", "original");
         let ready = root.join("ready.txt");
@@ -144,7 +181,7 @@ mod tests {
             done
         "#;
         let mut agent = Command::new("/usr/bin/sandbox-exec")
-            .args(["-p", BIBLIOGRAPHY_SANDBOX_PROFILE, "/bin/sh", "-c", script, "sandbox-test"])
+            .args(["-p", AGENT_PROTECTION_SANDBOX_PROFILE, "/bin/sh", "-c", script, "sandbox-test"])
             .arg(&*root)
             .arg(&ready)
             .spawn()

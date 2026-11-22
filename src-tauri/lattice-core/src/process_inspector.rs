@@ -1,7 +1,7 @@
 //! Unprivileged `ps` replacement for the Synara sidecar.
 //!
 //! Synara inspects its process tree with `ps`, but the sidecar runs inside the
-//! bibliography sandbox where copying Apple's setuid `/bin/ps` does not work.
+//! protected-project sandbox where copying Apple's setuid `/bin/ps` does not work.
 //! Instead a tiny shell launcher re-enters Lattice's own signed executable in
 //! [`FLAG`] mode, which runs before Tauri initialization, inherits the
 //! sandbox, and prints the process table through `process_inspector.c`.
@@ -87,7 +87,7 @@ pub(crate) fn install_launcher(home: &Path, executable: &Path) -> Result<PathBuf
 /// Fail at startup with an actionable error, before a chat is quarantined.
 pub(crate) fn verify_launcher(launcher: &Path) -> Result<(), String> {
     let mut child = Command::new("/usr/bin/sandbox-exec")
-        .args(["-p", crate::synara::BIBLIOGRAPHY_SANDBOX_PROFILE])
+        .args(["-p", crate::synara::AGENT_PROTECTION_SANDBOX_PROFILE])
         .arg(launcher)
         .args(["-p", &std::process::id().to_string(), "-o", "pid=,command="])
         .stdout(Stdio::piped())

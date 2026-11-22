@@ -64,14 +64,14 @@ Lattice therefore posts `lattice:host-file-writes` (version 1: `workspaceRoot` p
 The fork records each write on the turn running in that project, through `/api/lattice/host-file-writes` and a `turn-host-writes` ref next to the checkpoints. Undo then refuses to reverse such a file and says why, rather than deleting the edit. A later step can move the turn's base past such edits instead of refusing.
 In live sync mode, affected text files leave realtime editing, retain any unacknowledged OT operations until settled, and rejoin after reconciliation; manual sync mode does not upload automatically.
 On macOS, `SYNARA_PROCESS_PS_PATH` points to a shell launcher for the signed Lattice executable's `--lattice-process-snapshot` mode, which exits before Tauri starts.
-The mode reads `KERN_PROC_ALL` directly under the existing bibliography sandbox; it must not copy `/bin/ps`, whose non-setuid copy can be killed on older macOS even when static signature verification passes.
+The mode reads `KERN_PROC_ALL` directly under the existing protected-project sandbox; it must not copy `/bin/ps`, whose non-setuid copy can be killed on older macOS even when static signature verification passes.
 The two supported `ps`-shaped queries return PID/parent relationships and opaque birth-time identities rather than command-line arguments.
 A missing PID is a successful empty result; the pinned fork treats every nonzero host snapshot exit as unknown rather than proof of exit.
 The fork selects the host's opaque-identity protocol when `SYNARA_PROCESS_PS_PATH` is set and retains upstream's `lstart` identity checks for ordinary `ps`.
 This behavior and its regression tests now live in Synara's `processTreeController`, rather than a compiled-bundle staging patch; both its synchronous scan and the asynchronous teardown scan Synara 1.0.4 added use the host launcher.
 Startup verifies the launcher inside the sandbox before admitting agent work.
 
-The macOS host sets `LATTICE_BIBLIOGRAPHY_SANDBOX=1` only when launching the service through its bibliography sandbox.
+The macOS host sets `LATTICE_BIBLIOGRAPHY_SANDBOX=1` only when launching the service through its protected-project sandbox. The marker keeps its historical name because the Synara fork reads it as the inherited bibliography-boundary signal.
 `scripts/synara-codex-host.mjs` makes Codex inherit that protection instead of running a second `sandbox-exec`, which can fail before Codex starts on older macOS.
 The standalone Lattice-profile Codex guard remains in place when the marker is absent.
 The staging patch resolves the Codex logger from its unique declaration, so upstream bundle-symbol reordering cannot send these events to a different provider logger. It records classified Codex stderr and process exit even after stdout EOF has begun teardown; it does not relax process-tree exit verification or unblock failed threads automatically.
@@ -147,7 +147,7 @@ renamed. They are not all Lattice code:
 
 | Group | Count | Names | Implemented by |
 | --- | --- | --- | --- |
-| Literature | 8 | `search_literature`, `list_papers`, `search_library`, `fetch_paper`, `fetch_web_reference`, `cite`, `upgrade_bibliography`, `remove_reference` | Lattice. They shell out to the Lattice executable, which parses them as the `LiteratureRequest` enum in `src-tauri/lattice-core/src/agent_literature.rs` (grep `enum LiteratureRequest`) and dispatches to `literature::` and `papers::`, keeping the Rust literature and bibliography code the only source of truth. `remove_reference` is the exception: it deletes nothing on the agent's word. Lattice answers that it asked the writer, and only the writer's Remove entry in Lattice's own confirmation runs the removal (`src/agent/agent-reference-removal.ts`). |
+| Literature | 8 | `search_literature`, `list_papers`, `search_library`, `fetch_paper`, `fetch_web_reference`, `cite`, `upgrade_bibliography`, `remove_reference` | Lattice. Read-only lookup tools shell out to the Lattice executable, which parses them as the `LiteratureRequest` enum in `src-tauri/lattice-core/src/agent_literature.rs` (grep `enum LiteratureRequest`) and dispatches to `literature::` and `papers::`, keeping the Rust literature code the only source of truth. `cite` and `upgrade_bibliography` instead cross the authenticated host-tool bridge and run in the parent app through `agent_bibliography_mutation`, outside the sidecar's write boundary. `remove_reference` is the exception: it deletes nothing on the agent's word. Lattice answers that it asked the writer, and only the writer's Remove entry in Lattice's own confirmation runs the removal (`src/agent/agent-reference-removal.ts`). |
 | Canvas | 4 | `list_canvas_shapes`, `create_canvas_shapes`, `update_canvas_shapes`, `delete_canvas_shapes` | Lattice. They reach the tldraw surface through the canvas broker (`src/agent/agent-canvas-tools.ts`, actions `list` / `create` / `update` / `delete`). |
 | Spreadsheet | 2 | `spreadsheet_read`, `spreadsheet_batch_update` | Lattice, via `src/agent/agent-spreadsheet-tools.ts` (actions `read` / `batch_update`). |
 | Project documents | 1 | `create_project_document` | Lattice. It creates and opens native `.tldr` boards or `.lattice-sheet` spreadsheets through the project transaction path. |
@@ -156,7 +156,7 @@ renamed. They are not all Lattice code:
 | LaTeX figures | 1 | `preview_latex_figure` | Lattice. The fork relays `{code, preamble, document, lineWidth, wide, caption, label, placement}` over the presentation channel as the action `preview_figure`. `src/agent/agent-figure-tools.ts` has Rust typeset the figure body alone (`preview_latex_figure`, `src-tauri/lattice-core/src/latex/figure_preview.rs`): the document's own preamble, a minipage as wide as `\columnwidth` (or the requested width), the box shipped as a cropped one-page PDF, in a scratch folder removed afterwards, with no shell escape, writes confined to that folder and a 45-second limit; a preamble that stops before the body is retried on a plain `article`. It renders that page as a PNG and answers with the image, the lines wider than the column and the preamble lines the paper lacks; a figure that does not typeset is answered with `figure_build_failed` and TeX's errors by code line. Given a caption and label, the result also carries the `figure` environment, which the agent inserts with its ordinary file edit, so the insertion is approved, checkpointed and undone like any agent edit. |
 | iOS Simulator | 15 | `device_list`, `device_boot`, `device_configure`, `device_install`, `device_launch`, `device_open_url`, `device_tap`, `device_swipe`, `device_type`, `device_press_button`, `device_screenshot`, `device_describe_ui`, `device_scroll_to_element`, `device_wait`, `device_logs` | **Upstream**, from the fork's `deviceTools.ts`, and **not offered**. They are still in the fork's allowlist, but the fork builds them, and the panel's device dock, only for a host that sets `LATTICE_DEVICE_CONTROL_ENABLED=true`. Lattice sets nothing and removes any inherited value when it starts the sidecar (`AgentEnvironment::apply` in `src-tauri/lattice-core/src/synara/environment.rs`), so the Lattice catalog has 43 tools. |
 
-`cite` and `upgrade_bibliography` run with `HistoryMode::Defer`, so agent bibliography edits fold into
+`cite` and `upgrade_bibliography` run in the parent app with `HistoryMode::Defer`, so agent bibliography edits fold into
 Lattice's own transaction history instead of committing independently.
 The fork's bibliography broker abandons a request after 30 seconds, so Lattice passes the request's `expiresAt` to `agent_bibliography_mutation` as `deadline`.
 `upgrade_bibliography` checks each preprint on its own, three at a time, saves what it confirmed before that deadline, and reports the rest as `pending` with `complete: false`; calling it again continues with them.
@@ -183,7 +183,7 @@ prompt matches no `/synara/i` and does contain `Lattice`, `mcp_servers.lattice`,
 `refs/lattice/checkpoints`.
 
 Every provider receives the Lattice bibliography policy. On macOS, Codex also runs inside a
-process-level write boundary that rejects direct `.bib` writes; the Lattice literature broker runs
+process-level write boundary that rejects direct writes to `.bib`, `.chem/`, ChemDraw and MestReNova assets; the authenticated host broker runs
 outside that boundary so approved citation tools can still update the bibliography.
 
 ### Computer Use boundary

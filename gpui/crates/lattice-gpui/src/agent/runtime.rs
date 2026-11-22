@@ -4,9 +4,9 @@
 //!
 //! Everything that makes the service safe to run is the supervisor's and is
 //! not restated here: it starts the sidecar only inside the macOS
-//! bibliography sandbox (`synara/bibliography_guard.rs`: no process in the
-//! Agent's tree may write a `.bib` file; the three bibliography mutations it
-//! may ask for are brokered by this app, `commands.rs`), with Lattice's own
+//! protected-project sandbox (`synara/bibliography_guard.rs`: no process in
+//! the Agent's tree may write protected bibliography or chemistry assets; its
+//! bibliography mutations are brokered by this app, `commands.rs`), with Lattice's own
 //! `ps` replacement (the process inspector, which this binary serves,
 //! `main.rs`), and anywhere else it does not start at all and says so
 //! (`unsupported`), as the Tauri app keeps the Agent off there.

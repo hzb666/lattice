@@ -72,7 +72,8 @@ export function SynaraLoadingSurface(props: {
 }
 
 /**
- * The Agent where Lattice cannot yet stop it from editing .bib files itself:
+ * The Agent where Lattice cannot yet stop it from editing protected project
+ * assets itself:
  * it stays off and says why. There is nothing to retry or diagnose, so no
  * Retry, logs or Details; the runtime's English message says the same.
  * scripts/linux-e2e.mjs finds it by its `synara-unsupported-notice` class.
@@ -86,7 +87,7 @@ function SynaraUnsupportedNotice() {
       </span>
       <div className="synara-loading-copy">
         <strong>{isWindowsHost() ? t`Agent isn’t available on Windows yet` : t`Agent isn’t available on Linux yet`}</strong>
-        <p>{isWindowsHost() ? t`This Windows build cannot yet protect .bib files from direct agent edits. Use Claude Code or Codex in the Terminal panel. Features that require the built-in agent are unavailable.` : t`On macOS, Lattice stops the Agent from editing .bib files directly, so every reference it adds is checked first. Linux doesn’t have that protection yet, so the Agent stays off here instead of running without it. Agent support for Linux is coming.`}</p>
+      <p>{isWindowsHost() ? t`This Windows build cannot yet protect .bib, .chem, ChemDraw, or MestReNova files from direct agent edits. Use Claude Code or Codex in the Terminal panel. Features that require the built-in agent are unavailable.` : t`On macOS, Lattice stops the Agent from editing .bib, .chem, ChemDraw, and MestReNova files directly, so every reference it adds is checked first. Linux doesn’t have that protection yet, so the Agent stays off here instead of running without it. Agent support for Linux is coming.`}</p>
       </div>
     </div>
   );

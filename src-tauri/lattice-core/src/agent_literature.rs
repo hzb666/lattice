@@ -3,9 +3,9 @@
 //!
 //! The agent runs in a sidecar process and cannot call into the app, so the
 //! app offers a private JSON dispatcher through its own executable. Keeping
-//! search, fetch, cite, upgrade, and the library listing here avoids a second
-//! TypeScript implementation drifting from the UI. The agent's bibliography
-//! mutations inside the app go through the same dispatcher.
+//! read-only search, fetch, and library listing here avoids a second
+//! TypeScript implementation drifting from the UI. Bibliography mutations
+//! use `AgentBibliographyMutation` in the parent app instead of that CLI.
 //!
 //! Neither path deletes a bibliography entry. The agent's `remove_reference`
 //! only asks: the app shows the writer its own removal confirmation
@@ -41,13 +41,6 @@ pub enum LiteratureRequest {
     FetchWebReference {
         url: String,
     },
-    Cite {
-        query: String,
-    },
-    UpgradeBibliography {
-        #[serde(rename = "dryRun", default)]
-        dry_run: bool,
-    },
 }
 
 /// The only path from a sandboxed agent process to a bibliography mutation.
@@ -67,19 +60,6 @@ pub enum AgentBibliographyMutation {
 }
 
 impl AgentBibliographyMutation {
-    /// Bound the agent-controlled strings, then express the mutation as the
-    /// literature request that performs it.
-    pub fn into_request(self) -> Result<LiteratureRequest, String> {
-        Ok(match self {
-            Self::Cite { query } => {
-                LiteratureRequest::Cite { query: bounded_value(query, "Citation query", 4_096)? }
-            }
-            Self::UpgradeBibliography { dry_run } => {
-                LiteratureRequest::UpgradeBibliography { dry_run }
-            }
-        })
-    }
-
     /// Perform the mutation for the project at `root`, as the host answers the
     /// Agent's request. `deadline_ms` is when the Agent stops waiting for the
     /// answer (the request's `expiresAt`, Unix milliseconds): an upgrade
@@ -90,7 +70,14 @@ impl AgentBibliographyMutation {
                 let deadline = deadline_ms.map(instant_at_unix_ms);
                 to_json(papers::upgrade_bibliography(root, dry_run, deadline))
             }
-            mutation => mutation.into_request()?.run(root),
+            Self::Cite { query } => to_json(papers::import_reference(
+                root,
+                &bounded_value(query, "Citation query", 4_096)?,
+                HistoryMode::Defer,
+                papers::FullText::Save,
+                &|_| {},
+                &AtomicBool::new(false),
+            )),
         }?;
         with_bibliography(root, result)
     }
@@ -130,8 +117,7 @@ fn to_json<T: serde::Serialize>(result: Result<T, String>) -> Result<Value, Stri
 }
 
 impl LiteratureRequest {
-    /// Perform the request against the project at `root`. Bibliography
-    /// mutations defer their history entry to the agent turn that asked.
+    /// Perform a read-only request against the project at `root`.
     pub fn run(self, root: &Path) -> Result<Value, String> {
         match self {
             Self::SearchLiterature { query, precise, page } => {
@@ -150,17 +136,6 @@ impl LiteratureRequest {
             }
             Self::FetchWebReference { url } => {
                 to_json(papers::fetch_web_reference(root, &url, &AtomicBool::new(false)))
-            }
-            Self::Cite { query } => to_json(papers::import_reference(
-                root,
-                &query,
-                HistoryMode::Defer,
-                papers::FullText::Save,
-                &|_| {},
-                &AtomicBool::new(false),
-            )),
-            Self::UpgradeBibliography { dry_run } => {
-                to_json(papers::upgrade_bibliography(root, dry_run, None))
             }
         }
     }
@@ -200,7 +175,7 @@ pub fn run_cli() -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{bounded_value, AgentBibliographyMutation, LiteratureRequest};
+    use super::{bounded_value, LiteratureRequest};
 
     /// The gateway always sends a params object, even for tools without
     /// arguments — the empty-struct variant must accept `{}` (a unit variant
@@ -214,6 +189,10 @@ mod tests {
         assert!(
             matches!(request, LiteratureRequest::SearchLibrary { query } if query == "attention")
         );
+        assert!(serde_json::from_str::<LiteratureRequest>(
+            r#"{"tool":"cite","params":{"query":"Attention Is All You Need"}}"#
+        )
+        .is_err());
     }
 
     #[test]

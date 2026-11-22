@@ -3,7 +3,7 @@
 //! own Synara host) in a panel of the window.
 //!
 //! - [`runtime`]: the Synara service, lattice-core's supervisor with its
-//!   macOS bibliography sandbox, made once per process; off where the
+//!   macOS protected-project sandbox, made once per process; off where the
 //!   Tauri app keeps it off.
 //! - [`commands`]: the backend commands the page invokes, the bibliography
 //!   brokers among them, answered through lattice-core for the panel's own

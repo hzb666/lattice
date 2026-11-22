@@ -1,7 +1,7 @@
 //! Supervisor for the bundled Synara agent sidecar.
 //!
 //! The sidecar is a loopback Node service started on demand by
-//! [`SynaraRuntime::ensure_ready`]. It runs inside the macOS bibliography
+//! [`SynaraRuntime::ensure_ready`]. It runs inside the macOS protected-project
 //! sandbox with Lattice's own `ps` replacement (`process_inspector`), and
 //! does not start at all where no such guard exists (`bibliography_guard`); the
 //! provider CLIs it spawns inherit the writer's proxy and provider settings
@@ -24,7 +24,7 @@ use crate::host::{EventSink, Resources};
 use crate::sidecar::{terminate_process_group, NodeRuntime};
 use crate::wide_event::{self, Failure};
 #[cfg(target_os = "macos")]
-pub(crate) use bibliography_guard::BIBLIOGRAPHY_SANDBOX_PROFILE;
+pub(crate) use bibliography_guard::AGENT_PROTECTION_SANDBOX_PROFILE;
 pub use environment::EnvironmentReport;
 use reqwest::blocking::Client;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
