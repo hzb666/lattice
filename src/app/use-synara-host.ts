@@ -35,7 +35,7 @@ import { useSynaraConfirmationBridge } from "../agent/synara-confirmations";
 import { useSynaraNotificationBridge } from "../agent/synara-notifications";
 import { useSynaraPopupDismissalBridge } from "../agent/synara-popup-dismissal";
 import { useSynaraHostShortcuts } from "../agent/synara-host-shortcuts";
-import { parseAgentProjectHistorySnapshot, synaraProjectRelativeFilePath } from "../agent/synara-runtime";
+import { mapSynaraWorkspace, parseAgentProjectHistorySnapshot, synaraProjectRelativeFilePath } from "../agent/synara-runtime";
 import { useSynaraRuntime } from "../agent/use-synara-runtime";
 import { markGetStartedStep } from "../onboarding/get-started-progress";
 import { announceBibliographyWrite } from "../project/project-files-changed";
@@ -83,6 +83,7 @@ type SynaraHostBridge = {
   /** Where the conversation's annotation tools record a proposal or question; null without a project. */
   annotationTools: () => AnnotationToolHost | null;
   projectDocumentCreator: () => ((request: AgentProjectDocumentToolRequest) => Promise<string>) | null;
+  refreshWorkspace?: () => Promise<void>;
   onHistorySnapshot: (snapshot: NonNullable<ReturnType<typeof parseAgentProjectHistorySnapshot>>) => void;
   /** The narrowest the agent frame can be with its composer intact, in CSS px. */
   onMinimumWidth: (width: number) => void;
@@ -157,6 +158,7 @@ export function useSynaraHost({ project, projectRef, agentVisible, bridge, appea
   const [runtimeRequested, setRuntimeRequested] = useState(false);
   const { runtime, retry } = useSynaraRuntime(runtimeRequested);
   const origin = runtime.state === "ready" ? runtime.origin : null;
+  const executionRoot = runtime.executionRoot;
   const frameRef = useRef<HTMLIFrameElement>(null);
   const sourceControlFrameRef = useRef<HTMLIFrameElement>(null);
   useSynaraNotificationBridge({ frameRef, origin, source: t`Synara agent` });
@@ -230,8 +232,10 @@ export function useSynaraHost({ project, projectRef, agentVisible, bridge, appea
         };
       }
     }
-    frameRef.current?.contentWindow?.postMessage(message, origin);
-  }, [origin, projectRootRef]);
+    const root = projectRootRef.current;
+    const routed = root && executionRoot ? mapSynaraWorkspace(message, root, executionRoot) : message;
+    if (routed) frameRef.current?.contentWindow?.postMessage(routed, origin);
+  }, [executionRoot, origin, projectRootRef]);
   // A prompt waits for the frame to say it is ready, so a panel opened by the
   // request that carries it still gets it. Only the latest one is kept.
   const pendingComposerPromptRef = useRef<AgentComposerPromptMessage | null>(null);
@@ -309,7 +313,7 @@ export function useSynaraHost({ project, projectRef, agentVisible, bridge, appea
     // A file the agent named opens in the host's own surfaces (cached Paper
     // markdown goes through the reader, like links inside our own preview).
     const openNamedFile = (data: MessageData, host: typeof latest.current) => {
-      const path = synaraProjectRelativeFilePath(data.filePath, projectRef.current?.root);
+      const path = synaraProjectRelativeFilePath(data.filePath, executionRoot ?? projectRef.current?.root);
       if (path) host.bridge.openProjectPath(path);
       return Boolean(path);
     };
@@ -368,9 +372,11 @@ export function useSynaraHost({ project, projectRef, agentVisible, bridge, appea
             host.bridge.flushVisualMarkdown();
             return host.bridge.agentCommentsOptions();
           },
-          readComments: (options, current) => loadAgentEditorComments().then(({ readAgentCommentsSnapshot }) => (
-            readAgentCommentsSnapshot({ ...options, path: current.paper?.path ?? current.editor?.path, limit: 10 })
-          )),
+          readComments: async (options, current) => {
+            if (executionRoot) await host.bridge.refreshWorkspace?.();
+            const { readAgentCommentsSnapshot } = await loadAgentEditorComments();
+            return readAgentCommentsSnapshot({ ...options, path: current.paper?.path ?? current.editor?.path, limit: 10 });
+          },
           stillCurrent: () => projectRootRef.current === context?.workspaceRoot
             && latest.current.hostContext?.workspaceRoot === context?.workspaceRoot,
           post,
@@ -448,7 +454,11 @@ export function useSynaraHost({ project, projectRef, agentVisible, bridge, appea
     };
     const receive = (event: MessageEvent) => {
       if (event.source !== frameRef.current?.contentWindow || event.origin !== origin) return;
-      const data = event.data as MessageData | null;
+      const raw = event.data as MessageData | null;
+      const root = projectRootRef.current;
+      const data = raw && typeof raw === "object" && root && executionRoot
+        ? mapSynaraWorkspace(raw, executionRoot, root)
+        : raw;
       const host = latest.current;
       const handler = typeof data?.type === "string" ? handlers[data.type] : undefined;
       if (data && handler) {
@@ -467,7 +477,7 @@ export function useSynaraHost({ project, projectRef, agentVisible, bridge, appea
     };
     window.addEventListener("message", receive);
     return () => window.removeEventListener("message", receive);
-  }, [origin, postMessage, projectRef, projectRootRef]);
+  }, [executionRoot, origin, postMessage, projectRef, projectRootRef]);
 
   // The theme travels over the bridge rather than the frame URL, so a tint or
   // an accent dragged in the color picker repaints the agent without

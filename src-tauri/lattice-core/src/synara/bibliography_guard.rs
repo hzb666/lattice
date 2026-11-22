@@ -5,8 +5,7 @@
 //! inside one Seatbelt profile, so in-process agents, provider CLIs, scripts,
 //! and delayed descendants all inherit the same protected-project write denial;
 //! the trusted parent app brokers the allowed bibliography mutations.
-//! The optional Windows backend uses the installed write guard and enrolls a
-//! suspended child before it runs. Other builds report the Agent as unavailable.
+//! Other builds report the Agent as unavailable until they have an equivalent boundary.
 
 use std::path::Path;
 use std::process::Command;
@@ -21,8 +20,7 @@ pub(crate) const AGENT_PROTECTION_SANDBOX_PROFILE: &str = concat!(
 /// or other protected project assets itself. Without the guard the agent could
 /// write unverified references or overwrite private chemistry state, so it
 /// stays off.
-pub(super) const AVAILABLE: bool =
-    cfg!(any(target_os = "macos", all(windows, feature = "windows-agent-guard")));
+pub(super) const AVAILABLE: bool = cfg!(target_os = "macos");
 /// The `unsupported` state's message: English for logs and copied reports;
 /// the agent surfaces show their own localized notice for the state.
 pub(super) const MISSING: &str = "The built-in agent is off on this platform until Lattice \
@@ -46,15 +44,8 @@ pub(super) fn command(node: &Path, home_dir: &Path, executable: &Path) -> Result
     Ok(command)
 }
 
-#[cfg(all(windows, feature = "windows-agent-guard"))]
-pub(super) fn command(
-    node: &Path, _home_dir: &Path, _executable: &Path,
-) -> Result<Command, String> {
-    Ok(Command::new(node))
-}
-
 /// Keep other platforms from launching the sidecar without a guard.
-#[cfg(not(any(target_os = "macos", all(windows, feature = "windows-agent-guard"))))]
+#[cfg(not(target_os = "macos"))]
 pub(super) fn command(
     _node: &Path, _home_dir: &Path, _executable: &Path,
 ) -> Result<Command, String> {

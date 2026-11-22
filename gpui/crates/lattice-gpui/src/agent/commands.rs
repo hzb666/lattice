@@ -50,6 +50,7 @@ pub fn handles(command: &str) -> bool {
     matches!(
         command,
         "synara_ensure_ready"
+            | "synara_refresh_workspace"
             | "synara_restart"
             | "synara_open_log_folder"
             | "synara_open_skills_folder"
@@ -113,6 +114,14 @@ pub fn invoke(
     let runtime = AgentRuntime::get(cx);
     match command {
         "synara_ensure_ready" => runtime.ensure_ready(root.to_path_buf(), cx),
+        "synara_refresh_workspace" => {
+            let root = root.to_path_buf();
+            let supervisor = runtime.supervisor().clone();
+            cx.background_spawn(async move {
+                supervisor.refresh_project_workspace(&root)?;
+                Ok(Value::Null)
+            })
+        }
         "synara_restart" => {
             let restart = runtime.restart(cx);
             cx.background_spawn(async move {

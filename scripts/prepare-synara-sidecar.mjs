@@ -7,6 +7,7 @@
 // The source is scripts/synara-runtime.json's `sourceDirectory` unless
 // SYNARA_SOURCE_DIR names another checkout. --allow-dirty accepts uncommitted
 // changes and a revision other than the pin (development builds only).
+// SYNARA_MXC_PACKAGE_DIR can point to the extracted pinned MXC package.
 import {
   chmodSync,
   cpSync,
@@ -25,6 +26,7 @@ import { codesign, signMachOTree, signingIdentity } from "./lib/codesign.mjs";
 import { pruneServerRuntime } from "./lib/synara-server-prune.mjs";
 import { capture, projectRoot, readJson, run, sha256, treeBytes, walkFiles, writeJson } from "./lib/util.mjs";
 import { NODE_RELEASES as TARGETS, prepareNodeRuntime } from "./lib/node-runtime.mjs";
+import { MXC_EXECUTOR, mxcExecutorMatches, stageMxcExecutor } from "./lib/mxc-executor.mjs";
 import { SYNARA_RUNTIME_INPUTS } from "./synara-runtime-inputs.mjs";
 import { patchCodexHostProcess } from "./synara-codex-host.mjs";
 
@@ -381,6 +383,7 @@ if (!release.archive.includes(runtimeConfig.nodeVersion)) {
   throw new Error("The pinned Node version and archive map are out of sync.");
 }
 const nodeExecutable = target.includes("windows") ? "node.exe" : "node";
+const windowsMxc = target === "x86_64-pc-windows-msvc";
 
 const head = git(["rev-parse", "HEAD"]);
 const dirtyStatus = git(["status", "--short"]);
@@ -394,6 +397,9 @@ if (!allowDirty && head !== runtimeConfig.revision) {
     `Synara is at ${head}, but Lattice pins ${runtimeConfig.revision}. Update scripts/synara-runtime.json intentionally after syncing and validating upstream.`,
   );
 }
+const migrationRuntimeSourceDigest = windowsMxc
+  ? sha256(readFileSync(join(sourceRoot, "apps/server/src/persistence/Migrations.ts"), "utf8"))
+  : null;
 
 // Everything that decides what gets staged: the pin, the host, the source
 // tree, and the repository files listed in SYNARA_RUNTIME_INPUTS (this script
@@ -405,6 +411,7 @@ const buildKeyHash = createHash("sha256")
 for (const input of SYNARA_RUNTIME_INPUTS) {
   buildKeyHash.update(readFileSync(resolve(projectRoot, input)));
 }
+if (windowsMxc) buildKeyHash.update(readFileSync(new URL("./lib/mxc-executor.mjs", import.meta.url)));
 const buildKey = buildKeyHash.digest("hex");
 const sourceDeviceHelperRoot = join(sourceRoot, "apps/server/native/device-helper");
 const existingManifestPath = join(runtimeRoot, "manifest.json");
@@ -422,6 +429,9 @@ if (existsSync(existingManifestPath)) {
     existingManifest.nodeRuntime === "standalone" &&
     existingManifest.nodeVersion === runtimeConfig.nodeVersion &&
     existingManifest.bibtexTidyVersion === bibtexTidyVersion &&
+    (!windowsMxc ||
+      (existingManifest.migrationRuntimeSourceDigest === migrationRuntimeSourceDigest &&
+        mxcExecutorMatches(runtimeRoot, existingManifest.mxcExecutor))) &&
     stagedFiles.every((path) => existsSync(join(runtimeRoot, path))) &&
     deviceHelperTreeMatches(sourceDeviceHelperRoot, join(runtimeRoot, "server/dist/device-helper"))
   ) {
@@ -488,20 +498,13 @@ if (!deviceHelperTreeMatches(sourceDeviceHelperRoot, join(sourceRoot, "apps/serv
   );
 }
 
-// Belt and braces: even with a working build command, refuse to stage artifacts
-// the build did not just write. Staging stale bytes under a fresh revision is
-// far worse than failing here.
-for (const artifact of ["apps/server/dist/index.mjs", "apps/server/dist/client/index.html"]) {
-  const artifactPath = join(sourceRoot, artifact);
-  if (!existsSync(artifactPath)) {
-    throw new Error(`The Synara build did not produce ${artifact}.`);
-  }
-  if (statSync(artifactPath).mtimeMs < buildStartedAt) {
-    throw new Error(
-      `${artifact} was not rewritten by the build, so the staged runtime would ship stale code. ` +
-        `Check that the workspace build command actually ran.`,
-    );
-  }
+const serverEntry = join(sourceRoot, "apps/server/dist/index.mjs");
+if (!existsSync(serverEntry) || statSync(serverEntry).mtimeMs < buildStartedAt) {
+  throw new Error("The Synara build did not produce a fresh apps/server/dist/index.mjs.");
+}
+const clientIndex = join(sourceRoot, "apps/server/dist/client/index.html");
+if (!existsSync(clientIndex) || fileSha256(clientIndex) !== fileSha256(webArtifact)) {
+  throw new Error("The Synara server build did not copy the current web client index.");
 }
 
 mkdirSync(cacheRoot, { recursive: true });
@@ -509,6 +512,7 @@ const stageRoot = mkdtempSync(join(dirname(runtimeRoot), ".synara-runtime-"));
 let synaraVersion;
 try {
   await prepareNodeRuntime(stageRoot, { cacheRoot, target, nodeVersion: runtimeConfig.nodeVersion });
+  if (windowsMxc) await stageMxcExecutor(stageRoot, process.env.SYNARA_MXC_PACKAGE_DIR?.trim());
   synaraVersion = installServerRuntime(stageRoot);
   restoreHelperExecutableBits(stageRoot);
   if (!deviceHelperTreeMatches(sourceDeviceHelperRoot, join(stageRoot, "server/dist/device-helper"))) {
@@ -544,6 +548,7 @@ try {
     target,
     nodeVersion: runtimeConfig.nodeVersion,
     nodeRuntime: "standalone",
+    ...(windowsMxc && { mxcExecutor: MXC_EXECUTOR, migrationRuntimeSourceDigest }),
     bibtexTidyVersion,
     synaraVersion,
     synaraRevision: dirtyStatus ? `${head}+dirty` : head,

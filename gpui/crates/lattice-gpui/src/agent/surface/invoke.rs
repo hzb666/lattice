@@ -82,6 +82,14 @@ impl SynaraSurface {
                 cx.spawn(async move |this, cx| {
                     let result = task.await;
                     this.update(cx, |this, cx| {
+                        #[cfg(windows)]
+                        if ensures && this.root.as_ref() == Some(&root) {
+                            this.isolated_history.enabled = result
+                                .as_ref()
+                                .ok()
+                                .and_then(|info| info.get("executionRoot"))
+                                .is_some_and(Value::is_string);
+                        }
                         // The frame may load the runtime's origin, and nothing
                         // else, before the page learns where it is.
                         if ensures

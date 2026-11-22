@@ -53,7 +53,7 @@ fn with_running_environment<T>(
 ) -> Option<T> {
     let mut running = running.lock().ok()?;
     let current = running.as_mut()?;
-    matches!(current.process.child.try_wait(), Ok(None)).then(|| inspect(&current.environment))
+    matches!(current.child.try_wait(), Ok(None)).then(|| inspect(&current.environment))
 }
 
 /// Tell every window the sidecar was restarted, so each asks for the new one.

@@ -17,3 +17,7 @@ msgstr "AI 助手无法启动"
 #: lattice-gpui/src/agent.rs
 msgid "The Agent is in a separate window"
 msgstr "AI 助手在单独的窗口中"
+
+#: lattice-gpui/src/agent/surface/isolated_history.rs
+msgid "Agent changes could not be applied to the project."
+msgstr "无法将 AI 助手的更改应用到项目。"

@@ -1,0 +1,185 @@
+//! Host-side filesystem boundary for a writable MXC project copy.
+
+mod native;
+mod snapshot;
+mod transaction;
+
+#[cfg(test)]
+mod tests;
+
+use std::collections::{BTreeSet, HashMap};
+use std::ffi::OsStr;
+use std::io;
+use std::path::{Path, PathBuf};
+use std::sync::{LazyLock, Mutex};
+
+use native::{Identity, Root};
+use snapshot::{Entries, Snapshot};
+
+const RECOVERY_PREFIX: &str = ".lattice-mxc-";
+
+pub(super) struct Workspace {
+    original: Root,
+    staging: Root,
+    baseline: Entries,
+    recovery_required: bool,
+    _lease: Lease,
+}
+
+impl Workspace {
+    /// Copy the project into a fresh stage. The caller owns stage cleanup.
+    pub(super) fn prepare(original: &Path, staging: &Path) -> Result<Self, String> {
+        Self::open(original, staging, false).map_err(|error| error.to_string())
+    }
+
+    /// Reuse an existing stage only when its project contents match the writer's tree.
+    /// The stage's root `.git` belongs to the sandbox and is reserved across restarts.
+    pub(super) fn reopen(original: &Path, staging: &Path) -> Result<Self, String> {
+        Self::open(original, staging, true).map_err(|error| error.to_string())
+    }
+
+    fn open(original: &Path, path: &Path, reuse: bool) -> io::Result<Self> {
+        let original = Root::open(original)?;
+        let (staging, created) = match Root::open(path) {
+            Ok(root) => (root, false),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                (Root::create_staging(path, &original)?, true)
+            }
+            Err(error) => return Err(error),
+        };
+        if original.overlaps(&staging) {
+            return Err(invalid("Project and staging roots overlap", &staging.path));
+        }
+        let lease = Lease::acquire(&original, &staging)?;
+        snapshot::validate_checkpoint_root(&staging)?;
+        let initial = Snapshot::read(&original)?;
+        let stage = Snapshot::read(&staging)?;
+        let mut recovery_required = false;
+        if reuse && !created {
+            if !snapshot::same_contents(&initial.entries, &stage.entries) {
+                return Err(invalid(
+                    "Existing staging differs from the project and needs recovery",
+                    &staging.path,
+                ));
+            }
+        } else {
+            if !stage.entries.is_empty() {
+                return Err(invalid(
+                    "Staging must be empty before preparing the workspace",
+                    &staging.path,
+                ));
+            }
+            let steps = snapshot::plan(&stage.entries, &initial, &stage, false)?;
+            transaction::run(&initial, &stage, steps, &mut recovery_required)?;
+        }
+        Ok(Self { original, staging, baseline: initial.entries, recovery_required, _lease: lease })
+    }
+
+    /// Publish a turn after the caller has drained all sandbox processes that can write staging.
+    /// An intermediate checkpoint must remain queued. File handles protect paths and bytes
+    /// individually, while the caller controls the consistency of an entire turn.
+    #[cfg(test)]
+    pub(super) fn reconcile(&mut self) -> Result<Vec<PathBuf>, String> {
+        self.reconcile_inner(None).map_err(|error| error.to_string())
+    }
+
+    pub(super) fn reconcile_checkpoint(
+        &mut self, paths: &BTreeSet<PathBuf>,
+    ) -> Result<Vec<PathBuf>, String> {
+        self.reconcile_inner(Some(paths)).map_err(|error| error.to_string())
+    }
+
+    fn reconcile_inner(&mut self, paths: Option<&BTreeSet<PathBuf>>) -> io::Result<Vec<PathBuf>> {
+        self.check_ready()?;
+        let stage = Snapshot::read(&self.staging)?;
+        let original = Snapshot::read(&self.original)?;
+        let steps = snapshot::plan(&self.baseline, &stage, &original, true)?;
+        if let Some(paths) = paths {
+            snapshot::check_checkpoint_paths(&steps, paths)?;
+        }
+        let applied = transaction::run(&stage, &original, steps, &mut self.recovery_required)?;
+        let mut paths = Vec::with_capacity(applied.len());
+        for (path, after) in applied {
+            if let Some(record) = after {
+                self.baseline.insert(path.clone(), record);
+            } else {
+                self.baseline.remove(&path);
+            }
+            paths.push(path);
+        }
+        Ok(paths)
+    }
+
+    /// Import writer changes before a turn, while staging is quiescent.
+    pub(super) fn refresh(&mut self) -> Result<(), String> {
+        self.refresh_inner().map_err(|error| error.to_string())
+    }
+
+    fn refresh_inner(&mut self) -> io::Result<()> {
+        self.check_ready()?;
+        let stage = Snapshot::read(&self.staging)?;
+        if !snapshot::same_contents(&self.baseline, &stage.entries) {
+            return Err(invalid("Staging has unpublished changes", &self.staging.path));
+        }
+        let original = Snapshot::read(&self.original)?;
+        let steps = snapshot::plan(&stage.entries, &original, &stage, false)?;
+        transaction::run(&original, &stage, steps, &mut self.recovery_required)?;
+        self.baseline = original.entries;
+        Ok(())
+    }
+
+    fn check_ready(&self) -> io::Result<()> {
+        if self.recovery_required {
+            return Err(invalid("Workspace needs writeback recovery", &self.original.path));
+        }
+        Ok(())
+    }
+}
+
+static ACTIVE: LazyLock<Mutex<HashMap<Identity, Vec<Identity>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+struct Lease([Identity; 2]);
+
+impl Lease {
+    fn acquire(original: &Root, staging: &Root) -> io::Result<Self> {
+        let ids = [native::identity(&original.directory)?, native::identity(&staging.directory)?];
+        let ancestries = [original.ancestry(), staging.ancestry()];
+        let mut active = ACTIVE.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        for (id, ancestors) in ids.iter().zip(&ancestries) {
+            if active.iter().any(|(root, chain)| ancestors.contains(root) || chain.contains(id)) {
+                return Err(invalid(
+                    "Workspace root overlaps another active workspace",
+                    &original.path,
+                ));
+            }
+        }
+        active.extend(ids.into_iter().zip(ancestries));
+        Ok(Self(ids))
+    }
+}
+
+impl Drop for Lease {
+    fn drop(&mut self) {
+        let mut active = ACTIVE.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        for id in self.0 {
+            active.remove(&id);
+        }
+    }
+}
+
+fn invalid(message: &str, path: &Path) -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidData, format!("{message}: {}", path.display()))
+}
+
+fn permitted_name(name: &OsStr) -> bool {
+    name.to_str().is_some_and(|text| {
+        let stem = text.split('.').next().unwrap_or_default();
+        let trimmed_stem = stem.trim_end_matches(' ');
+        !text.contains(['/', '\\'])
+            && text.encode_utf16().count() <= 255
+            && crate::platform_windows::valid_name(name)
+            && (trimmed_stem == stem
+                || crate::platform_windows::valid_name(OsStr::new(trimmed_stem)))
+    })
+}

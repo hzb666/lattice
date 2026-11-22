@@ -24,9 +24,9 @@ function TrellisAgentSurface({ synara, projectRoot, theme, appLocale, dropActive
   } = synara;
   // Recording navigation must not change src and reload an in-progress turn.
   const src = useMemo(() => origin
-    ? synaraEmbedUrl({ origin, authToken: runtime.authToken, projectRoot, theme, locale: appLocale })
+    ? synaraEmbedUrl({ origin, authToken: runtime.authToken, projectRoot, executionRoot: runtime.executionRoot, theme, locale: appLocale })
     : undefined,
-  [origin, runtime.authToken, projectRoot, theme, appLocale]);
+  [origin, runtime.authToken, runtime.executionRoot, projectRoot, theme, appLocale]);
   // A new src (or a new or removed iframe) is a document still loading; the
   // host holds what it sends until that document says embed-ready.
   const loading = frameMounted && src !== undefined;

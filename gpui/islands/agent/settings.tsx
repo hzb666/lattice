@@ -42,7 +42,7 @@ export function SettingsSurface(props: {
     ? synaraFrameUrl({
       origin: runtime.origin,
       path: "/settings",
-      workspaceRoot: props.projectRoot,
+      workspaceRoot: runtime.executionRoot ?? props.projectRoot,
       theme: props.theme,
       locale: props.locale,
       surface: "drawer",

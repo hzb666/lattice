@@ -14,10 +14,7 @@
 //! restarted) go to every Synara surface's page, as the Tauri backend emits
 //! them to every window, and the restart offer is the app's notice.
 
-use std::{
-    path::PathBuf,
-    sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex};
 
 use futures::{StreamExt as _, channel::mpsc};
 use gpui::{App, AppContext as _, Global, Task, WeakEntity};
@@ -103,11 +100,11 @@ impl AgentRuntime {
 
     /// Start the service if it is not running, off the main thread (a start
     /// verifies the sandbox and polls the service's health for seconds).
-    pub fn ensure_ready(&self, root: PathBuf, cx: &App) -> Task<Result<Value, String>> {
+    pub fn ensure_ready(&self, root: std::path::PathBuf, cx: &App) -> Task<Result<Value, String>> {
         let runtime = self.runtime.clone();
         cx.background_spawn(async move {
             runtime
-                .ensure_ready(Some(&root))
+                .ensure_project_ready(&root)
                 .and_then(|info| serde_json::to_value(info).map_err(|error| error.to_string()))
         })
     }

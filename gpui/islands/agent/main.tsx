@@ -105,7 +105,7 @@ import { agentDeckPresence, parseAgentTurnActivity, subscribeAgentDeckPresence }
 import { noteHostFileWrites } from "../../../src/agent/agent-host-writes";
 import { useAgentFileDrops } from "./drops";
 import { SYNARA_POPUP_OPEN, LATTICE_OUTSIDE_POINTER_DOWN } from "../../../src/agent/synara-popup-dismissal";
-import type { AgentGitWorkspaceView } from "../../../src/agent/synara-runtime";
+import { mapSynaraWorkspace, type AgentGitWorkspaceView } from "../../../src/agent/synara-runtime";
 import { isSynaraPermissionMode, persistSynaraThread, type AgentTurnReview } from "../../../src/app/app-synara-embed";
 import type { CanvasMode, EditorPosition, PaperSummary, ProjectSnapshot } from "../../../src/app-types";
 import type { ThemeAccent, ThemeTint, Translucency } from "../../../src/settings/theme-customization";
@@ -259,6 +259,7 @@ function Agent({ opened, workspace, visible, appearance, git, overleaf, deckRequ
     agentCommentsOptions: () => annotationsRef.current.commentsOptions(),
     annotationTools: () => annotationsRef.current.annotationTools(),
     projectDocumentCreator: () => createProjectDocument,
+    refreshWorkspace: () => host().request<void>("tauri:invoke", { command: "synara_refresh_workspace" }),
     onHistorySnapshot: (snapshot: { activeThreadId: string }) => {
       // The panel reopens on the thread its checkpoints are of.
       if (projectRootRef.current) persistSynaraThread(projectRootRef.current, snapshot.activeThreadId);
@@ -275,6 +276,7 @@ function Agent({ opened, workspace, visible, appearance, git, overleaf, deckRequ
     appearance: { theme, tint, accent: appearance.accent, translucency: appearance.translucency, translucent: appearance.translucent },
   });
   const { latest, deliverable, postMessage, requestRuntime, origin, frameRef, sourceControlFrameRef } = synara;
+  const { executionRoot } = synara.runtime;
   const dropActive = useAgentFileDrops(opened.surface === "agent", postMessage);
 
   // The Git workspace starts the runtime as the Tauri app's Git button does.
@@ -290,10 +292,11 @@ function Agent({ opened, workspace, visible, appearance, git, overleaf, deckRequ
       frame: () => frameRef.current?.contentWindow ?? null,
       origin,
       projectRoot: opened.projectRoot,
+      executionRoot,
       post: (message) => void postMessage(message),
     });
     return () => setDocumentToolTarget(null);
-  }, [frameRef, opened.projectRoot, opened.surface, origin, postMessage]);
+  }, [executionRoot, frameRef, opened.projectRoot, opened.surface, origin, postMessage]);
 
   // Open Slide's Ask AI, Apply comments and Draft a deck
   // (`onOpenSlideAgentRequest` in `use-document-surfaces.tsx`).
@@ -408,7 +411,10 @@ function Agent({ opened, workspace, visible, appearance, git, overleaf, deckRequ
       if (data?.type === "synara:agent-permission-mode" && isSynaraPermissionMode(data.mode)) bridgeHost.post("agent:permission-mode", { mode: data.mode });
       // A turn under way means the writer really asked the Agent something
       // (the Tauri host marks Get started's step on it).
-      const activity = parseAgentTurnActivity(event.data);
+      const reported = parseAgentTurnActivity(event.data);
+      const activity = reported && executionRoot
+        ? mapSynaraWorkspace(reported, executionRoot, opened.projectRoot)
+        : reported;
       if (activity?.state === "running" && activity.workspaceRoot === opened.projectRoot) {
         bridgeHost.post("agent:turn-started");
       }
@@ -418,7 +424,7 @@ function Agent({ opened, workspace, visible, appearance, git, overleaf, deckRequ
       for (const stop of stops) stop();
       window.removeEventListener("message", onMessage);
     };
-  }, [frameRef, opened.projectRoot, opened.surface, origin, sourceControlFrameRef]);
+  }, [executionRoot, frameRef, opened.projectRoot, opened.surface, origin, sourceControlFrameRef]);
 
   // The frame's permission mode, for the picker the owner draws in the
   // panel's header; none while the runtime is not up, as the Tauri header
@@ -443,6 +449,7 @@ function Agent({ opened, workspace, visible, appearance, git, overleaf, deckRequ
       origin,
       authToken: synara.runtime.authToken,
       projectRoot: opened.projectRoot,
+      executionRoot,
       theme,
       locale: opened.locale,
     } : null;

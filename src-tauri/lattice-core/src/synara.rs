@@ -1,8 +1,9 @@
 //! Supervisor for the bundled Synara agent sidecar.
 //!
 //! The sidecar is a loopback Node service started on demand by
-//! [`SynaraRuntime::ensure_ready`]. The process tree uses a platform write
-//! guard (`bibliography_guard`, `windows_guard`); the
+//! [`SynaraRuntime::ensure_ready`]. macOS launches under `bibliography_guard`.
+//! Windows has a separate MXC launcher and staged project writeback. Its
+//! release gate stays closed until the native integration is verified. The
 //! provider CLIs it spawns inherit the writer's proxy and provider settings
 //! (`environment`, from the login shell and the system proxy), which a
 //! restart picks up again (`restart`), and a default-off research-writing
@@ -18,24 +19,31 @@ mod proxy;
 mod proxy;
 mod restart;
 mod shell_env;
-#[cfg(all(windows, feature = "windows-agent-guard"))]
-mod windows_guard;
-#[cfg(all(windows, feature = "windows-agent-guard"))]
-pub use windows_guard::run_probe_if_requested as run_windows_guard_probe_if_requested;
+#[cfg(windows)]
+mod windows_projects;
+#[cfg(windows)]
+mod windows_sandbox;
+#[cfg(windows)]
+mod windows_workspace;
 
 use crate::host::{EventSink, Resources};
-use crate::sidecar::{terminate_process_group, NodeRuntime};
+#[cfg(any(not(windows), test))]
+use crate::sidecar::terminate_process_group;
+use crate::sidecar::NodeRuntime;
 use crate::wide_event::{self, Failure};
 #[cfg(target_os = "macos")]
 pub(crate) use bibliography_guard::AGENT_PROTECTION_SANDBOX_PROFILE;
 pub use environment::EnvironmentReport;
 use reqwest::blocking::Client;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use std::collections::BTreeSet;
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom};
 use std::net::{Ipv4Addr, TcpListener};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Stdio};
+#[cfg(not(windows))]
+use std::process::Stdio;
+use std::process::{Child, ExitStatus};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -62,6 +70,8 @@ pub struct SynaraRuntimeInfo {
     state: String,
     origin: Option<String>,
     auth_token: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    execution_root: Option<PathBuf>,
     message: Option<String>,
     startup_ms: Option<u64>,
     version: Option<String>,
@@ -83,16 +93,57 @@ struct PersistedServerRuntimeState {
 }
 
 struct RunningSynara {
-    process: AgentProcess,
+    child: SidecarProcess,
     /// What `ensure_ready` reports while the child is alive.
     info: SynaraRuntimeInfo,
     environment: environment::AgentEnvironment,
 }
 
-struct AgentProcess {
-    child: Child,
-    #[cfg(all(windows, feature = "windows-agent-guard"))]
-    _group: crate::platform_windows::TrackedGroup,
+enum SidecarProcess {
+    #[cfg(any(not(windows), test))]
+    Direct(Child),
+    #[cfg(windows)]
+    Sandboxed(windows_sandbox::SandboxedProcess),
+}
+
+impl SidecarProcess {
+    fn child(&mut self) -> &mut Child {
+        match self {
+            #[cfg(any(not(windows), test))]
+            Self::Direct(child) => child,
+            #[cfg(windows)]
+            Self::Sandboxed(process) => &mut process.child,
+        }
+    }
+
+    fn try_wait(&mut self) -> std::io::Result<Option<ExitStatus>> {
+        self.child().try_wait()
+    }
+
+    fn owns_listener(&mut self, state: &PersistedServerRuntimeState) -> bool {
+        match self {
+            #[cfg(any(not(windows), test))]
+            Self::Direct(child) => state.pid == child.id(),
+            #[cfg(windows)]
+            Self::Sandboxed(process) => {
+                state.origin == format!("http://127.0.0.1:{}", state.port)
+                    && process.verify_listener(state.pid, state.port).unwrap_or(false)
+            }
+        }
+    }
+
+    fn terminate(&mut self) {
+        match self {
+            #[cfg(any(not(windows), test))]
+            Self::Direct(child) => terminate_process_group(child),
+            #[cfg(windows)]
+            Self::Sandboxed(process) => {
+                if let Err(error) = process.terminate() {
+                    log::warn!("Could not stop the isolated agent process: {error}");
+                }
+            }
+        }
+    }
 }
 
 struct LogTail {
@@ -116,6 +167,8 @@ pub struct SynaraRuntime {
     events: Option<Arc<dyn EventSink>>,
     shell_prefetch: Arc<shell_env::Prefetch>,
     proxy_watch: OnceLock<()>,
+    #[cfg(windows)]
+    projects: windows_projects::Projects,
 }
 
 impl SynaraRuntime {
@@ -151,6 +204,8 @@ impl SynaraRuntime {
             events: Some(events),
             shell_prefetch,
             proxy_watch: OnceLock::new(),
+            #[cfg(windows)]
+            projects: windows_projects::Projects::default(),
         }
     }
 
@@ -161,6 +216,7 @@ impl SynaraRuntime {
             state: "ready".to_string(),
             origin: Some(origin.to_string()),
             auth_token: auth_token.map(str::to_string),
+            execution_root: None,
             message: None,
             startup_ms: Some(startup_ms),
             version: self.version.clone(),
@@ -168,7 +224,7 @@ impl SynaraRuntime {
         }
     }
 
-    pub fn ensure_ready(&self, workspace: Option<&Path>) -> Result<SynaraRuntimeInfo, String> {
+    pub fn ensure_ready(&self) -> Result<SynaraRuntimeInfo, String> {
         // A development origin (debug builds only) is a sidecar the developer
         // started themselves, outside the guard on every platform.
         if let Some(origin) = &self.external_origin {
@@ -179,6 +235,7 @@ impl SynaraRuntime {
                 state: "unsupported".to_string(),
                 origin: None,
                 auth_token: None,
+                execution_root: None,
                 message: Some(bibliography_guard::MISSING.to_string()),
                 startup_ms: None,
                 version: self.version.clone(),
@@ -188,15 +245,7 @@ impl SynaraRuntime {
         let mut running = self.running.lock().map_err(|_| UNAVAILABLE.to_string())?;
         let mut reason = "start";
         if let Some(current) = running.as_mut() {
-            if matches!(current.process.child.try_wait(), Ok(None)) {
-                #[cfg(all(windows, feature = "windows-agent-guard"))]
-                windows_guard::check_workspace(workspace.ok_or_else(|| UNAVAILABLE.to_string())?)
-                    .map_err(|error| {
-                    log::warn!(
-                        "Windows Agent write guard could not verify the project volume: {error}"
-                    );
-                    bibliography_guard::MISSING.to_string()
-                })?;
+            if matches!(current.child.try_wait(), Ok(None)) {
                 return Ok(current.info.clone());
             }
             // The managed child exited; start a new one.
@@ -218,16 +267,15 @@ impl SynaraRuntime {
             if let Some(error) = environment.shell_error() {
                 wide_event::record("login_shell_env", error.code());
             }
-            let (mut process, auth_token, startup_logs) = self.spawn(&environment, workspace)?;
-            let origin =
-                wait_until_ready(&mut process.child, &startup_logs, &self.home_dir, started)
-                    .inspect_err(|_| terminate_process_group(&mut process.child))?;
+            let (mut child, auth_token, startup_logs) = self.spawn(&environment)?;
+            let origin = wait_until_ready(&mut child, &startup_logs, &self.home_dir, started)
+                .inspect_err(|_| child.terminate())?;
             let startup_ms = started.elapsed().as_millis() as u64;
             let info = self.ready_info(&origin, Some(&auth_token), startup_ms);
-            Ok((process, info, environment))
+            Ok((child, info, environment))
         });
-        let (process, info, environment) = info?;
-        *running = Some(RunningSynara { process, info: info.clone(), environment });
+        let (child, info, environment) = info?;
+        *running = Some(RunningSynara { child, info: info.clone(), environment });
         drop(running);
         self.proxy_watch.get_or_init(|| {
             restart::watch_system_proxy(self.events.clone(), Arc::clone(&self.running))
@@ -240,15 +288,44 @@ impl SynaraRuntime {
         Ok(info)
     }
 
+    pub fn ensure_project_ready(&self, root: &Path) -> Result<SynaraRuntimeInfo, String> {
+        let info = self.ensure_ready()?;
+        #[cfg(windows)]
+        if info.state == "ready" && self.external_origin.is_none() {
+            return Ok(SynaraRuntimeInfo {
+                execution_root: Some(self.prepare_workspace(root)?),
+                ..info
+            });
+        }
+        let _ = root;
+        Ok(info)
+    }
+
+    pub fn refresh_project_workspace(&self, root: &Path) -> Result<(), String> {
+        #[cfg(windows)]
+        if self.external_origin.is_none() {
+            return self.refresh_workspace(root);
+        }
+        let _ = root;
+        Ok(())
+    }
+
+    pub fn reconcile_project_workspace(
+        &self, root: &Path, paths: &BTreeSet<PathBuf>,
+    ) -> Result<Vec<PathBuf>, String> {
+        #[cfg(windows)]
+        if self.external_origin.is_none() {
+            return self.apply_workspace(root, paths);
+        }
+        let _ = (root, paths);
+        Ok(Vec::new())
+    }
+
     /// Start the sidecar; returns its auth token and the stdout and stderr
     /// logs, with their lengths before this attempt started.
     fn spawn(
-        &self, environment: &environment::AgentEnvironment, workspace: Option<&Path>,
-    ) -> Result<(AgentProcess, String, [LogTail; 2]), String> {
-        #[cfg(all(windows, feature = "windows-agent-guard"))]
-        let workspace = workspace.ok_or_else(|| UNAVAILABLE.to_string())?;
-        #[cfg(not(all(windows, feature = "windows-agent-guard")))]
-        let _ = workspace;
+        &self, environment: &environment::AgentEnvironment,
+    ) -> Result<(SidecarProcess, String, [LogTail; 2]), String> {
         for (path, what) in
             [(&self.node.executable, "JavaScript runtime"), (&self.server_entry, "Synara service")]
         {
@@ -259,9 +336,12 @@ impl SynaraRuntime {
 
         fs::create_dir_all(&self.home_dir)
             .map_err(|error| format!("Could not create the agent data directory: {error}"))?;
-        preferences::initialize_research_writing_preference(&self.home_dir)?;
-        let _ = fs::remove_file(self.home_dir.join(RUNTIME_STATE_RELATIVE_PATH));
-        let log_dir = self.home_dir.join(SIDECAR_LOG_DIR);
+        #[cfg(not(windows))]
+        {
+            preferences::initialize_research_writing_preference(&self.home_dir)?;
+            let _ = fs::remove_file(self.home_dir.join(RUNTIME_STATE_RELATIVE_PATH));
+        }
+        let log_dir = self.sidecar_log_dir();
         fs::create_dir_all(&log_dir)
             .map_err(|error| format!("Could not create the agent log directory: {error}"))?;
         let startup_logs = ["sidecar.log", "sidecar-error.log"].map(|name| {
@@ -275,6 +355,9 @@ impl SynaraRuntime {
 
         let executable = std::env::current_exe()
             .map_err(|error| format!("Could not locate the app executable: {error}"))?;
+        #[cfg(windows)]
+        let mut command = std::process::Command::new(&self.node.executable);
+        #[cfg(not(windows))]
         let mut command =
             bibliography_guard::command(&self.node.executable, &self.home_dir, &executable)?;
         self.node.configure(&mut command);
@@ -305,25 +388,72 @@ impl SynaraRuntime {
             .env("SYNARA_AUTH_TOKEN", &auth_token)
             .env("SYNARA_DESKTOP_SHUTDOWN_TOKEN", shutdown_token)
             .env("SYNARA_DESKTOP_PARENT_PID", std::process::id().to_string())
-            .env("SYNARA_TELEMETRY_ENABLED", "false")
-            .stdin(Stdio::null())
-            .stdout(Stdio::from(stdout))
-            .stderr(Stdio::from(stderr));
+            .env("SYNARA_TELEMETRY_ENABLED", "false");
         environment.apply(&mut command);
         // After the shell's variables, so Lattice's Pi configuration wins.
         crate::model_endpoint::configure_sidecar(&mut command, &self.home_dir, &executable);
-        #[cfg(all(windows, feature = "windows-agent-guard"))]
-        let started = windows_guard::spawn(&mut command, workspace);
-        #[cfg(not(all(windows, feature = "windows-agent-guard")))]
-        let started = command.spawn().map(|child| AgentProcess { child });
-        let process = started
+        #[cfg(windows)]
+        let child = self.spawn_sandboxed(&command, &executable, stdout, stderr)?;
+        #[cfg(not(windows))]
+        let child = command
+            .stdin(Stdio::null())
+            .stdout(stdout)
+            .stderr(stderr)
+            .spawn()
+            .map(SidecarProcess::Direct)
             .map_err(|error| format!("Could not start the built-in agent service: {error}"))?;
-        Ok((process, auth_token, startup_logs))
+        Ok((child, auth_token, startup_logs))
+    }
+
+    #[cfg(windows)]
+    fn workspace_parent(&self) -> PathBuf {
+        self.home_dir.with_file_name("synara-workspaces")
+    }
+
+    #[cfg(windows)]
+    fn control_dir(&self) -> PathBuf {
+        self.home_dir.with_file_name("synara-control")
+    }
+
+    #[cfg(windows)]
+    fn spawn_sandboxed(
+        &self, command: &std::process::Command, executable: &Path, stdout: File, stderr: File,
+    ) -> Result<SidecarProcess, String> {
+        let runtime_root = self
+            .node
+            .executable
+            .parent()
+            .and_then(Path::parent)
+            .ok_or_else(|| "The bundled agent runtime has no directory.".to_string())?;
+        let staging_parent = self.workspace_parent();
+        let control_dir = self.control_dir();
+        self.lock_workspace_store()?;
+        fs::create_dir_all(&staging_parent)
+            .and_then(|_| fs::create_dir_all(&control_dir))
+            .map_err(|error| {
+                format!("Could not prepare the isolated agent directories: {error}")
+            })?;
+        let config = windows_sandbox::SandboxConfig {
+            runtime_root,
+            host_executable: executable,
+            agent_home: &self.home_dir,
+            staging_parent: &staging_parent,
+            control_dir: &control_dir,
+            original: None,
+            stdout,
+            stderr,
+        };
+        windows_sandbox::spawn(command, config)
+            .map(SidecarProcess::Sandboxed)
+            .map_err(|error| format!("Could not start the isolated agent service: {error}"))
     }
 
     /// Under the agent home: the sidecar's logs, which a startup failure
     /// quotes from. A runtime that failed before writing any has none.
     pub fn sidecar_log_dir(&self) -> PathBuf {
+        #[cfg(windows)]
+        return self.control_dir().join(SIDECAR_LOG_DIR);
+        #[cfg(not(windows))]
         self.home_dir.join(SIDECAR_LOG_DIR)
     }
 
@@ -332,7 +462,7 @@ impl SynaraRuntime {
         // sidecar to release its port.
         if let Ok(mut running) = self.running.lock() {
             if let Some(mut running) = running.take() {
-                terminate_process_group(&mut running.process.child);
+                running.child.terminate();
             }
         }
     }
@@ -365,8 +495,26 @@ pub fn task_relay_request(
     runtime: &SynaraRuntime, route: &str, action: &str, task_id: Option<&str>,
     payload: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-    let workspace = payload.get("workspaceRoot").and_then(serde_json::Value::as_str).map(Path::new);
-    let info = runtime.ensure_ready(workspace)?;
+    #[cfg(windows)]
+    let (info, payload) = match payload.get("workspaceRoot").and_then(serde_json::Value::as_str) {
+        Some(root) if matches!(action, "start" | "cancel") => {
+            let root = Path::new(root);
+            let info = runtime.ensure_project_ready(root)?;
+            if let Some(execution) = &info.execution_root {
+                if action == "start" {
+                    runtime.refresh_project_workspace(root)?;
+                }
+                let mut payload = payload;
+                payload["workspaceRoot"] = serde_json::json!(execution);
+                (info, payload)
+            } else {
+                (info, payload)
+            }
+        }
+        _ => (runtime.ensure_ready()?, payload),
+    };
+    #[cfg(not(windows))]
+    let info = runtime.ensure_ready()?;
     // Where the agent is off (`bibliography_guard`), say why.
     let origin = info.origin.ok_or_else(|| {
         info.message.clone().unwrap_or_else(|| "The agent service is unavailable.".to_string())
@@ -465,7 +613,7 @@ fn read_json<T: DeserializeOwned>(path: &Path) -> Option<T> {
 }
 
 fn wait_until_ready(
-    child: &mut Child, startup_logs: &[LogTail], home_dir: &Path, started: Instant,
+    child: &mut SidecarProcess, startup_logs: &[LogTail], home_dir: &Path, started: Instant,
 ) -> Result<String, String> {
     let runtime_state_path = home_dir.join(RUNTIME_STATE_RELATIVE_PATH);
     // The bundled service only listens on loopback; a proxied health check
@@ -487,7 +635,7 @@ fn wait_until_ready(
             ));
         }
         if let Some(runtime) = read_json::<PersistedServerRuntimeState>(&runtime_state_path) {
-            if runtime.pid == child.id() && health_is_ready(&client, &runtime.origin) {
+            if child.owns_listener(&runtime) && health_is_ready(&client, &runtime.origin) {
                 return Ok(runtime.origin.trim_end_matches('/').to_string());
             }
         }
@@ -558,6 +706,28 @@ fn health_is_ready(client: &Client, origin: &str) -> bool {
 mod tests {
     use super::*;
     use crate::test_support::TempDir;
+
+    #[cfg(all(windows, target_arch = "x86_64"))]
+    #[test]
+    #[ignore = "requires a staged Synara and a Windows build with MXC loopback support"]
+    fn bundled_windows_sidecar_starts_and_stops_inside_mxc() -> Result<(), String> {
+        let bundle_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .ok_or("Missing runtime resources directory")?
+            .to_path_buf();
+        let scratch = tempfile::tempdir().map_err(|error| error.to_string())?;
+        let resources = Resources {
+            bundle_dir,
+            app_data_dir: scratch.path().join("data"),
+            app_cache_dir: scratch.path().join("cache"),
+        };
+        let runtime = SynaraRuntime::new(&resources, Arc::new(|_: &str, _: serde_json::Value| {}));
+        let (mut child, _, logs) = runtime.spawn(&environment::AgentEnvironment::default())?;
+        let ready = wait_until_ready(&mut child, &logs, &runtime.home_dir, Instant::now());
+        child.terminate();
+        assert!(child.try_wait().map_err(|error| error.to_string())?.is_some());
+        ready.map(|_| ())
+    }
 
     #[test]
     fn task_relay_preserves_payload_routes_and_server_errors() {
@@ -658,7 +828,7 @@ mod tests {
         let runtime = SynaraRuntime::default();
         let child = std::process::Command::new("sleep").arg("30").spawn().unwrap();
         *runtime.running.lock().unwrap() = Some(RunningSynara {
-            process: AgentProcess { child },
+            child: SidecarProcess::Direct(child),
             info: runtime.ready_info(&origin, Some("launch-2"), 0),
             environment: environment::AgentEnvironment::default(),
         });
@@ -670,8 +840,8 @@ mod tests {
             serde_json::json!({}),
         );
         let mut running = runtime.running.lock().unwrap().take().unwrap();
-        let _ = running.process.child.kill();
-        let _ = running.process.child.wait();
+        let _ = running.child.child().kill();
+        let _ = running.child.child().wait();
         let answer = answer.unwrap();
         assert_eq!(answer["threadId"], "repair:one");
         assert_eq!(answer["runtimeSession"], "launch-2");
@@ -679,12 +849,12 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(any(target_os = "macos", all(windows, feature = "windows-agent-guard"))))]
+    #[cfg(not(target_os = "macos"))]
     fn stays_off_without_a_bibliography_guard() {
         let root = TempDir::new("synara-unguarded");
         let mut runtime = SynaraRuntime::default();
         runtime.home_dir = root.join("synara");
-        let info = runtime.ensure_ready(None).unwrap();
+        let info = runtime.ensure_ready().unwrap();
         assert_eq!(info.state, "unsupported");
         assert_eq!(info.message.as_deref(), Some(bibliography_guard::MISSING));
         assert!(info.origin.is_none() && info.auth_token.is_none());

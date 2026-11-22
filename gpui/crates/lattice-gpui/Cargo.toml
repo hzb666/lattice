@@ -12,7 +12,6 @@ license.workspace = true
 # covered. GPUI exposes that read-back only to its test support, so this is
 # never part of a release build.
 offscreen-shots = ["gpui/test-support", "gpui_platform/test-support"]
-windows-agent-guard = ["lattice-core/windows-agent-guard"]
 
 [dependencies]
 anyhow.workspace = true

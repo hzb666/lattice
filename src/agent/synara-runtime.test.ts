@@ -3,6 +3,7 @@ import {
   agentGitWorkspacePath,
   LATTICE_AGENT_COMPILE_RESULT,
   LATTICE_PROJECT_HISTORY,
+  mapSynaraWorkspace,
   normalizeSynaraOrigin,
   parseAgentProjectHistorySnapshot,
   parseAgentCompileResultMessage,
@@ -11,6 +12,22 @@ import {
 } from "./synara-runtime";
 
 describe("Synara runtime URLs", () => {
+  it("maps only the active Windows workspace in protocol messages", () => {
+    const project = "D:\\Manuscripts\\April";
+    const copy = "C:\\Lattice\\Workspaces\\April";
+    const context = {
+      type: "lattice:host-context",
+      workspaceRoot: "d:/manuscripts/April/",
+      editorComments: { workspaceRoot: project, path: "paper.tex" },
+      path: "paper.tex",
+    };
+    expect(mapSynaraWorkspace(context, project, copy)).toEqual({
+      ...context, workspaceRoot: copy, editorComments: { workspaceRoot: copy, path: "paper.tex" },
+    });
+    expect(mapSynaraWorkspace(context, copy, project)).toBeNull();
+    expect(mapSynaraWorkspace({ type: "synara:embed-ready" }, copy, project)).toEqual({ type: "synara:embed-ready" });
+  });
+
   it("accepts only strict, redacted compile result relays", () => {
     const message = { type: LATTICE_AGENT_COMPILE_RESULT, version: 1, threadId: "t", turnId: "u",
       checkpointRef: "refs/lattice/checkpoints/u", compiledAt: "2026-08-14T10:00:00Z",

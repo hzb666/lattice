@@ -11,6 +11,7 @@ export interface SynaraRuntimeInfo {
   state: SynaraRuntimeState;
   origin: string | null;
   authToken: string | null;
+  executionRoot?: string;
   message: string | null;
   startupMs: number | null;
   version: string | null;
@@ -178,6 +179,23 @@ export function normalizeSynaraOrigin(value: string | null | undefined): string 
   } catch {
     return null;
   }
+}
+
+export function mapSynaraWorkspace<T extends object>(message: T, source: string, target: string): T | null {
+  if (!("workspaceRoot" in message) || source === target) return message;
+  const root = message.workspaceRoot;
+  if (typeof root !== "string" || windowsWorkspaceKey(root) !== windowsWorkspaceKey(source)) return null;
+  const mapped = { ...message, workspaceRoot: target };
+  if ("editorComments" in mapped && mapped.editorComments && typeof mapped.editorComments === "object") {
+    const editorComments = mapSynaraWorkspace(mapped.editorComments, source, target);
+    if (editorComments === null) return null;
+    return { ...mapped, editorComments };
+  }
+  return mapped;
+}
+
+function windowsWorkspaceKey(path: string): string {
+  return path.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
 }
 
 const FILE_POSITION_SUFFIX_PATTERN = /:\d+(?::\d+)?$/;

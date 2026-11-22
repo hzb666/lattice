@@ -32,12 +32,13 @@ export type SynaraFrameContext = {
   origin: string;
   authToken: string | null;
   projectRoot: string;
+  executionRoot?: string;
   theme: "light" | "dark";
   locale: AppLocale;
 };
 
-function frameUrl({ projectRoot, ...frame }: SynaraFrameContext, surface: "chrome" | "drawer", path: string): string {
-  return synaraFrameUrl({ ...frame, path, workspaceRoot: projectRoot, surface, hostOrigin: window.location.origin });
+function frameUrl({ projectRoot, executionRoot, ...frame }: SynaraFrameContext, surface: "chrome" | "drawer", path: string): string {
+  return synaraFrameUrl({ ...frame, path, workspaceRoot: executionRoot ?? projectRoot, surface, hostOrigin: window.location.origin });
 }
 
 export function synaraEmbedUrl(frame: SynaraFrameContext): string {

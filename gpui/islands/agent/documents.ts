@@ -24,6 +24,7 @@
 import { host } from "../shared/host";
 import { toMessage } from "../../../src/app-utils";
 import { runAgentTool, toolError } from "../../../src/agent/agent-protocol";
+import { mapSynaraWorkspace } from "../../../src/agent/synara-runtime";
 import { executeAgentCanvasToolRequest, parseAgentCanvasToolRequest } from "../../../src/agent/agent-canvas-tools";
 import { executeAgentSpreadsheetToolRequest, parseAgentSpreadsheetToolRequest } from "../../../src/agent/agent-spreadsheet-tools";
 import {
@@ -110,6 +111,7 @@ type Target = {
   frame: () => Window | null;
   origin: string | null;
   projectRoot: string | null;
+  executionRoot?: string;
   post: (message: object) => void;
 };
 
@@ -125,7 +127,10 @@ export function setDocumentToolTarget(next: Target | null) {
 window.addEventListener("message", (event) => {
   const current = target;
   if (!current?.origin || event.origin !== current.origin || event.source !== current.frame()) return;
-  const routed = documentToolRoute(event.data);
+  const request = current.executionRoot && current.projectRoot
+    ? mapSynaraWorkspace(event.data, current.executionRoot, current.projectRoot)
+    : event.data;
+  const routed = request && documentToolRoute(request);
   if (!routed) return;
   event.stopImmediatePropagation();
   void runDocumentTool(routed.route, routed.request, current.projectRoot).then((result) => {
