@@ -32,10 +32,22 @@ pub fn summary(result: &OverleafSyncResult) -> String {
         )
         .into();
     }
-    if result.unresolved_conflicts.is_empty() {
+    let mut paths = Vec::new();
+    for path in result
+        .conflicts
+        .iter()
+        .filter(|item| item.markers)
+        .map(|item| &item.path)
+        .chain(&result.unresolved_conflicts)
+    {
+        if !paths.contains(&path.as_str()) {
+            paths.push(path.as_str());
+        }
+    }
+    if paths.is_empty() {
         t!("Overleaf: already up to date.").into()
     } else {
-        let files = result.unresolved_conflicts.join(", ");
+        let files = paths.join(", ");
         t!(
             "Overleaf: waiting on conflict resolution in {files}.",
             files = &files
@@ -270,6 +282,23 @@ mod tests {
         assert_eq!(summary(&synced), "Overleaf: pulled 1, pushed 0.");
         synced.merged = vec!["b.tex".into()];
         assert_eq!(summary(&synced), "Overleaf: pulled 1, pushed 0, merged 1.");
+    }
+
+    #[test]
+    fn the_summary_counts_new_text_conflicts_once() {
+        let mut synced = result();
+        synced.conflicts.push(OverleafConflict {
+            path: "main.tex".into(),
+            set_aside: String::new(),
+            markers: false,
+            kept: Some(ConflictSide::Overleaf),
+        });
+        assert_eq!("Overleaf: already up to date.", summary(&synced));
+        synced.conflicts[0].markers = true;
+        let expected = "Overleaf: waiting on conflict resolution in main.tex.";
+        assert_eq!(expected, summary(&synced));
+        synced.unresolved_conflicts.push("main.tex".into());
+        assert_eq!(expected, summary(&synced));
     }
 
     #[test]

@@ -172,12 +172,14 @@ pub(crate) fn refuse_keyboard_while_hidden(_: &WebView, _: &gpui::Window) {}
 /// function keys' `NSEvent.characters` (NSUpArrowFunctionKey U+F700 to
 /// NSModeSwitchFunctionKey U+F747; ← is U+F702). The rest of the private-use
 /// area is text: ⌥⇧K types , and icon fonts live there.
-pub fn is_key_control_character(character: char) -> bool {
+#[cfg(any(target_os = "macos", test))]
+fn is_key_control_character(character: char) -> bool {
     matches!(character, '\u{0}'..='\u{8}' | '\u{B}' | '\u{C}' | '\u{E}'..='\u{1F}' | '\u{7F}' | '\u{F700}'..='\u{F747}')
 }
 
 /// Text committed to the page, without the keys' control characters.
-pub fn without_key_control_characters(text: &str) -> std::borrow::Cow<'_, str> {
+#[cfg(any(target_os = "macos", test))]
+fn without_key_control_characters(text: &str) -> std::borrow::Cow<'_, str> {
     if text.chars().any(is_key_control_character) {
         text.chars()
             .filter(|&c| !is_key_control_character(c))

@@ -249,7 +249,6 @@ impl SynaraSurface {
         }
     }
 
-    #[cfg(target_os = "macos")]
     pub fn island(&self) -> Option<&Entity<Island>> {
         self.island.as_ref()
     }

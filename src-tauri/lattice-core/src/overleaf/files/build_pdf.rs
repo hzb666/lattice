@@ -14,7 +14,7 @@
 //! build itself and so must have. A file already on Overleaf under such a
 //! name stays there untouched; it simply never comes down.
 
-use super::{is_excluded, APP_FOLDERS};
+use super::is_excluded;
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
@@ -68,7 +68,7 @@ fn sources(root: &Path) -> Vec<(String, String)> {
     let walker = walkdir::WalkDir::new(root).into_iter().filter_entry(|entry| {
         entry.depth() == 0
             || !(entry.file_type().is_dir()
-                && APP_FOLDERS.contains(&entry.file_name().to_string_lossy().as_ref()))
+                && crate::project::is_internal_project_component(entry.file_name()))
     });
     walker
         .filter_map(Result::ok)

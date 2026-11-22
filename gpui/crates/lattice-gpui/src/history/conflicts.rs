@@ -49,6 +49,7 @@ const MIDDLE: &str = "=======";
 const END: &str = ">>>>>>>";
 
 fn is_marker(line: &str, marker: &str) -> bool {
+    let line = line.strip_suffix('\r').unwrap_or(line);
     line == marker
         || line
             .strip_prefix(marker)
@@ -209,6 +210,16 @@ mod tests {
         assert_eq!(
             resolve_conflicts(content, &HashMap::from([(index, ConflictChoice::Ours)])),
             "a\nb"
+        );
+    }
+
+    #[test]
+    fn resolves_crlf_markers_without_changing_line_endings() {
+        let content = DIFF3.replace('\n', "\r\n");
+        let index = conflict_hunks(&content)[0].index;
+        assert_eq!(
+            "intro\r\nmine\r\ntheirs\r\noutro",
+            resolve_conflicts(&content, &HashMap::from([(index, ConflictChoice::Both)]))
         );
     }
 

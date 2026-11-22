@@ -295,7 +295,7 @@ impl Panel for SynaraPanel {
         let separate = (cfg!(target_os = "macos") && surface.root().is_some()).then(|| {
             IconButton::new("agent-open-window", Icon::SQUARE_ARROW_OUT_UP_RIGHT)
                 .radius(TAB_RADIUS)
-                .surface(Surface::SidePanel)
+                .surface(Surface::Chrome)
                 .tooltip(t!("Open in separate window"))
                 .on_click(cx.listener(|this, _, _, cx| this.detach(cx)))
         });

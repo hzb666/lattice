@@ -111,6 +111,7 @@ pub fn present_tabs(cx: &mut App) {
                 dirty: false,
                 surface: Surface::Sheet,
                 document: true,
+                frosted: false,
             }
         } else if view.clone().downcast::<BuildPanel>().is_ok() {
             look(Icon::HAMMER, Surface::Sheet)
