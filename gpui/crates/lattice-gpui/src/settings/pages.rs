@@ -79,6 +79,7 @@ pub fn drawn(tab: SettingsTab) -> SettingsTab {
         | SettingsTab::Api
         | SettingsTab::Usage
         | SettingsTab::ModelEndpoint
+        | SettingsTab::AgentDisplay
         | SettingsTab::Environment
         | SettingsTab::Literature
         | SettingsTab::Acknowledgements
@@ -103,6 +104,7 @@ pub fn draw(
             super::providers_pane::render(surface, dialog.tab, width.narrow_dialog, cx)
         }
         SettingsTab::ModelEndpoint => super::model_endpoint_pane::render(dialog, width, window, cx),
+        SettingsTab::AgentDisplay => super::agent_display_pane::render(dialog, width, cx),
         SettingsTab::Environment => super::environment_pane::render(dialog, width, cx),
         SettingsTab::Literature => super::literature_pane::render(dialog, width, window, cx),
         SettingsTab::Acknowledgements => super::acknowledgements::render(dialog, width, window, cx),

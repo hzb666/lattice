@@ -57,8 +57,8 @@ impl Entry {
 /// The index in the interface language now.
 pub fn entries(has_project: bool, known_author: Option<&str>) -> Vec<Entry> {
     use SettingsTab::{
-        Acknowledgements, Agent, Api, Appearance, Doctor, Editor, Environment, Literature, Logs,
-        Mcp, ModelEndpoint, Overleaf, Usage,
+        Acknowledgements, Agent, AgentDisplay, Api, Appearance, Doctor, Editor, Environment,
+        Literature, Logs, Mcp, ModelEndpoint, Overleaf, Usage,
     };
     let appearance = t!("Appearance");
     let editor = t!("Editor & builds");
@@ -245,8 +245,13 @@ pub fn entries(has_project: bool, known_author: Option<&str>) -> Vec<Entry> {
     let agent = t!("Agent");
     let endpoint = t!("Model endpoint");
     let environment = t!("Environment");
+    let display = t!("Display");
     out.extend([
         Entry::page(Agent, t!("Providers"), agent).terms(t!("Default provider")),
+        Entry::page(AgentDisplay, display, agent),
+        Entry::row(AgentDisplay, display, "agent-font-size", t!("Agent font size"))
+            .terms(t!("text size zoom larger smaller chat"))
+            .description(t!("The Agent’s conversation and composer, in the panel and in its own window. The editors keep their own size.")),
         Entry::page(Mcp, t!("MCP"), agent),
         Entry::page(Api, t!("Skills"), agent),
         Entry::page(Usage, t!("Usage & limits"), agent)
@@ -455,6 +460,7 @@ mod tests {
             ("skills", SettingsTab::Api),
             ("quota", SettingsTab::Usage),
             ("anthropic", SettingsTab::ModelEndpoint),
+            ("agent font", SettingsTab::AgentDisplay),
             ("https_proxy", SettingsTab::Environment),
             ("crossref", SettingsTab::Literature),
             ("third-party", SettingsTab::Acknowledgements),

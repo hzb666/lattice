@@ -1,7 +1,23 @@
+#: lattice-gpui/src/settings/agent_display_pane.rs
+msgid "Agent font size"
+msgstr "AI 助手字号"
+
 #: lattice-gpui/src/settings/editor_pane.rs
 msgid "Could not save the setting"
 msgstr "设置没保存成功"
 
+#: lattice-gpui/src/settings/agent_display_pane.rs
+msgid "Display"
+msgstr "显示"
+
+#: lattice-gpui/src/settings/agent_display_pane.rs
+msgid "The Agent’s conversation and composer, in the panel and in its own window. The editors keep their own size."
+msgstr "AI 助手面板及其独立窗口中的对话和输入框。编辑器保持各自的字号。"
+
 #: lattice-gpui/src/settings/logs_export.rs
 msgid "This run keeps no log folder."
 msgstr "此次运行不保留日志文件夹。"
+
+#: lattice-gpui/src/settings/agent_display_pane.rs
+msgid "text size zoom larger smaller chat"
+msgstr "文字大小 字体 缩放 放大 缩小 对话"
