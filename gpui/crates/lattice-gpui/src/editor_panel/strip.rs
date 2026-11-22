@@ -59,7 +59,7 @@ impl Panel for EditorPanel {
                     gpui::StyleRefinement::default()
                         .flex_none()
                         .w(width)
-                        .h(px(24.)),
+                        .h(px(28.)),
                 )
                 .into_any_element(),
         )

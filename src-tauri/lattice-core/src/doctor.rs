@@ -97,6 +97,8 @@ pub fn run(root: Option<&Path>) -> DoctorReport {
             )
         }
     });
+    #[cfg(windows)]
+    checks.push(mestrenova_check());
 
     checks.push(kpsewhich_check(
         "conference-fonts",
@@ -115,6 +117,22 @@ pub fn run(root: Option<&Path>) -> DoctorReport {
         });
 
     DoctorReport { ok: required_ok, summary: format_summary(&checks, required_ok), checks }
+}
+
+#[cfg(windows)]
+fn mestrenova_check() -> DoctorCheck {
+    let error = match chemex_cli::mestrenova_status() {
+        Ok(Some((path, version))) => {
+            return checked("mestrenova", path.display().to_string(), true, version);
+        }
+        Ok(None) => "Not found; set CHEMEX_MESTRENOVA to the executable path.".into(),
+        Err(error) => error.to_string(),
+    };
+    coded(
+        check("mestrenova", format!("MestReNova: {error}"), false),
+        "managed-tool-failed",
+        &[("error", &error)],
+    )
 }
 
 /// The root document and bibliography exist, and the packages of the
@@ -222,8 +240,15 @@ fn kpsewhich_check(
     let mut missing = Vec::new();
     for file in files {
         match kpsewhich(file) {
-            Some(path) => located.push(format!("{file} → {}", path.display())),
-            None => missing.push(*file),
+            Ok(Some(path)) => located.push(format!("{file} → {}", path.display())),
+            Ok(None) => missing.push(*file),
+            Err(error) => {
+                return check(
+                    name,
+                    format!("Could not verify {subject} (kpsewhich {file}: {error})."),
+                    false,
+                );
+            }
         }
     }
     if missing.is_empty() {
@@ -287,21 +312,23 @@ fn project_pdf_fonts(root: &Path) -> Option<DoctorCheck> {
     })
 }
 
-/// Whether TeX can find `name`, such as a package a build's advice may offer
-/// to install.
+/// Only offer a package install when `kpsewhich` confirms the file is missing.
 pub(crate) fn tex_file_installed(name: &str) -> bool {
-    kpsewhich(name).is_some()
+    !matches!(kpsewhich(name), Ok(None))
 }
 
 /// Where kpsewhich finds `name`, if that file can also be opened.
-fn kpsewhich(name: &str) -> Option<PathBuf> {
-    let output = commands::command("kpsewhich").arg(name).output().ok()?;
+fn kpsewhich(name: &str) -> Result<Option<PathBuf>, String> {
+    let output = commands::output_with_timeout(
+        commands::command("kpsewhich").arg(name),
+        commands::TOOL_PROBE_TIMEOUT,
+    )?;
     let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
     if !output.status.success() || path.is_empty() {
-        return None;
+        return Ok(None);
     }
     let path = PathBuf::from(path);
-    std::fs::File::open(&path).ok().map(|_| path)
+    Ok(std::fs::File::open(&path).ok().map(|_| path))
 }
 
 fn check(name: &str, detail: String, ok: bool) -> DoctorCheck {
@@ -364,6 +391,8 @@ mod tests {
     fn doctor_reports_tex_environment() {
         let report = run(None);
         assert!(report.summary.contains("Lattice TeX doctor"));
+        #[cfg(windows)]
+        assert!(report.checks.iter().any(|check| check.name == "mestrenova"));
     }
 
     #[test]

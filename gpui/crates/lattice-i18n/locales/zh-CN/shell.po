@@ -59,6 +59,26 @@ msgid "Formula unavailable"
 msgstr "分子式不可用"
 
 #: lattice-gpui/src/shell/molecule.rs
+msgid "List"
+msgstr "列表"
+
+#: lattice-gpui/src/shell/molecule.rs
+msgid "Gallery"
+msgstr "画廊"
+
+#: lattice-gpui/src/shell/molecule.rs
+msgid "Rendering molecule preview…"
+msgstr "正在渲染分子预览…"
+
+#: lattice-gpui/src/shell/molecule.rs
+msgid "Select a molecule to preview"
+msgstr "选择一个分子进行预览"
+
+#: lattice-gpui/src/shell/molecule.rs
+msgid "Could not render molecule preview"
+msgstr "无法渲染分子预览"
+
+#: lattice-gpui/src/shell/molecule.rs
 msgid "Same structure as {target}"
 msgstr "结构与 {target} 相同"
 
@@ -69,6 +89,42 @@ msgstr "无法识别结构：{reason}"
 #: lattice-gpui/src/shell/molecule.rs
 msgid "Not compared: {reason}"
 msgstr "未参与判重：{reason}"
+
+#: lattice-gpui/src/shell/spectrum.rs
+msgid "Spectrum"
+msgstr "谱图"
+
+#: lattice-gpui/src/shell/spectrum.rs
+msgid "Show Spectrum panel"
+msgstr "显示谱图面板"
+
+#: lattice-gpui/src/shell/spectrum.rs
+msgid "Open a project to browse spectra"
+msgstr "打开项目以浏览谱图"
+
+#: lattice-gpui/src/shell/spectrum.rs
+msgid "{count} spectrum files"
+msgstr "{count} 个谱图文件"
+
+#: lattice-gpui/src/shell/spectrum.rs
+msgid "Exporting with MestReNova…"
+msgstr "正在使用 MestReNova 导出…"
+
+#: lattice-gpui/src/shell/spectrum.rs
+msgid "No MestReNova files in this project"
+msgstr "此项目中没有 MestReNova 文件"
+
+#: lattice-gpui/src/shell/spectrum.rs
+msgid "Choose a spectrum file to preview"
+msgstr "选择一个谱图文件进行预览"
+
+#: lattice-gpui/src/shell/spectrum.rs
+msgid "PDF preview is unavailable"
+msgstr "PDF 预览不可用"
+
+#: lattice-gpui/src/shell/spectrum.rs
+msgid "Could not render the spectrum preview"
+msgstr "无法渲染谱图预览"
 
 #: lattice-gpui/src/shell/chemdraw.rs
 msgid "Exporting with ChemDraw…"
@@ -289,3 +345,28 @@ msgstr "{0} — Lattice（GPUI 预览版）"
 #: lattice-gpui/src/shell/pdf_notes.rs
 msgid "{name} is opening live with Overleaf beside the PDF. Comment again once it has opened."
 msgstr "{name} 正在 PDF 旁以 Overleaf 实时编辑打开，打开后再评论一次。"
+
+#: lattice-gpui/src/shell/commands/projects.rs
+msgid "Open recent project…"
+msgstr "打开最近的项目…"
+
+#: lattice-gpui/src/shell/import_conflict.rs
+msgid "“{name}” is already in the project root"
+msgstr "“{name}”已存在于项目根目录"
+
+#: lattice-gpui/src/shell/import_conflict.rs
+msgid "“{name}” is already in {targetDirectory}"
+msgstr "“{name}”已存在于{targetDirectory}"
+
+#: lattice-gpui/src/shell/import_conflict.rs
+msgid "Replace overwrites files of the same name and merges folders. Keep both imports a numbered copy."
+msgstr "替换会覆盖同名文件并合并文件夹；保留两者会以编号副本导入。"
+
+#: lattice-gpui/src/shell/menus.rs
+msgctxt "macOS menu bar"
+msgid "All Recent Projects…"
+msgstr "查看所有最近项目…"
+
+#: lattice-gpui/src/titlebar/project_menu.rs
+msgid "All recent projects…"
+msgstr "查看所有最近项目…"

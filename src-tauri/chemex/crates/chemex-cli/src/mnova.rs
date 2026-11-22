@@ -8,7 +8,13 @@ use std::time::UNIX_EPOCH;
 
 use sha2::{Digest, Sha256};
 
-use crate::{output::Stage, tools};
+use crate::output::Stage;
+
+mod installation;
+
+use installation::executable;
+#[cfg(windows)]
+pub use installation::mestrenova_status;
 
 const MAX_SPECTRUM_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_PDF_BYTES: u64 = 512 * 1024 * 1024;
@@ -29,8 +35,7 @@ pub fn export_spectrum_pdf(
         return Err(format!("expected a .mnova file: {}", source.display()));
     }
     let source_hash = hash_file(source)?;
-    let executable =
-        tools::find("CHEMEX_MESTRENOVA", "MestReNova").map_err(|error| error.to_string())?;
+    let executable = executable().map_err(|error| error.to_string())?;
     let key = cache_key(&source_hash, spectrum, &executable)?;
     fs::create_dir_all(cache).map_err(|error| format!("cannot create Mnova cache: {error}"))?;
     let cached = cache.join(format!("mnova-{key}.pdf"));
@@ -142,7 +147,7 @@ pub fn export_spectrum_pdf(
 
 pub fn spectrum_renderer_fingerprint() -> String {
     let unavailable = || format!("unavailable-{:x}", Sha256::digest(SCRIPT.as_bytes()));
-    let Ok(executable) = tools::find("CHEMEX_MESTRENOVA", "MestReNova") else {
+    let Ok(executable) = executable() else {
         return unavailable();
     };
     let Ok(metadata) = fs::metadata(&executable) else {

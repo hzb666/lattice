@@ -25,7 +25,10 @@ use std::{
 };
 
 use gpui::{AnyElement, App, AppContext as _, ElementId, ImageFormat, ImageSource, Pixels, Task};
-use lattice_editor::latex::previews::{self, Figure, MathPicture, MathRequest, PreviewHost};
+use lattice_editor::latex::graphics::SpectrumOverlay;
+use lattice_editor::latex::previews::{
+    self, Figure, MathPicture, MathRequest, PreviewHost, SpectrumAnnotation,
+};
 use lattice_ui::ActiveLattice as _;
 
 /// The largest figure read for a preview (`MAX_INLINE_ASSET_BYTES`).
@@ -108,6 +111,7 @@ impl PreviewHost for Host {
         project_root: &Path,
         path: &Path,
         spectrum: Option<NonZeroUsize>,
+        overlay: Option<SpectrumOverlay>,
         cx: &mut App,
     ) -> Task<Figure> {
         let path = path.to_path_buf();
@@ -163,17 +167,42 @@ impl PreviewHost for Host {
                     .and_then(Path::to_str)
                     .map(str::to_owned);
                 let spectrum = spectrum.unwrap_or(NonZeroUsize::MIN);
+                let formula_root = project_root.clone();
                 let export = cx.background_spawn(async move {
                     let relative = relative?;
-                    lattice_core::chemistry::mnova_preview_pdf(&project_root, &relative, spectrum)
-                        .ok()
+                    let pdf = lattice_core::chemistry::mnova_preview_pdf(
+                        &project_root,
+                        &relative,
+                        spectrum,
+                    )
+                    .ok()?;
+                    let annotation = match overlay {
+                        Some(overlay) => {
+                            let text = lattice_core::chemistry::compound_formula_display(
+                                &formula_root,
+                                &overlay.compound,
+                            )
+                            .ok()??;
+                            Some(SpectrumAnnotation {
+                                text,
+                                x: overlay.x,
+                                y: overlay.y,
+                                size: overlay.size,
+                            })
+                        }
+                        None => None,
+                    };
+                    Some((pdf, annotation))
                 });
                 cx.spawn(async move |cx| {
-                    let Some(pdf) = export.await else {
+                    let Some((pdf, annotation)) = export.await else {
                         return Figure::Failed;
                     };
                     match first_page(&engine, pdf, cx).await {
-                        Some(image) => Figure::Shown(ImageSource::Render(image)),
+                        Some(image) => annotation.map_or(
+                            Figure::Shown(ImageSource::Render(image.clone())),
+                            |annotation| Figure::Spectrum(ImageSource::Render(image), annotation),
+                        ),
                         None => Figure::Failed,
                     }
                 })
@@ -202,7 +231,7 @@ impl PreviewHost for Host {
 }
 
 /// A PDF figure's first page, [`PDF_WIDTH`] pixels wide.
-async fn first_page(
+pub(crate) async fn first_page(
     engine: &Arc<crate::pdf::PdfEngine>,
     path: std::path::PathBuf,
     cx: &mut gpui::AsyncApp,

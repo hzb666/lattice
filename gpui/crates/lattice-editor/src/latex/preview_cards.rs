@@ -35,7 +35,7 @@ use lattice_ui::{ActiveLattice as _, Appearance, TextRole, TextRoleStyle as _};
 use super::{
     cards::{around, card_surface},
     graphics,
-    previews::{self, Figure, MacroSources, MathRequest, Preview},
+    previews::{self, Figure, MacroSources, MathRequest, Preview, SpectrumAnnotation},
     syntax,
 };
 use crate::{
@@ -60,10 +60,11 @@ pub fn figure_media(
     project_root: &Path,
     path: &Path,
     spectrum: Option<NonZeroUsize>,
+    overlay: Option<graphics::SpectrumOverlay>,
     context: &HoverCardContext,
     cx: &mut App,
 ) -> Option<AnyElement> {
-    let preview = previews::figure(project_root, path, spectrum, &context.editor, cx)?;
+    let preview = previews::figure(project_root, path, spectrum, overlay, &context.editor, cx)?;
     Some(render_figure(preview, context, cx))
 }
 
@@ -103,22 +104,16 @@ fn render_figure(preview: Preview<Figure>, context: &HoverCardContext, cx: &App)
                 _ => gpui::hsla(0., 0., 0., 0.1),
             };
             media
-                .child(
-                    div()
-                        .relative()
-                        .flex_none()
-                        .child(
-                            img(source)
-                                .max_w(width)
-                                .max_h(px(190.))
-                                .object_fit(ObjectFit::Contain)
-                                .with_fallback(move || {
-                                    unavailable(t!("Figure preview could not be loaded."))
-                                }),
-                        )
-                        // `outline: 1px …; outline-offset: -1px`: over the image's edge.
-                        .child(div().absolute().inset_0().border_1().border_color(edge)),
-                )
+                .child(figure_image(source, None, width, edge))
+                .into_any_element()
+        }
+        Preview::Ready(Figure::Spectrum(source, annotation)) => {
+            let edge = match palette.appearance {
+                Appearance::Dark => gpui::hsla(0., 0., 1., 0.1),
+                _ => gpui::hsla(0., 0., 0., 0.1),
+            };
+            media
+                .child(figure_image(source, Some(annotation), width, edge))
                 .into_any_element()
         }
         Preview::Ready(Figure::Unavailable) => media
@@ -130,6 +125,66 @@ fn render_figure(preview: Preview<Figure>, context: &HoverCardContext, cx: &App)
             .child(unavailable(t!("Figure preview could not be loaded.")))
             .into_any_element(),
     }
+}
+
+fn figure_image(
+    source: gpui::ImageSource,
+    annotation: Option<SpectrumAnnotation>,
+    width: Pixels,
+    edge: gpui::Hsla,
+) -> AnyElement {
+    let mut image = div()
+        .relative()
+        .flex_none()
+        .child(
+            img(source)
+                .max_w(width)
+                .max_h(px(190.))
+                .object_fit(ObjectFit::Contain)
+                .with_fallback(move || {
+                    div()
+                        .child(t!("Figure preview could not be loaded."))
+                        .into_any_element()
+                }),
+        )
+        .overflow_hidden();
+    if let Some(annotation) = annotation {
+        image = image.child(
+            div()
+                .absolute()
+                .left(relative(f32::from(annotation.x) / 100.))
+                .top(relative(f32::from(annotation.y) / 100.))
+                .max_w(relative((100. - f32::from(annotation.x)) / 100.))
+                .max_h(relative((100. - f32::from(annotation.y)) / 100.))
+                .overflow_hidden()
+                .text_color(gpui::hsla(0., 0., 0., 1.))
+                .text_size(px(preview_size(&annotation.size)))
+                .child(annotation.text),
+        );
+    }
+    image
+        .child(div().absolute().inset_0().border_1().border_color(edge))
+        .into_any_element()
+}
+
+fn preview_size(size: &str) -> f32 {
+    let units = [
+        ("pt", 96.0 / 72.27),
+        ("bp", 96.0 / 72.0),
+        ("mm", 96.0 / 25.4),
+        ("cm", 96.0 / 2.54),
+        ("in", 96.0),
+    ];
+    units
+        .iter()
+        .find_map(|(unit, scale)| {
+            size.strip_suffix(unit)
+                .and_then(|number| number.parse::<f32>().ok())
+                .filter(|number| number.is_finite() && *number > 0.0)
+                .map(|number| number * scale)
+        })
+        .unwrap_or(10.0)
+        .clamp(6.0, 24.0)
 }
 
 fn image_card(
@@ -348,12 +403,19 @@ impl HoverProvider for GraphicsCards {
         let absolute: Rc<Path> = index.root().join(&resolved).into();
         let project_root = index.root().to_path_buf();
         let spectrum = target.spectrum;
+        let overlay = target.overlay;
         Some(HoverTarget {
             range: target.range.start + start..target.range.end + start,
             id: "graphics",
             card: Rc::new(move |context, _, cx| {
-                let preview =
-                    previews::figure(&project_root, &absolute, spectrum, &context.editor, cx);
+                let preview = previews::figure(
+                    &project_root,
+                    &absolute,
+                    spectrum,
+                    overlay.clone(),
+                    &context.editor,
+                    cx,
+                );
                 image_card(preview, &resolved, context, cx)
             }),
         })
@@ -399,5 +461,12 @@ mod tests {
             equation_body(text, &reference("fig:x", "figure", "caption")),
             None
         );
+    }
+
+    #[test]
+    fn spectrum_formula_preview_size_converts_absolute_tex_units() {
+        assert!((preview_size("8pt") - 8.0 * 96.0 / 72.27).abs() < 0.01);
+        assert!((preview_size("2mm") - 2.0 * 96.0 / 25.4).abs() < 0.01);
+        assert_eq!(24.0, preview_size("300in"));
     }
 }

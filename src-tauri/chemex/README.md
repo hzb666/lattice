@@ -57,9 +57,16 @@ Compound \chemex{compound-001} was converted to \chemex{compound-002}.
 └── chemex-numbers.dat
 ```
 
-`\includegraphics{路径.cdxml}` 仍可直接引用 CDXML，支持 `width`、`height`、`trim` 等 `graphicx` 选项；Mnova 也可直接引用并默认输出第 1 张谱图。推荐用 `\chemn{路径.mnova}`，多谱图文件可写 `\chemn[2]{路径.mnova}` 选择第 2 张。统一的 `\chemd{路径.cdxml}` / `\chemd{路径.mnova}` 同样支持按扩展名识别，Mnova 用 `[2]` 选择序号，CDXML 的 `\chemd[counter]{路径.cdxml}` 仍用方括号指定 LaTeX counter。省略参数的 Mnova 默认选第 1 张；序号超出文件谱图数量时报错。
+`\includegraphics{路径.cdxml}` 仍可直接引用 CDXML，支持 `width`、`height`、`trim` 等 `graphicx` 选项。Mnova 推荐用 `\chemn`，也可统一使用 `\chemd`；两者按扩展名识别 `.mnova`，省略参数时选择第 1 张，序号超出文件谱图数量时报错。多谱图文件用逗号分隔的键值参数选择谱图，并可按分子动态编号叠加分子式：
 
-Mnova 由 MestReNova 脚本接口从私有文档副本导出所选谱图所在页的 PDF，再由 LaTeX 嵌入。首次导出后以源文件、谱图序号和渲染器指纹缓存在项目 `.research/cache/chemex-v1/assets/`，后续构建与编辑器 hover 预览共用；不修改或保存原始 `.mnova`。Windows 上会先查 `PATH`，再只读查询已运行的 MestReNova 进程；独立 CLI 或 Mnova 未运行时，可设置 `CHEMEX_MESTRENOVA` 为可执行文件完整路径。
+```latex
+\chemn[spec=2,cmpd=product-17,x=78,y=12,size=8pt]{figures/Document 1.mnova}
+% \chemd[spec=2,cmpd=product-17,x=78,y=12,size=8pt]{figures/Document 1.mnova}
+```
+
+`cmpd` 是 CDXML 中的 Chemex 字段 key；构建会按动态编号查找该结构的分子式。`x` 和 `y` 是 0 到 100 的百分比，分别相对谱图宽度和高度，从左上角定位分子式左上角；分子式会缩放并夹在原谱图图片范围内，不改变原图片在 LaTeX 中的位置或尺寸。每条谱图引用独立设置位置和字号，以便避开各自的峰；`size` 使用绝对 TeX 长度，如 `8pt`、`2mm`、`1cm`。旧语法 `\chemn[2]{...}` / `\chemd[2]{...}` 仍可选择第 2 张；CDXML 的 `\chemd[counter]{路径.cdxml}` 仍用方括号指定 LaTeX counter。
+
+Mnova 由 MestReNova 脚本接口从私有文档副本导出所选谱图所在页的 PDF，再由 LaTeX 嵌入。Lattice Build、hover 预览和独立 Chemex CLI 的 PDF 缓存在项目 `.chem/cache/mestrenova/mnova-<key>.pdf`；ChemDraw 的 SVG/PDF 缓存在 `.chem/cache/chemdraw/`。两者都按源文件、谱图序号和渲染器指纹复用，且不修改或保存原始 `.mnova`。Windows 上按 `CHEMEX_MESTRENOVA`、`PATH`、已运行进程、系统安装记录的顺序查找可执行文件。TeX Diagnose 使用相同的定位逻辑，直接读取文件版本，不启动 MestReNova。
 
 默认 `compound` 按图稿在 LaTeX 原文中的引用顺序编号。每个 key 首次作为图稿字段出现时推进计数器，`\chemex{key}` 只查号，可以写在图稿之前。图稿中的重复 key 复用编号。其他计数器通过 `\chemex[counter]{key}` 指定，仍由正文或图稿中的首次出现推进。格式使用 `\Roman`、`\roman`、`\Alph`、`\alph` 或自定义 `\thecompound`，重置使用原生 `\setcounter`。
 
@@ -128,9 +135,9 @@ cargo run --manifest-path src-tauri/chemex/Cargo.toml -p chemex-cli -- build src
 
 打开 `manuscript.pdf` 检查正文、图注和图中编号。修改 `.tex` 中的 counter 样式或重置位置，或者在 ChemDraw 中修改源文件后，选择新的输出目录重新执行即可。
 
-`chemex build` 和 `chemex export` 将 SVG 和 PDF 持久化到主 `.tex` 所在目录的 `.chem/drawing-cache/v1/`，按编号替换后的图稿内容复用。`export` 生成的目录可作为 `TEXINPUTS` 交给 `latexmk`，原稿仍引用 `.cdxml`。在 Windows 下将导出目录放在 `TEXINPUTS` 开头，并以 `;` 保留 TeX 的默认搜索路径。改动图稿或编号后需要重新准备导出目录。
+`chemex build` 和 `chemex export` 将 SVG 和 PDF 持久化到主 `.tex` 所在目录的 `.chem/cache/` 下，ChemDraw 使用 `chemdraw/`，MestReNova 使用 `mestrenova/`，按编号替换后的图稿内容复用。`export` 生成的目录可作为 `TEXINPUTS` 交给 `latexmk`，原稿仍引用 `.cdxml`。在 Windows 下将导出目录放在 `TEXINPUTS` 开头，并以 `;` 保留 TeX 的默认搜索路径。改动图稿或编号后需要重新准备导出目录。
 
-Lattice 的本地 Chemex 集成样稿保存在 `src-tauri/chemex/.chem/paper-01/` 和 `paper-02/`；Build 会准备图稿并使用普通 Lattice `latexmk` 流程排版，准备记录和矢量图保存在论文项目 `.research/cache/chemex-v1/`。默认编号改为按图稿出现顺序，因此插入新图稿后，既有编号及正文 `\chemex{key}` 引用都会顺延更新。ChemDraw 与 TeX Live 必须可用；随仓库保留的 Inkscape 位于 `src-tauri/chemex/tools/inkscape/`，Lattice 通过 `CHEMEX_INKSCAPE` 使用它。
+Lattice 的本地 Chemex 集成样稿保存在 `src-tauri/chemex/.chem/paper-01/` 和 `paper-02/`；Build 会准备图稿并使用普通 Lattice `latexmk` 流程排版，准备记录和矢量图保存在论文项目 `.chem/cache/chemdraw/`，分子分析数据库保存在 `.chem/molecules.sqlite`。默认编号改为按图稿出现顺序，因此插入新图稿后，既有编号及正文 `\chemex{key}` 引用都会顺延更新。ChemDraw 与 TeX Live 必须可用；随仓库保留的 Inkscape 位于 `src-tauri/chemex/tools/inkscape/`，Lattice 通过 `CHEMEX_INKSCAPE` 使用它。
 
 当前 `build` 从原稿位置解析相对 `\input` 和资源，但把中间文件写入临时目录；尚不承诺完整多文件项目、BibTeX 依赖发现或自定义构建脚本。输入文件必须是 UTF-8。单张 ChemDraw 导出暂限单页；Mnova 导出按选中谱图所在页输出，用户样本的多页视觉保真仍待实测；`inspect` 和 `render` 支持多页。
 

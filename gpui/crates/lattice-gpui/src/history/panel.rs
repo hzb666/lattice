@@ -78,6 +78,15 @@ const POLL: Duration = Duration::from_secs(30);
 /// How long a burst of file changes settles before the history is read again.
 const SETTLE: Duration = Duration::from_millis(300);
 
+fn is_history_record_path(path: &str) -> bool {
+    let mut parts = path.split(['/', '\\']);
+    matches!(
+        (parts.next(), parts.next()),
+        (Some(root), Some(folder))
+            if root.eq_ignore_ascii_case(".research") && folder.eq_ignore_ascii_case("history")
+    )
+}
+
 /// A number no other load has had, in any panel or project, so an answer
 /// only ever settles the load that asked for it.
 fn next_load() -> u64 {
@@ -338,15 +347,15 @@ impl HistoryPanel {
                     // The history's own records and the build's output are
                     // not changes to the project's files.
                     let ours = paths.as_ref().is_some_and(|paths| {
-                        paths
-                            .iter()
-                            .all(|path| path.starts_with(".research/") || path.starts_with(".git/"))
+                        paths.iter().all(|path| {
+                            lattice_core::project::is_internal_project_path(std::path::Path::new(
+                                path,
+                            ))
+                        })
                     });
                     if !ours
                         || paths.as_ref().is_some_and(|paths| {
-                            paths
-                                .iter()
-                                .any(|path| path.starts_with(".research/history"))
+                            paths.iter().any(|path| is_history_record_path(path))
                         })
                     {
                         this.settle_then_reload(cx);
@@ -831,6 +840,19 @@ impl HistoryPanel {
     /// Whether the panel is narrower than the history container's 300px.
     pub(super) fn narrow(&self) -> bool {
         self.width.get() < gpui::px(300.)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_history_record_path;
+
+    #[test]
+    fn recognizes_history_record_paths_case_insensitively() {
+        assert!(is_history_record_path(".research/history/1.json"));
+        assert!(is_history_record_path(".Research\\History\\1.json"));
+        assert!(!is_history_record_path(".research/history-old/1.json"));
+        assert!(!is_history_record_path("papers/.research/history/1.json"));
     }
 }
 

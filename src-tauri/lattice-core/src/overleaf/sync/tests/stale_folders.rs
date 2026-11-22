@@ -74,7 +74,11 @@ fn a_folder_renamed_or_deleted_on_overleaf_leaves_nothing_of_lattices_behind() {
     let renamed = paper_in("B");
     let deleted: Files = &[("root.tex", ROOT)];
     // Finder's noise goes with the folders it sat in.
-    let finder: Files = &[("A/.DS_Store", b"finder"), ("A/msec/.DS_Store", b"finder")];
+    let finder: Files = &[
+        ("A/.DS_Store", b"finder"),
+        ("A/msec/.DS_Store", b"finder"),
+        (".CHEM/cache/molecules.sqlite", b"private"),
+    ];
     for (label, remote) in [("renamed to B", borrowed(&renamed)), ("deleted", deleted.to_vec())] {
         let (_server, config, root) = built_paper(&remote, finder);
         let result = sync(&config, &root, NO_LIVE, None).unwrap();
@@ -87,6 +91,7 @@ fn a_folder_renamed_or_deleted_on_overleaf_leaves_nothing_of_lattices_behind() {
             assert_eq!(read_local(&root, path).as_deref(), Some(*bytes), "{label}: {path}");
         }
         assert!(exists(&root, ".research/overleaf.json"), "{label}: app state untouched");
+        assert!(exists(&root, ".CHEM/cache/molecules.sqlite"), "{label}: private cache untouched");
     }
 }
 

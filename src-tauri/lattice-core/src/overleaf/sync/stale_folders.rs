@@ -26,11 +26,12 @@
 //! once.
 
 use crate::overleaf::files::{
-    disk_path, is_build_output_of, is_transient_pdf_render_path, BuildPdf, APP_FOLDERS, BASE_DIR,
+    disk_path, is_build_output_of, is_transient_pdf_render_path, BuildPdf, BASE_DIR,
 };
 use crate::{latex, wide_event};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
+use std::ffi::OsStr;
 use std::fs;
 use std::path::Path;
 
@@ -79,8 +80,8 @@ fn relative(root: &Path, path: &Path) -> Option<String> {
 
 /// Whether the sync never looks inside the folder at `rel`, `name`: Lattice's
 /// own state and version folders, and the agent's PDF renders.
-fn never_synced_folder(rel: &str, name: &str) -> bool {
-    APP_FOLDERS.contains(&name) || is_transient_pdf_render_path(rel)
+fn never_synced_folder(rel: &str, name: &OsStr) -> bool {
+    crate::project::is_internal_project_component(name) || is_transient_pdf_render_path(rel)
 }
 
 /// What a folder holds, everything under it included, Finder's `.DS_Store`
@@ -109,8 +110,7 @@ fn contents(root: &Path, folder: &str, evidence: &Evidence) -> Contents {
     let walker = walkdir::WalkDir::new(disk_path(root, folder)).contents_first(true);
     let walker = walker.into_iter().filter_entry(|entry| {
         let rel = relative(root, entry.path()).unwrap_or_default();
-        let name = entry.file_name().to_string_lossy();
-        let app = entry.file_type().is_dir() && never_synced_folder(&rel, &name);
+        let app = entry.file_type().is_dir() && never_synced_folder(&rel, entry.file_name());
         if app {
             app_folders.push(rel);
         }
@@ -255,8 +255,7 @@ pub(super) fn clear<'a>(
             continue;
         }
         let Some(rel) = relative(root, entry.path()) else { continue };
-        let name = entry.file_name().to_string_lossy();
-        if never_synced_folder(&rel, &name) {
+        if never_synced_folder(&rel, entry.file_name()) {
             walker.skip_current_dir();
         } else if !occupied.contains(&rel.to_lowercase()) {
             if once_synced.contains(&rel.to_lowercase()) {

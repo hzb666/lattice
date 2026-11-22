@@ -68,7 +68,9 @@ impl ReferenceCard {
             .figure_root
             .as_deref()
             .zip(previews.figure.as_deref())
-            .and_then(|(root, path)| preview_cards::figure_media(root, path, None, &context, cx));
+            .and_then(|(root, path)| {
+                preview_cards::figure_media(root, path, None, None, &context, cx)
+            });
         let equation = previews
             .equation
             .as_ref()

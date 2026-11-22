@@ -23,6 +23,7 @@ use std::{
     collections::{BTreeMap, HashMap, HashSet},
     ops::Range,
     rc::Rc,
+    sync::Arc,
     time::Instant,
 };
 
@@ -36,7 +37,7 @@ use gpui::{
     SharedString, Styled as _, Subscription, TextRun, Window, canvas, div, point, px, size,
 };
 use language::{Buffer, BufferEvent, BufferSnapshot};
-use lattice_ui::ActiveLattice as _;
+use lattice_ui::{ActiveLattice as _, editor_theme};
 
 mod caret_card;
 mod current_line;
@@ -115,6 +116,7 @@ pub struct LatticeEditor {
     /// The language's fold source, and what it answered since the last edit.
     folds: Option<FoldSource>,
     fold_cache: RefCell<HashMap<u32, Option<FoldRange>>>,
+    preamble_separator_row: Option<Option<u32>>,
     /// The source gutter's geometry as of the last render (`None` before
     /// the first), the pointer over it and what it painted.
     gutter_layout: Option<GutterLayout>,
@@ -177,6 +179,9 @@ impl LatticeEditor {
             cx.subscribe(&buffer, |this, _, event: &BufferEvent, cx| {
                 if matches!(event, BufferEvent::Edited { .. }) {
                     this.fold_cache.get_mut().clear();
+                    if this.folds.is_some() {
+                        this.set_preamble_separator(cx);
+                    }
                     this.dismiss_hover(cx);
                     this.prefetch_caret_card(cx);
                 }
@@ -204,6 +209,7 @@ impl LatticeEditor {
             scroll: scrollbar::EditorScroll::default(),
             folds: None,
             fold_cache: RefCell::default(),
+            preamble_separator_row: None,
             gutter_layout: None,
             gutter_pointer: GutterPointer::default(),
             painted_gutter: Rc::default(),
@@ -242,7 +248,77 @@ impl LatticeEditor {
     pub fn set_fold_source(&mut self, source: Option<FoldSource>, cx: &mut Context<Self>) {
         self.folds = source;
         self.fold_cache.get_mut().clear();
+        self.set_preamble_separator(cx);
         cx.notify();
+    }
+
+    fn set_preamble_separator(&mut self, cx: &mut Context<Self>) {
+        const LAYER: &str = "latex-preamble-separator";
+        const LINES: u32 = 2;
+
+        let body_row = if self.folds.is_some() {
+            crate::latex::folding::document_body_row(&self.buffer.read(cx).snapshot())
+        } else {
+            None
+        };
+        if self.preamble_separator_row == Some(body_row) {
+            return;
+        }
+        self.preamble_separator_row = Some(body_row);
+        let blocks = body_row
+            .map(|line| {
+                let palette = cx.lattice().palette.clone();
+                let ground = editor_theme::ground(cx.lattice().code_theme, &palette);
+                let rule = palette.line_strong;
+                let label = palette.text_secondary;
+                let font = cx.lattice().fonts.ui.clone();
+                vec![BlockWidget {
+                    line,
+                    side: BlockSide::Above,
+                    lines: LINES,
+                    render: Arc::new(move |_| {
+                        div()
+                            .relative()
+                            .size_full()
+                            .bg(ground)
+                            .child(
+                                div()
+                                    .absolute()
+                                    .left_0()
+                                    .right_0()
+                                    .top(gpui::relative(0.5))
+                                    .h(px(1.))
+                                    .bg(rule),
+                            )
+                            .child(
+                                div()
+                                    .absolute()
+                                    .inset_0()
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .px(px(8.))
+                                            .h(px(16.))
+                                            .items_center()
+                                            .rounded(px(4.))
+                                            .bg(ground)
+                                            .font_family(font.clone())
+                                            .text_size(px(11.))
+                                            .text_color(label)
+                                            .child("Λ ")
+                                            .child(lattice_i18n::t!("Document Preamble"))
+                                            .child(" Λ"),
+                                    ),
+                            )
+                            .into_any_element()
+                    }),
+                }]
+            })
+            .unwrap_or_default();
+        self.set_blocks(LAYER, blocks, cx);
     }
 
     /// The room the text leaves at the right edge.

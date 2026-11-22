@@ -30,7 +30,6 @@ mod build_repair;
 mod build_tools;
 mod build_watch;
 mod chemdraw;
-mod molecule;
 pub mod commands;
 mod documents;
 mod drawing_drop;
@@ -52,6 +51,7 @@ mod insert_pickers_flow;
 mod journal_export;
 mod layers;
 pub(crate) mod menus;
+mod molecule;
 mod open_failure;
 mod opening;
 mod overleaf_collab;
@@ -70,6 +70,7 @@ mod pdf_figure;
 mod pdf_notes;
 mod pdf_sync;
 mod pdfs;
+mod preview_viewport;
 pub(crate) mod project_tab_drag;
 mod references_flow;
 mod render;
@@ -83,6 +84,7 @@ mod settings_flow;
 mod shortcut_groups;
 mod shortcut_sheet;
 mod skin;
+mod spectrum;
 mod structured_docs;
 mod synctex;
 pub(crate) mod tab_names;
@@ -113,7 +115,6 @@ use trellis::{TrellisWorkspace, model::LayoutDocument};
 pub use annotations_flow::{CommentsView, ShowAnnotations};
 use build::BuildRequest;
 pub(crate) use chemdraw::{ChemDrawPanel, ToggleChemDraw};
-pub(crate) use molecule::{MoleculePanel, ToggleMoleculePanel};
 pub use commands::{
     Build, CleanBuildFiles, CleanRebuild, ForwardSync, InstallLatexTools, NextProblem,
     OpenTexDoctor, PreviousProblem, Save, StopBuild, ToggleVimMode,
@@ -124,6 +125,7 @@ pub use get_started_flow::ShowGetStarted;
 pub use help_flow::{ReportProblem, WhatsNew};
 pub use insert_flow::{InsertTable, PasteImageAsFigure};
 pub use insert_pickers_flow::{GoToLine, GoToSymbol, InsertCitation, InsertReference};
+pub(crate) use molecule::{MoleculePanel, ToggleMoleculePanel};
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 pub use overleaf_collab::AnnotateSelection;
 #[cfg(target_os = "macos")]
@@ -131,6 +133,7 @@ pub use overleaf_menus::ReviewHere;
 pub(crate) use palette_groups::init as init_recent_commands;
 pub(crate) use pdf_citations::PaperFetched;
 pub use references_flow::{FindReferences, RenameSymbol};
+pub(crate) use spectrum::{SpectrumPanel, ToggleSpectrumPanel};
 pub use tools_flow::{ExportArxiv, OpenChecklist, OpenTodos};
 pub(crate) use workspace_flow::LayoutState;
 

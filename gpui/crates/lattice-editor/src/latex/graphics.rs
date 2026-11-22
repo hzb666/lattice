@@ -43,6 +43,15 @@ pub struct GraphicsTarget {
     pub range: Range<usize>,
     pub path: String,
     pub spectrum: Option<NonZeroUsize>,
+    pub overlay: Option<SpectrumOverlay>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct SpectrumOverlay {
+    pub compound: String,
+    pub x: u8,
+    pub y: u8,
+    pub size: String,
 }
 
 /// The path written, `\detokenize` taken off and backslashes made slashes.
@@ -66,23 +75,82 @@ pub fn graphics_target(text: &str, position: usize) -> Option<GraphicsTarget> {
         if path.is_empty() || position < content.start() || position > content.end() {
             return None;
         }
-        let spectrum = if command == "chemn"
+        let is_mnova = command == "chemn"
             || (command == "chemd"
                 && Path::new(&path)
                     .extension()
-                    .is_some_and(|extension| extension.eq_ignore_ascii_case("mnova")))
-        {
-            Some(match option {
-                Some(value) => value.trim().parse().ok()?,
-                None => NonZeroUsize::new(1)?,
-            })
+                    .is_some_and(|extension| extension.eq_ignore_ascii_case("mnova")));
+        let (spectrum, overlay) = if is_mnova {
+            spectrum_options(option)?
         } else {
-            None
+            (None, None)
         };
         Some(GraphicsTarget {
             range: content.range(),
             path,
             spectrum,
+            overlay,
+        })
+    })
+}
+
+fn spectrum_options(
+    option: Option<&str>,
+) -> Option<(Option<NonZeroUsize>, Option<SpectrumOverlay>)> {
+    let Some(option) = option else {
+        return Some((NonZeroUsize::new(1), None));
+    };
+    if !option.contains('=') {
+        return Some((Some(option.trim().parse().ok()?), None));
+    }
+    let mut spectrum = 1;
+    let mut compound = None;
+    let mut x = 50;
+    let mut y = 15;
+    let mut size = "8pt".to_owned();
+    for pair in option.split(',') {
+        let (name, value) = pair.trim().split_once('=')?;
+        let value = value.trim();
+        match name.trim() {
+            "spec" => spectrum = value.parse::<usize>().ok()?,
+            "cmpd" => compound = Some(value.to_owned()),
+            "x" => x = percentage(value)?,
+            "y" => y = percentage(value)?,
+            "size" if valid_size(value) => size = value.to_owned(),
+            _ => return None,
+        }
+    }
+    let spectrum = NonZeroUsize::new(spectrum)?;
+    Some((
+        Some(spectrum),
+        compound.map(|compound| SpectrumOverlay {
+            compound,
+            x,
+            y,
+            size,
+        }),
+    ))
+}
+
+fn percentage(value: &str) -> Option<u8> {
+    let value = value.parse::<u8>().ok()?;
+    (value <= 100).then_some(value)
+}
+
+fn valid_size(value: &str) -> bool {
+    [
+        ("pt", 1.0),
+        ("bp", 72.27 / 72.0),
+        ("mm", 72.27 / 25.4),
+        ("cm", 72.27 / 2.54),
+        ("in", 72.27),
+    ]
+    .iter()
+    .any(|(unit, scale)| {
+        value.strip_suffix(unit).is_some_and(|number| {
+            number.parse::<f64>().is_ok_and(|number| {
+                number.is_finite() && number > 0.0 && number * scale <= 16_000.0
+            })
         })
     })
 }
@@ -219,6 +287,7 @@ mod tests {
                 range: from..from + "figures/plot".len(),
                 path: "figures/plot".into(),
                 spectrum: None,
+                overlay: None,
             })
         );
         assert_eq!(
@@ -230,8 +299,8 @@ mod tests {
     }
 
     #[test]
-    fn chemd_preview_uses_first_or_explicit_mnova_spectrum() {
-        let source = r"\chemn{Document 1.mnova} \chemn[3]{appendix.mnova} \chemd{drawing.mnova} \chemd[scheme]{drawing.cdxml}";
+    fn chemd_preview_uses_defaults_legacy_indices_and_spectrum_options() {
+        let source = r"\chemn{Document 1.mnova} \chemn[3]{appendix.mnova} \chemd{drawing.mnova} \chemd[scheme]{drawing.cdxml} \chemd[spec=2,cmpd=product-17,x=78,y=12,size=8pt]{annotated.mnova}";
         let first = source.find("Document").unwrap();
         let third = source.find("appendix").unwrap();
         let drawing = source.find("drawing.cdxml").unwrap();
@@ -254,6 +323,20 @@ mod tests {
             graphics_target(source, drawing).and_then(|target| target.spectrum)
         );
         assert_eq!(None, graphics_target(r"\chemd[0]{file.mnova}", 13));
+        let annotated = source.find("annotated.mnova").unwrap();
+        assert_eq!(
+            Some(SpectrumOverlay {
+                compound: "product-17".into(),
+                x: 78,
+                y: 12,
+                size: "8pt".into(),
+            }),
+            graphics_target(source, annotated).and_then(|target| target.overlay)
+        );
+        assert_eq!(
+            None,
+            graphics_target(r"\chemn[x=120,cmpd=a]{file.mnova}", 20)
+        );
     }
 
     #[test]

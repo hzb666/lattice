@@ -97,9 +97,7 @@ impl OverleafBridge {
         // App folders and the version history never sync.
         let relevant = paths.is_none_or(|paths| {
             paths.iter().any(|path| {
-                !(path.starts_with(".research/")
-                    || path.starts_with(".git/")
-                    || path.starts_with(".omp/"))
+                !lattice_core::project::is_internal_project_path(std::path::Path::new(path))
             })
         });
         if !relevant {
@@ -132,9 +130,7 @@ impl OverleafBridge {
             }));
         }
         if other.iter().any(|path| {
-            !(path.starts_with(".research/")
-                || path.starts_with(".git/")
-                || path.starts_with(".omp/"))
+            !lattice_core::project::is_internal_project_path(std::path::Path::new(path))
         }) {
             self.schedule_push(cx);
         }

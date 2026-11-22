@@ -254,7 +254,7 @@ fn exclusion_reason(relative: &Path, name: &str, path: &Path) -> Option<&'static
     if normalized == ".git" || normalized.starts_with(".git/") {
         return Some("git-internals");
     }
-    if normalized == ".research" || normalized.starts_with(".research/") {
+    if crate::project::is_internal_project_path(relative) {
         return Some("app-private-state");
     }
     if matches!(name, ".DS_Store" | "Thumbs.db" | "desktop.ini" | ".Spotlight-V100" | ".Trashes") {
@@ -315,7 +315,7 @@ pub enum TreeView {
     /// and agent configuration.
     Project,
     /// The navigator's expanded view: dotfiles and build output come back,
-    /// `.git` and `.research` never do. Never used by sync or search.
+    /// `.git`, `.research` and `.chem` never do. Never used by sync or search.
     ProjectWithHidden,
 }
 
@@ -531,6 +531,8 @@ mod tests {
             (".vscode/settings.json", b"{}\n"),
             (".pi/extensions/extension.ts", b"hidden\n"),
             (".research/cache/private", b"private"),
+            (".chem/cache/chemdraw/assets/drawing.svg", b"private"),
+            (".CHEM/cache/molecules.sqlite", b"private"),
             ("node_modules/generated.js", b"generated"),
         ] {
             fixture.write(path, contents);
@@ -547,8 +549,11 @@ mod tests {
             assert_eq!(kind(path), "binary", "{path}");
         }
         assert!(!paths(&files).contains(&"node_modules"));
+        assert!(!paths(&files).contains(&".CHEM"));
         let project_tree = scan_tree(root, TreeView::Project).unwrap();
-        for hidden in [".env.example", ".ignore", ".vscode", ".pi", ".research", "opencode.json"] {
+        for hidden in
+            [".env.example", ".ignore", ".vscode", ".pi", ".research", ".chem", "opencode.json"]
+        {
             assert!(!paths(&project_tree).contains(&hidden), "{hidden}");
         }
         assert_eq!(read_file(root, "bom.txt").unwrap().as_bytes(), b"\xef\xbb\xbfhello\r\n");
@@ -591,9 +596,15 @@ mod tests {
         for name in files {
             fixture.write(name, b"content");
         }
-        for directory in
-            [".config", ".git", ".research", "node_modules", ".config/.git", ".config/node_modules"]
-        {
+        for directory in [
+            ".config",
+            ".git",
+            ".research",
+            ".chem",
+            "node_modules",
+            ".config/.git",
+            ".config/node_modules",
+        ] {
             fixture.write(&format!("{directory}/settings.txt"), b"content");
         }
         fixture.write("references.bib", b"@article{x, title={X}}\n");
@@ -603,7 +614,7 @@ mod tests {
         for name in files.into_iter().chain([".config"]) {
             assert!(paths(&expanded).contains(&name), "{name}");
         }
-        for name in [".git", ".research", "node_modules"] {
+        for name in [".git", ".research", ".chem", "node_modules"] {
             assert!(!paths(&expanded).contains(&name), "{name}");
         }
         let config = expanded.iter().find(|node| node.path == ".config").unwrap();

@@ -30,6 +30,7 @@ use gpui::{
     AnyElement, App, ElementId, EntityId, Global, Hsla, ImageSource, Pixels, Task, WeakEntity,
 };
 
+use super::graphics::SpectrumOverlay;
 use crate::LatticeEditor;
 
 /// The project's TeX sources, which the host reads its KaTeX macros from
@@ -88,11 +89,20 @@ pub struct MathPicture {
 #[derive(Clone)]
 pub enum Figure {
     Shown(ImageSource),
+    Spectrum(ImageSource, SpectrumAnnotation),
     /// A format with no preview (EPS, say): "Preview unavailable for this
     /// figure format."
     Unavailable,
     /// "Figure preview could not be loaded."
     Failed,
+}
+
+#[derive(Clone)]
+pub struct SpectrumAnnotation {
+    pub text: String,
+    pub x: u8,
+    pub y: u8,
+    pub size: String,
 }
 
 /// What the app draws previews with.
@@ -110,6 +120,7 @@ pub trait PreviewHost {
         project_root: &Path,
         path: &Path,
         spectrum: Option<NonZeroUsize>,
+        overlay: Option<SpectrumOverlay>,
         cx: &mut App,
     ) -> Task<Figure>;
     /// The ChemDraw group named by `compound_id`, inside `project_root`.
@@ -163,6 +174,7 @@ impl MathKey {
 struct FigureKey {
     path: PathBuf,
     spectrum: Option<NonZeroUsize>,
+    overlay: Option<SpectrumOverlay>,
     modified: Option<SystemTime>,
     len: u64,
 }
@@ -343,6 +355,7 @@ pub fn figure(
     project_root: &Path,
     path: &Path,
     spectrum: Option<NonZeroUsize>,
+    overlay: Option<SpectrumOverlay>,
     editor: &WeakEntity<LatticeEditor>,
     cx: &mut App,
 ) -> Option<Preview<Figure>> {
@@ -352,6 +365,7 @@ pub fn figure(
     let key = FigureKey {
         path: path.to_path_buf(),
         spectrum,
+        overlay: overlay.clone(),
         modified: metadata
             .as_ref()
             .and_then(|metadata| metadata.modified().ok()),
@@ -367,7 +381,7 @@ pub fn figure(
     cx.global_mut::<Previews>()
         .figures
         .start(key.clone(), editor.entity_id());
-    let task = host.figure(project_root, path, spectrum, cx);
+    let task = host.figure(project_root, path, spectrum, overlay, cx);
     cx.spawn(async move |cx| {
         let figure = task.await;
         cx.update(|cx| {

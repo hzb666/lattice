@@ -52,11 +52,16 @@ pub fn open(root: &Path) -> Result<ProjectSnapshot, String> {
     // mode's bases and marked build (`.research/review/`) and the hidden
     // build folder (`.research/build/`, latex/aux_files.rs) are local state
     // too; a `.research/.gitignore` from an older build does not name them.
-    for line in
-        [".research/checkpoints/", ".research/cache/", ".research/review/", ".research/build/"]
-            .into_iter()
-            .map(str::to_string)
-            .chain(build_artifact_ignore_lines())
+    for line in [
+        ".research/checkpoints/",
+        ".research/cache/",
+        ".research/review/",
+        ".research/build/",
+        ".chem/",
+    ]
+    .into_iter()
+    .map(str::to_string)
+    .chain(build_artifact_ignore_lines())
     {
         ensure_ignore_line(&root.join(".gitignore"), &line)?;
     }
@@ -577,6 +582,7 @@ mod tests {
             "svg-inkscape/",
             ".research/review/",
             ".research/build/",
+            ".chem/",
             "node_modules/",
         ] {
             assert!(

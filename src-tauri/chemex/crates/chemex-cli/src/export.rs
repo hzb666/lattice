@@ -7,10 +7,17 @@ use sha2::{Digest, Sha256};
 
 use crate::{Result, output, tools};
 
-pub(crate) const CACHE_DIRECTORY: &str = ".chem/drawing-cache/v1";
+pub(crate) const CACHE_DIRECTORY: &str = ".chem/cache/chemdraw";
+pub(crate) const SPECTRUM_CACHE_DIRECTORY: &str = ".chem/cache/mestrenova";
 
 pub(crate) fn cache_directory(project: &Path) -> Result<PathBuf> {
     let cache = project.join(CACHE_DIRECTORY);
+    fs::create_dir_all(&cache)?;
+    Ok(tools::canonicalize(&cache)?)
+}
+
+pub(crate) fn spectrum_cache_directory(project: &Path) -> Result<PathBuf> {
+    let cache = project.join(SPECTRUM_CACHE_DIRECTORY);
     fs::create_dir_all(&cache)?;
     Ok(tools::canonicalize(&cache)?)
 }

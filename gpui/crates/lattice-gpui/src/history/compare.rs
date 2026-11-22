@@ -129,7 +129,9 @@ impl CompareView {
                     if let ProjectEvent::FilesChanged(paths) = event {
                         let ours = paths.as_ref().is_some_and(|paths| {
                             paths.iter().all(|path| {
-                                path.starts_with(".research/") || path.starts_with(".git/")
+                                lattice_core::project::is_internal_project_path(
+                                    std::path::Path::new(path),
+                                )
                             })
                         });
                         if !ours && this.chosen_to.is_none() {

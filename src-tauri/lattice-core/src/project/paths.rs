@@ -52,6 +52,19 @@ pub(crate) fn stays_inside(relative: &Path) -> bool {
             .all(|part| matches!(part, Component::Normal(_) | Component::CurDir))
 }
 
+/// Whether a project-relative path starts inside an app-owned directory.
+pub fn is_internal_project_path(relative: &Path) -> bool {
+    relative.components().next().is_some_and(|component| match component {
+        Component::Normal(name) => is_internal_project_component(name),
+        _ => false,
+    })
+}
+
+pub(crate) fn is_internal_project_component(name: &std::ffi::OsStr) -> bool {
+    let name = name.to_string_lossy();
+    [".research", ".chem", ".git", ".omp"].iter().any(|private| name.eq_ignore_ascii_case(private))
+}
+
 fn resolve_project_path(root: &Path, relative: &str, mode: Resolve) -> Result<PathBuf, String> {
     let relative_path = Path::new(relative);
     if !stays_inside(relative_path) {
@@ -90,13 +103,11 @@ fn resolve_project_path(root: &Path, relative: &str, mode: Resolve) -> Result<Pa
     Ok(cursor)
 }
 
-/// User-facing file operations never reach into `.research`.
+/// User-facing file operations never reach into app-private folders.
 pub(super) fn validate_user_entry(relative: &str) -> Result<(), String> {
     let trimmed = relative.trim();
-    let first = Path::new(trimmed).components().next();
-    if trimmed.is_empty() || matches!(first, Some(Component::Normal(value)) if value == ".research")
-    {
-        return Err("Choose a project-relative path outside .research.".to_string());
+    if trimmed.is_empty() || is_internal_project_path(Path::new(trimmed)) {
+        return Err("Choose a project-relative path outside app-private folders.".to_string());
     }
     Ok(())
 }
@@ -243,5 +254,14 @@ mod tests {
         assert!(safe_path(root, "../secret.txt").is_err());
         assert!(safe_path(root, "missing/file.txt").is_err());
         assert!(!root.join("missing").exists());
+    }
+
+    #[test]
+    fn internal_paths_match_case_insensitively_at_the_root() {
+        assert!(is_internal_project_path(Path::new(".CHEM/cache")));
+        assert!(is_internal_project_path(Path::new(".Research/state")));
+        assert!(is_internal_project_path(Path::new(".GIT/config")));
+        assert!(!is_internal_project_path(Path::new(".chemical/cache")));
+        assert!(!is_internal_project_path(Path::new("papers/.chem/file")));
     }
 }

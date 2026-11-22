@@ -103,6 +103,12 @@ pub fn initial_preamble_row(lines: &(impl Lines + ?Sized)) -> Option<u32> {
     preamble_fold(lines, row, &line, uncommented(&line)).map(|_| row)
 }
 
+/// The `\begin{document}` row that separates the preamble from the body.
+pub fn document_body_row(lines: &(impl Lines + ?Sized)) -> Option<u32> {
+    let preamble = initial_preamble_row(lines)?;
+    rows_after(lines, preamble, MAX_FOLD_SCAN_LINES).find(|row| begins_document(&lines.line(*row)))
+}
+
 /// `text` without its `%` comment (an escaped `\%` is text).
 pub fn uncommented(text: &str) -> &str {
     let bytes = text.as_bytes();
@@ -423,6 +429,21 @@ mod tests {
 
         assert_eq!(initial_preamble_row(&lines[..]), Some(3));
         assert_eq!(initial_preamble_row(&incomplete[..]), None);
+    }
+
+    #[test]
+    fn the_document_body_row_follows_the_complete_preamble() {
+        let lines = [
+            r"\documentclass{article}",
+            r"\usepackage{amsmath}",
+            "",
+            r"\begin{document}",
+            "Body",
+        ];
+        let incomplete = [r"\documentclass{article}", r"% \begin{document}"];
+
+        assert_eq!(document_body_row(&lines[..]), Some(3));
+        assert_eq!(document_body_row(&incomplete[..]), None);
     }
 
     #[test]

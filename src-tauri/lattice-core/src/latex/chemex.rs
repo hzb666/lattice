@@ -121,6 +121,10 @@ impl Preparation<'_> {
         }
         let mut registrations = figures.registrations()?;
         let (values, numbers) = self.number(&namespace, &figures, &registrations)?;
+        let requests: Vec<_> = figures.items.iter().map(|figure| figure.request.clone()).collect();
+        let sources: Vec<_> =
+            figures.documents.values().map(|document| document.source().to_owned()).collect();
+        chemex_cli::attach_mnova_formulas(&requests, &mut registrations, &sources, &numbers)?;
         let mut assets = Vec::with_capacity(figures.items.len());
         for (index, figure) in figures.items.iter().enumerate() {
             let (pdf, source_hash, detail) = match &figure.request {
@@ -329,10 +333,8 @@ fn dependency_files(root: &Path) -> Result<Vec<PathBuf>, String> {
     let mut files = Vec::new();
     for entry in WalkDir::new(root).into_iter().filter_entry(|entry| {
         entry.depth() == 0
-            || !matches!(
-                entry.file_name().to_str(),
-                Some(".research" | ".git" | "node_modules" | "target" | "build")
-            )
+            || !(crate::project::is_internal_project_component(entry.file_name())
+                || matches!(entry.file_name().to_str(), Some("node_modules" | "target" | "build")))
     }) {
         let entry = entry.map_err(err)?;
         let extension = entry.path().extension().and_then(OsStr::to_str).unwrap_or_default();
@@ -394,7 +396,7 @@ fn cached_inputs(root: &Path, namespace: &str, key: &str) -> Result<Option<Input
             if chemistry::pdf_key(asset.pdf).is_some() {
                 asset_cached(&assets, asset.pdf, asset.detail)
             } else {
-                chemistry::cached_spectrum_pdf(&assets, asset.pdf)
+                chemistry::cached_spectrum_pdf(&spectrum_assets_folder(root)?, asset.pdf)
             }
         } else if chemistry::pdf_key(line).is_some() {
             let path = chemistry::cache_file(
@@ -422,6 +424,11 @@ fn asset_cached(folder: &Path, name: &str, numbered: &str) -> bool {
 fn assets_folder(root: &Path) -> Result<PathBuf, String> {
     let file = chemistry::cache_file(root, "assets/.keep")?;
     Ok(file.parent().ok_or("Missing Chemex asset directory")?.to_path_buf())
+}
+
+fn spectrum_assets_folder(root: &Path) -> Result<PathBuf, String> {
+    let file = chemistry::spectrum_cache_file(root, ".keep")?;
+    Ok(file.parent().ok_or("Missing MestReNova cache directory")?.to_path_buf())
 }
 
 struct LoadedFigure {
@@ -475,8 +482,16 @@ impl Figures {
                         asset: String::new(),
                     }))
                 }
-                FigureRequest::Mnova { spectrum, .. } => {
-                    Ok(FigureRegistration::Mnova { spectrum: *spectrum, asset: String::new() })
+                FigureRequest::Mnova { spectrum, compound, x, y, size, .. } => {
+                    Ok(FigureRegistration::Mnova {
+                        spectrum: *spectrum,
+                        compound: compound.clone(),
+                        x: *x,
+                        y: *y,
+                        size: size.clone(),
+                        formula: None,
+                        asset: String::new(),
+                    })
                 }
             })
             .collect()
@@ -643,7 +658,8 @@ mod tests {
         let source_key = sha256_hex(rendered);
         fs::write(assets.join(format!("{source_key}.svg")), svg).unwrap();
         fs::write(assets.join(&name), b"%PDF-1.4\n%%EOF").unwrap();
-        fs::write(assets.join(&spectrum), b"%PDF-1.4\nx\n%%EOF").unwrap();
+        fs::write(spectrum_assets_folder(&root).unwrap().join(&spectrum), b"%PDF-1.4\nx\n%%EOF")
+            .unwrap();
         let marker = format!(
             "{key}\n{}\n{name} {source_key} {source_key}\n{spectrum} {} 1",
             sha256_hex(registration.as_bytes()),
@@ -663,9 +679,10 @@ mod tests {
         assert_eq!(Some(key.as_str()), ready.lines().next());
         assert_eq!(Some(sha256_hex(registration.as_bytes()).as_str()), ready.lines().nth(1));
         assert!(cached_inputs(&root, &namespace, &key).unwrap().is_some());
-        fs::remove_file(assets_folder(&root).unwrap().join(&spectrum)).unwrap();
+        fs::remove_file(spectrum_assets_folder(&root).unwrap().join(&spectrum)).unwrap();
         assert!(cached_inputs(&root, &namespace, &key).unwrap().is_none());
-        fs::write(assets_folder(&root).unwrap().join(&spectrum), b"%PDF-1.4\nx\n%%EOF").unwrap();
+        fs::write(spectrum_assets_folder(&root).unwrap().join(&spectrum), b"%PDF-1.4\nx\n%%EOF")
+            .unwrap();
         fs::remove_file(assets_folder(&root).unwrap().join(name)).unwrap();
         assert!(cached_inputs(&root, &namespace, &key).unwrap().is_none());
     }
@@ -682,10 +699,18 @@ mod tests {
                 FigureRequest::Mnova {
                     path: "spectra/Document 1.mnova".into(),
                     spectrum: std::num::NonZeroUsize::new(1).unwrap(),
+                    compound: None,
+                    x: 50,
+                    y: 15,
+                    size: "8pt".into(),
                 },
                 FigureRequest::Mnova {
                     path: "spectra/Document 1.mnova".into(),
                     spectrum: std::num::NonZeroUsize::new(2).unwrap(),
+                    compound: None,
+                    x: 50,
+                    y: 15,
+                    size: "8pt".into(),
                 },
             ],
         )

@@ -27,15 +27,14 @@ const BINARY_EXTENSIONS: &[&str] = &["pdf", "png", "jpg", "jpeg", "gif", "zip"];
 
 /// Directories inside a project that belong to the tools, not to the writing.
 ///
-/// `.research/` is Lattice's own: Overleaf sync state, the search index, agent
+/// `.research/` and `.chem/` are Lattice's own: Overleaf sync state, the search index, agent
 /// sessions and caches. Legacy `.omp/` folders may hold old MCP server config
 /// — whose `env` is where someone puts an API key, which is reason enough on
 /// its own never to commit it.
-const INTERNAL_DIRS: &[&str] = &[".research", ".omp"];
+const INTERNAL_DIRS: &[&str] = &[".research", ".chem", ".omp"];
 
 fn is_internal_path(path: &str) -> bool {
-    let path = path.trim_start_matches("./");
-    INTERNAL_DIRS.iter().any(|dir| path == *dir || path.starts_with(&format!("{dir}/")))
+    crate::project::is_internal_project_path(Path::new(path.trim_start_matches("./")))
 }
 
 /// Keep the tools' own directories out of version history.

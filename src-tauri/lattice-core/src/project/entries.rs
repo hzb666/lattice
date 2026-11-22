@@ -300,7 +300,9 @@ mod tests {
         for protected in ["refs/library.bib", "refs"] {
             assert!(delete_entry(root, protected).is_err(), "{protected}");
         }
-        assert!(create_entry(root, ".research/private.txt", "file").is_err());
+        for private in [".research/private.txt", ".chem/private.txt"] {
+            assert!(create_entry(root, private, "file").is_err(), "{private}");
+        }
         assert!(create_entry(root, "binary.exe", "file").is_err());
         // Each source kind gets its seed; boards and spreadsheets seed empty
         // because their editors initialize the store themselves.
@@ -457,6 +459,7 @@ mod tests {
         for invalid in [
             "",
             ".research",
+            ".chem",
             "../escape",
             "deck/name",
             "Deck",
@@ -512,7 +515,9 @@ mod tests {
         assert!(rename_entry(root, "paper.tex", "references.bib").is_err());
         create_entry(root, "chapters/nested", "folder").unwrap();
         assert!(move_entry(root, "chapters", "chapters/nested").is_err());
-        assert!(move_entry(root, "paper.tex", ".research").is_err());
+        for private in [".research", ".chem"] {
+            assert!(move_entry(root, "paper.tex", private).is_err(), "{private}");
+        }
     }
 
     #[test]

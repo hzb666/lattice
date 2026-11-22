@@ -103,6 +103,7 @@ impl Shell {
         let files = project.read(cx).files().to_vec();
         self.chemdraw_project_opened(&root, &files, cx);
         self.molecules_project_opened(&root, &files, cx);
+        self.spectrum_project_opened(&root, &files, cx);
         let terminal_moved = self.terminal_follows(root.clone(), cx);
         self._project_git = Some(cx.subscribe(&project, |this, _, event, cx| match event {
             crate::project::ProjectEvent::GitChanged => this.notice_conflicts(cx),
@@ -112,6 +113,7 @@ impl Shell {
                 let paths = paths.clone();
                 this.chemdraw_files_changed(paths.as_deref(), cx);
                 this.molecules_files_changed(paths.as_deref(), cx);
+                this.spectrum_files_changed(paths.as_deref(), cx);
                 this.agent_files_changed(paths.as_deref(), cx);
                 this.overleaf
                     .update(cx, |bridge, cx| bridge.files_changed(paths.as_deref(), cx));
@@ -121,8 +123,10 @@ impl Shell {
                     let files = project.read(cx).files().to_vec();
                     this.chemdraw_project_opened(&root, &files, cx);
                     this.molecules_project_opened(&root, &files, cx);
+                    this.spectrum_project_opened(&root, &files, cx);
                     this.sync_chemdraw_preview(cx);
                     this.sync_molecules(cx);
+                    this.sync_spectrum(cx);
                 }
             }
             _ => {}
@@ -156,6 +160,7 @@ impl Shell {
         self.watch_builds(&project, window, cx);
         self.sync_chemdraw_preview(cx);
         self.sync_molecules(cx);
+        self.sync_spectrum(cx);
         cx.notify();
     }
 }

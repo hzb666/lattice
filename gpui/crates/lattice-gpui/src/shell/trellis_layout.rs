@@ -59,6 +59,7 @@ pub const VIEW_TYPES: &[&str] = &[
     "checklist",
     "chemdraw",
     "molecule",
+    "spectrum",
     "start",
 ];
 

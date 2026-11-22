@@ -31,10 +31,32 @@ struct RdkitGroup {
     fragments: Vec<String>,
 }
 
+#[derive(Serialize)]
+struct RdkitRequest<'a> {
+    source: &'a str,
+    groups: &'a [RdkitGroup],
+}
+
+#[derive(Serialize)]
+struct RdkitBatchRequest<'a> {
+    requests: Vec<RdkitRequest<'a>>,
+}
+
 #[derive(Deserialize)]
 struct RdkitReport {
     rdkit_version: String,
     compounds: Vec<RdkitCompound>,
+}
+
+#[derive(Deserialize)]
+struct RdkitBatchReport {
+    reports: Vec<RdkitReport>,
+}
+
+struct PreparedAnalysis {
+    seen_ids: Vec<String>,
+    unavailable: Vec<CompoundStructure>,
+    groups: Vec<RdkitGroup>,
 }
 
 #[derive(Deserialize)]
@@ -54,6 +76,85 @@ pub fn analyze_compounds(
     source: &str,
     run_rdkit: impl FnOnce(&str, &str) -> Result<String, String>,
 ) -> Result<StructureReport, String> {
+    let prepared = prepare_analysis(source)?;
+    if prepared.groups.is_empty() {
+        return finish_analysis(
+            prepared,
+            RdkitReport {
+                rdkit_version: RDKIT_VERSION.into(),
+                compounds: Vec::new(),
+            },
+        );
+    }
+    let request = serde_json::to_string(&RdkitRequest {
+        source,
+        groups: &prepared.groups,
+    })
+    .map_err(|error| error.to_string())?;
+    let output = run_rdkit(RDKIT_SCRIPT, &request)?;
+    let parsed: RdkitReport = serde_json::from_str(&output)
+        .map_err(|error| format!("RDKit returned an invalid structure report: {error}"))?;
+    finish_analysis(prepared, parsed)
+}
+
+pub fn analyze_compounds_batch(
+    sources: &[&str],
+    run_rdkit: impl FnOnce(&str, &str) -> Result<String, String>,
+) -> Vec<Result<StructureReport, String>> {
+    let prepared = sources
+        .iter()
+        .map(|source| prepare_analysis(source))
+        .collect::<Vec<_>>();
+    let requests = sources
+        .iter()
+        .zip(&prepared)
+        .filter_map(|(&source, analysis)| {
+            let analysis = analysis.as_ref().ok()?;
+            (!analysis.groups.is_empty()).then_some(RdkitRequest {
+                source,
+                groups: &analysis.groups,
+            })
+        })
+        .collect::<Vec<_>>();
+    let mut reports = run_batch(RdkitBatchRequest { requests }, run_rdkit);
+    prepared
+        .into_iter()
+        .map(|analysis| {
+            let analysis = analysis?;
+            if analysis.groups.is_empty() {
+                return Ok(StructureReport {
+                    rdkit_version: RDKIT_VERSION.into(),
+                    compounds: analysis.unavailable,
+                });
+            }
+            let report = reports
+                .as_mut()
+                .map_err(|error| error.clone())?
+                .next()
+                .ok_or("RDKit report is missing for a drawing")?;
+            finish_analysis(analysis, report)
+        })
+        .collect()
+}
+
+fn run_batch(
+    batch: RdkitBatchRequest<'_>,
+    run_rdkit: impl FnOnce(&str, &str) -> Result<String, String>,
+) -> Result<std::vec::IntoIter<RdkitReport>, String> {
+    if batch.requests.is_empty() {
+        return Ok(Vec::new().into_iter());
+    }
+    let request = serde_json::to_string(&batch).map_err(|error| error.to_string())?;
+    let output = run_rdkit(RDKIT_SCRIPT, &request)?;
+    let parsed: RdkitBatchReport = serde_json::from_str(&output)
+        .map_err(|error| format!("RDKit returned an invalid structure report: {error}"))?;
+    if parsed.reports.len() != batch.requests.len() {
+        return Err("RDKit returned a different number of drawing reports".into());
+    }
+    Ok(parsed.reports.into_iter())
+}
+
+fn prepare_analysis(source: &str) -> Result<PreparedAnalysis, String> {
     let document = DrawingDocument::parse(source.to_owned()).map_err(|error| error.to_string())?;
     let mut groups = Vec::new();
     let mut unavailable = Vec::new();
@@ -120,16 +221,21 @@ pub fn analyze_compounds(
         }
     }
 
-    if groups.is_empty() {
-        return Ok(StructureReport {
-            rdkit_version: RDKIT_VERSION.into(),
-            compounds: unavailable,
-        });
-    }
-    let request = serde_json::json!({ "source": source, "groups": groups });
-    let output = run_rdkit(RDKIT_SCRIPT, &request.to_string())?;
-    let parsed: RdkitReport = serde_json::from_str(&output)
-        .map_err(|error| format!("RDKit returned an invalid structure report: {error}"))?;
+    Ok(PreparedAnalysis {
+        seen_ids,
+        unavailable,
+        groups,
+    })
+}
+
+fn finish_analysis(
+    PreparedAnalysis {
+        seen_ids,
+        unavailable,
+        groups,
+    }: PreparedAnalysis,
+    parsed: RdkitReport,
+) -> Result<StructureReport, String> {
     if parsed.rdkit_version != RDKIT_VERSION {
         return Err(format!(
             "RDKit version mismatch: expected {RDKIT_VERSION}, got {}",
@@ -315,6 +421,56 @@ mod tests {
         .unwrap();
         assert!(!launched.get());
         assert!(report.compounds.is_empty());
+    }
+
+    #[test]
+    fn batch_runs_once_and_keeps_reports_separate_for_repeated_ids() {
+        let sources = [DRAWING, "<not-cdxml/>", DRAWING];
+        let reports = analyze_compounds_batch(&sources, |script, input| {
+            assert!(script.contains("MolsFromCDXML"));
+            let request: serde_json::Value = serde_json::from_str(input).unwrap();
+            let requests = request["requests"].as_array().unwrap();
+            assert_eq!(2, requests.len());
+            let reports = requests
+                .iter()
+                .zip(["CH4", "H2O"])
+                .map(|(request, formula)| {
+                    let compounds = request["groups"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|group| {
+                            serde_json::json!({
+                                "id": group["id"],
+                                "formula": formula,
+                                "canonical_smiles": "C",
+                                "deduplication_eligible": true,
+                                "status": null,
+                            })
+                        })
+                        .collect::<Vec<_>>();
+                    serde_json::json!({ "rdkit_version": RDKIT_VERSION, "compounds": compounds })
+                })
+                .collect::<Vec<_>>();
+            Ok(serde_json::json!({ "reports": reports }).to_string())
+        });
+
+        assert_eq!(3, reports.len());
+        assert!(reports[1].is_err());
+        for (index, expected) in [(0, "CH4"), (2, "H2O")] {
+            let compounds = &reports[index].as_ref().unwrap().compounds;
+            assert_eq!(4, compounds.len());
+            assert_eq!(Some(expected), compounds[0].formula.as_deref());
+        }
+    }
+
+    #[test]
+    fn empty_batch_does_not_start_rdkit() {
+        let reports = analyze_compounds_batch(&["<CDXML><page/></CDXML>"], |_, _| {
+            panic!("a drawing without labeled groups should not launch RDKit")
+        });
+
+        assert!(reports[0].as_ref().unwrap().compounds.is_empty());
     }
 
     #[test]

@@ -52,11 +52,13 @@ fn build_in(root: &Path, layout: AuxFiles, unattended: bool) -> BuildResult {
         .unwrap()
 }
 
-/// Every intermediate file in the project outside `.research/`.
+/// Every intermediate file in the project outside app-private directories.
 fn intermediates_outside_research(root: &Path) -> Vec<String> {
     WalkDir::new(root)
         .into_iter()
-        .filter_entry(|entry| entry.file_name() != ".research")
+        .filter_entry(|entry| {
+            entry.depth() == 0 || !crate::project::is_internal_project_component(entry.file_name())
+        })
         .filter_map(Result::ok)
         .filter(|entry| entry.file_type().is_file())
         .map(|entry| entry.path().strip_prefix(root).unwrap().to_string_lossy().replace('\\', "/"))

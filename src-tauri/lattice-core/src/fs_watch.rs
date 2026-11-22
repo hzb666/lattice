@@ -6,7 +6,7 @@
 //! `refresh_project` + `git_status`. The frontend keeps a slow fallback poll
 //! as a safety net.
 //!
-//! `.research/` churn is filtered out: app state writes (history, FTS
+//! `.research/` and `.chem/` churn is filtered out: app state writes (history, FTS
 //! indexes, caches, the paper library) fire on every save and are invisible to
 //! the project tree anyway (`scan_tree` excludes them). `.git/` events stay:
 //! they are how commits and stages reach the source-control badge without
@@ -81,7 +81,7 @@ fn relevant(event: &Event, root: &Path) -> bool {
             // as relevant rather than silently dropping a real change.
             Err(_) => return true,
         };
-        !relative.starts_with(".research")
+        !crate::project::is_internal_project_path(relative)
     })
 }
 
@@ -457,6 +457,7 @@ mod tests {
             // A build into the hidden build folder writes only there: no
             // rebuild follows it.
             (&[".research/build/main.aux", ".research/build/main.log"], false),
+            (&[".chem/cache/chemdraw/assets/drawing.svg"], false),
             // Mixed bursts stay relevant if any path matters.
             (&[".research/cache/fts.sqlite", "notes.md"], true),
         ] {
@@ -479,6 +480,7 @@ mod tests {
         assert_eq!(rescan(&["figures"]), Some(true));
         // Lost events only under app-private state leave the project alone.
         assert_eq!(rescan(&[".research/cache"]), None);
+        assert_eq!(rescan(&[".chem/cache"]), None);
         let error = notify::Error::generic("watch failed");
         assert_eq!(
             batch_for(Err(error), &root, SystemTime::now()).map(|batch| batch.reconcile),

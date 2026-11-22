@@ -11,7 +11,7 @@ use std::path::{Component, Path};
 
 /// Folders no build reads: version control, packages, and Lattice's own
 /// (whose build folder is read separately, `session::latexmk_file`).
-const SKIPPED: [&str; 4] = [".git", "node_modules", ".research", ".DS_Store"];
+const SKIPPED: [&str; 2] = ["node_modules", ".DS_Store"];
 
 /// Past this many files the project is not one a preview should copy.
 const MAX_FILES: usize = 20_000;
@@ -19,7 +19,10 @@ const MAX_FILES: usize = 20_000;
 /// Whether `relative` (inside the project) is left out of the copy.
 pub(super) fn skipped(relative: &Path) -> bool {
     relative.components().any(|part| match part {
-        Component::Normal(name) => SKIPPED.iter().any(|skipped| name == *skipped),
+        Component::Normal(name) => {
+            crate::project::is_internal_project_component(name)
+                || SKIPPED.iter().any(|skipped| name == *skipped)
+        }
         _ => true,
     })
 }

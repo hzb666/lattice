@@ -73,7 +73,7 @@ fn read_state(root: &Path) -> Result<Option<ReviewState>, String> {
 
 /// Every reviewable file under `directory`, by path relative to it, and the
 /// ones left out (too big, or not text); `skip_research` leaves out Lattice's
-/// own folder.
+/// own folders.
 fn reviewable_files(
     directory: &Path, skip_research: bool,
 ) -> Result<(BTreeMap<String, String>, Vec<String>), String> {
@@ -86,8 +86,12 @@ fn reviewable_files(
         .max_depth(DEEPEST_REVIEWED_FILE)
         .into_iter()
         .filter_entry(|entry| {
-            !(skip_research && entry.depth() == 1 && entry.file_name() == ".research")
-                && !(entry.depth() > 0 && entry.file_type().is_dir() && entry.file_name() == ".git")
+            !(skip_research
+                && entry.depth() == 1
+                && crate::project::is_internal_project_component(entry.file_name()))
+                && !(entry.depth() > 0
+                    && entry.file_type().is_dir()
+                    && crate::project::is_internal_project_component(entry.file_name()))
         });
     for entry in entries.filter_map(Result::ok) {
         if !entry.file_type().is_file() {
@@ -145,7 +149,7 @@ pub fn start_review(root: &Path) -> Result<ReviewBases, String> {
 /// Keep `base` as `path`'s base: an accept, or a co-author's edit carried into it.
 pub fn save_review_base(root: &Path, path: &str, base: &str) -> Result<(), String> {
     validate_transaction_path(path)?;
-    if !is_reviewable_path(path) || path.starts_with(".research/") {
+    if !is_reviewable_path(path) || crate::project::is_internal_project_path(Path::new(path)) {
         return Err(format!("{path} is not a file review mode tracks."));
     }
     if read_state(root)?.is_none() {

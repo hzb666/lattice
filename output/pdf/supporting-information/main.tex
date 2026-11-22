@@ -1,0 +1,253 @@
+% Standalone supporting-information template inspired by the supplied article.
+% Compile with: latexmk -pdf -interaction=nonstopmode main.tex
+\documentclass[11pt,a4paper,oneside]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[scaled=0.96]{helvet}
+\usepackage{newtxtext}
+\renewcommand{\familydefault}{\sfdefault}
+\usepackage[a4paper,left=22mm,right=22mm,top=23mm,bottom=23mm,headheight=22pt,headsep=9mm]{geometry}
+\usepackage{microtype}
+\usepackage{amsmath}
+\usepackage[version=4]{mhchem}
+\usepackage{chemfig}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{siunitx}
+\usepackage{graphicx}
+\usepackage[font=small,labelfont=bf,justification=centering,singlelinecheck=false]{caption}
+\usepackage{newfloat}
+\DeclareFloatingEnvironment[fileext=los,name=Scheme,listname={LIST OF SUPPLEMENTARY SCHEMES}]{scheme}
+\usepackage{titlesec}
+\usepackage{tocloft}
+\usepackage{fancyhdr}
+\usepackage[hidelinks]{hyperref}
+
+% Replace these fields with the matching manuscript metadata.
+\newcommand{\journalname}{[JOURNAL NAME]}
+\newcommand{\papertitle}{[Full title of the associated research article]}
+\newcommand{\authors}{[Author One, Author Two, and Author Three]}
+\newcommand{\correspondingauthor}{[Corresponding author and email address]}
+\newcommand{\articleidentifier}{[Article DOI or manuscript identifier]}
+\newcommand{\placeholder}[1]{\textit{[#1]}}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{5pt plus 1pt minus 1pt}
+\setlength{\emergencystretch}{2em}
+\linespread{1.12}
+\setlength{\cftbeforesecskip}{2pt}
+\setlength{\cftbeforesubsecskip}{0pt}
+\renewcommand{\cftsecfont}{\sffamily\small}
+\renewcommand{\cftsecpagefont}{\sffamily\small}
+\renewcommand{\cftsubsecfont}{\sffamily\footnotesize}
+\renewcommand{\cftsubsecpagefont}{\sffamily\footnotesize}
+\renewcommand{\cftsecleader}{\cftdotfill{1.8}}
+\renewcommand{\cftsubsecleader}{\cftdotfill{1.8}}
+\renewcommand{\contentsname}{TABLE OF CONTENTS}
+\renewcommand{\listfigurename}{LIST OF SUPPLEMENTARY FIGURES}
+\renewcommand{\listtablename}{LIST OF SUPPLEMENTARY TABLES}
+
+\titleformat{\section}
+  {\large\sffamily\bfseries}
+  {\thesection.}{0.55em}{}
+\titleformat{\subsection}
+  {\normalsize\sffamily\bfseries}
+  {\thesubsection}{0.55em}{}
+\titleformat{\subsubsection}
+  {\normalsize\sffamily\bfseries}
+  {\thesubsubsection}{0.55em}{}
+\titlespacing*{\section}{0pt}{14pt plus 3pt minus 2pt}{6pt}
+\titlespacing*{\subsection}{0pt}{10pt plus 2pt minus 1pt}{4pt}
+\titlespacing*{\subsubsection}{0pt}{8pt plus 2pt minus 1pt}{3pt}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\footnotesize\color{black!55}SUPPORTING INFORMATION}
+\fancyhead[R]{\footnotesize\color{black!55}S\arabic{page}}
+\renewcommand{\headrulewidth}{0.35pt}
+\renewcommand{\headruleskip}{-5pt}
+\renewcommand{\headrule}{\hbox to\headwidth{\color{black!25}\leaders\hrule height \headrulewidth\hfill}}
+\renewcommand{\footrulewidth}{0pt}
+
+\newcommand{\spectrumplaceholder}[4]{%
+  \begin{minipage}[t]{\linewidth}
+    \centering
+    \IfFileExists{#3}{%
+      \includegraphics[width=\linewidth,height=7.2cm,keepaspectratio]{#3}%
+    }{%
+      \begingroup
+      \setlength{\fboxsep}{0pt}%
+      \fbox{\parbox[c][7.2cm][c]{\dimexpr\linewidth-2\fboxrule\relax}{%
+        \centering\color{black!55}%
+        {\large\sffamily\bfseries #1 NMR}\par\vspace{8pt}%
+        {\footnotesize #2}\par\vspace{12pt}%
+        {\small Add the exported spectrum at\par\vspace{3pt}%
+         \ttfamily\detokenize{#3}}%
+      }}%
+      \endgroup
+    }%
+    \captionof{figure}{#1 NMR spectrum of #2.}\label{fig:#4}%
+  \end{minipage}%
+}
+
+\begin{document}
+
+% The independent cover is deliberately excluded from the S-page sequence.
+\pagenumbering{alph}
+\thispagestyle{empty}
+\begin{titlepage}
+  \centering
+  \vspace*{18mm}
+  {\color{black!25}\rule{0.82\textwidth}{0.6pt}}\par
+  \vspace{7mm}
+  {\large\sffamily\bfseries SUPPORTING INFORMATION\par}
+  \vspace{3mm}
+  {\normalsize\color{black!60}\journalname\par}
+
+  \vspace{30mm}
+  {\color{black!25}\rule{0.4\textwidth}{0.45pt}\par}
+  \vspace{13mm}
+  {\fontsize{22}{28}\selectfont\bfseries\rmfamily\papertitle\par}
+  \vspace{9mm}
+  {\large\rmfamily\itshape\authors\par}
+  \vspace{13mm}
+  {\color{black!25}\rule{0.4\textwidth}{0.45pt}\par}
+
+  \vfill
+  {\small\color{black!65}\correspondingauthor\par}
+  \vspace{3mm}
+  {\footnotesize\color{black!55}\articleidentifier\par}
+  \vspace{18mm}
+\end{titlepage}
+
+\pagenumbering{arabic}
+\setcounter{page}{1}
+\setcounter{tocdepth}{2}
+
+\tableofcontents
+\vspace{8pt}
+\listoftables
+\vspace{8pt}
+\listofschemes
+\vspace{8pt}
+\listoffigures
+\clearpage
+
+\section{General Information}
+
+\subsection{Materials and Methods}
+\placeholder{Describe the source, grade, and handling of reagents and solvents.}
+
+\placeholder{Describe the atmosphere, glassware preparation, and reaction setup where relevant.}
+
+\subsection{Chromatography and Instrumentation}
+\placeholder{List chromatography media, analytical instruments, field strengths, solvents, and measurement conditions. State how reported values and units were obtained.}
+
+\subsection{Data and Compound Nomenclature}
+\placeholder{Describe the software and conventions used to assign compound names, spectral data, and analytical results. Add repository or accession links for deposited data, where applicable.}
+
+\section{Experimental Data}
+
+\subsection{Optimization of Reaction Conditions}
+Table~\ref{tab:optimization} provides a reusable format for reaction optimization. Replace every bracketed field with verified measurements and add explanatory footnotes as needed.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Optimization of \placeholder{reaction or experimental parameter}.}
+  \label{tab:optimization}
+  \small
+  \begin{tabularx}{\linewidth}{@{}c X c c@{}}
+    \toprule
+    Entry & \placeholder{Condition or reagent} & \placeholder{Solvent} & Yield [\%] \\
+    \midrule
+    1 & \placeholder{Condition A} & \placeholder{Solvent A} & \placeholder{value} \\
+    2 & \placeholder{Condition B} & \placeholder{Solvent B} & \placeholder{value} \\
+    3 & \placeholder{Condition C} & \placeholder{Solvent C} & \placeholder{value} \\
+    \bottomrule
+  \end{tabularx}
+
+  \vspace{4pt}
+  \begin{minipage}{0.96\linewidth}
+    \footnotesize
+    \textit{Notes:} \placeholder{State equivalents, scale, assay method, replicate count, and the source of each yield.}
+  \end{minipage}
+\end{table}
+
+\subsection{General Procedure}
+\subsubsection{General Procedure A}
+\label{sec:procedure-a}
+\placeholder{Describe a representative procedure in the past tense. Specify substrate and reagent amounts, equivalents, solvent, concentration, temperature, time, work-up, purification, product mass, and isolated yield.}
+
+\subsubsection{General Procedure B}
+\label{sec:procedure-b}
+\placeholder{Add another procedure only when it materially differs from the preceding procedure.}
+
+\section{Compound Characterization}
+
+\subsection{Product A (1)}
+\label{sec:product-a}
+\placeholder{Insert the full compound name and identifier used consistently in the manuscript, schemes, spectra, and raw data.}
+
+\begin{scheme}[htbp]
+  \centering
+  \setchemfig{atom sep=1.8em}
+  \chemfig{R-OH}
+  \qquad\ensuremath{\longrightarrow}\qquad
+  \chemfig{R-O-R'}
+  \caption{Illustrative reaction layout. Replace the generic structures with the corresponding publication-ready chemical structures.}
+  \label{sch:representative}
+\end{scheme}
+
+\paragraph{Preparation.}
+\placeholder{State the procedure reference, starting material, scale, purification, appearance, isolated mass, and yield.}
+
+\paragraph{Analytical data.}
+\textbf{TLC:} \placeholder{$R_f$, solvent system, and visualization method.}
+
+\textbf{NMR spectroscopy:} \placeholder{Solvent and instrument.}
+
+\textsuperscript{1}H NMR (\placeholder{frequency} MHz, \ce{CDCl3}):
+\placeholder{chemical shift, multiplicity, coupling constants, integrations, and assignments}; ppm.
+
+\textsuperscript{13}C NMR (\placeholder{frequency} MHz, \ce{CDCl3}):
+\placeholder{chemical shifts and assignments}; ppm.
+
+\textbf{HRMS} (\placeholder{ionization mode}):
+\placeholder{calculated $m/z$ for the assigned ion}; found:
+\placeholder{measured $m/z$}.
+
+\textbf{IR} (\placeholder{sampling method}):
+\placeholder{diagnostic absorption maxima}; cm$^{-1}$.
+
+\clearpage
+\section{NMR Spectra}
+Replace the example filenames below with exported, publication-ready spectrum files. The framed placeholders are included only to preserve the intended layout when an image has not yet been added.
+
+\subsection*{Product A (1)}
+\begin{figure}[htbp]
+  \centering
+  \spectrumplaceholder{\textsuperscript{1}H}{Product A (1)}{figures/1H-1.pdf}{nmr-1h-product-a}
+  \par\vspace{8mm}
+  \spectrumplaceholder{\textsuperscript{13}C}{Product A (1)}{figures/13C-1.pdf}{nmr-13c-product-a}
+\end{figure}
+
+\clearpage
+\subsection*{Product B (2)}
+\begin{figure}[htbp]
+  \centering
+  \spectrumplaceholder{\textsuperscript{1}H}{Product B (2)}{figures/1H-2.pdf}{nmr-1h-product-b}
+  \par\vspace{8mm}
+  \spectrumplaceholder{\textsuperscript{13}C}{Product B (2)}{figures/13C-2.pdf}{nmr-13c-product-b}
+\end{figure}
+
+\section{References}
+\begingroup
+\renewcommand{\labelenumi}{[\arabic{enumi}]}
+\begin{enumerate}
+  \item
+  \placeholder{Author(s). Article title. \textit{Journal} Year, Volume, page range. DOI or persistent identifier.}
+\end{enumerate}
+\endgroup
+
+\end{document}

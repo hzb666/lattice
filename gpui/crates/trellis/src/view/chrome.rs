@@ -230,9 +230,6 @@ impl TrellisWorkspace {
             .rounded(chrome.slot_radius + px(3.))
             .border_2()
             .border_color(chrome.snap_ring)
-            .flex()
-            .justify_center()
-            .pt(px(12.))
             .child(self.skin.snap_label(&text, cx))
             .into_any_element()
         };

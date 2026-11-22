@@ -17,11 +17,9 @@ use zip::write::SimpleFileOptions;
 use zip::{ZipArchive, ZipWriter};
 
 /// Folders (relative to the project root) left out of an export whole: VCS
-/// and app state. All of `.research/` stays private: annotations, notes, the
+/// and app state. All of `.research/` and `.chem/` stays private: annotations, notes, the
 /// brief, the Overleaf link and full-text copies of other authors' papers
 /// would otherwise be published with an arXiv submission.
-const EXPORT_EXCLUDED_DIRS: &[&str] = &[".git", ".research"];
-
 /// File-name endings left out of an export at any depth: build output. Not
 /// `.bbl` (arXiv does not run BibTeX, so the last build's bibliography must
 /// ship) and not `.pdf` (figures); the root document's own PDF is left out
@@ -124,8 +122,7 @@ fn unreadable_link(error: &walkdir::Error) -> bool {
 }
 
 fn excluded_dir(root: &Path, path: &Path) -> bool {
-    path.strip_prefix(root)
-        .is_ok_and(|relative| EXPORT_EXCLUDED_DIRS.iter().any(|dir| relative == Path::new(dir)))
+    path.strip_prefix(root).is_ok_and(crate::project::is_internal_project_path)
 }
 
 fn excluded_file(name: &str) -> bool {
@@ -313,6 +310,8 @@ mod tests {
             ".research/build/main.aux",
             ".research/build/main.bbl",
             ".research/build/chapters/intro.aux",
+            ".chem/cache/chemdraw/assets/drawing.svg",
+            ".CHEM/cache/molecules.sqlite",
             "vendor/.git/HEAD",
             "draft.tex-SAVE-ERROR",
         ] {

@@ -1,7 +1,7 @@
 //! Persistent ChemDraw assets for both the editor and LaTeX.
 
-use crate::{models::FileNode, project};
 use crate::util::{err, sha256_hex};
+use crate::{models::FileNode, project};
 use chemex_cdxml::{DrawingDocument, FieldValues, MAX_SOURCE_BYTES};
 use std::collections::BTreeMap;
 use std::fs::{self, File};
@@ -13,21 +13,24 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 use svg2pdf::usvg;
 
+mod compound_groups;
 mod group_preview;
 mod molecules;
 mod prepared;
 #[cfg(windows)]
 mod preview_worker;
 
+pub use compound_groups::compound_groups;
 pub use group_preview::preview_group_svg;
 pub use molecules::{
-    analyze_project_molecules, MoleculeAnalysisError, MoleculeLocation, ProjectMolecule,
-    ProjectMoleculeReport,
+    MoleculeAnalysisError, MoleculeLocation, ProjectMolecule, ProjectMoleculeReport,
+    analyze_project_molecules, compound_formula, compound_formula_display, display_formula,
 };
 pub use prepared::built_preview_svg;
-pub(crate) use prepared::{pdf_key, ready_path, spectrum_key, Asset};
+pub(crate) use prepared::{Asset, pdf_key, ready_path, spectrum_key};
 
-const CACHE: &str = ".research/cache/chemex-v1";
+const CACHE: &str = ".chem/cache/chemdraw";
+const SPECTRUM_CACHE: &str = ".chem/cache/mestrenova";
 static EXPORT: Mutex<()> = Mutex::new(());
 
 pub fn is_cdxml(path: &Path) -> bool {
@@ -39,6 +42,17 @@ pub fn cdxml_files(tree: &[FileNode]) -> impl Iterator<Item = &str> {
         .into_iter()
         .map(|file| file.path.as_str())
         .filter(|path| is_cdxml(Path::new(path)))
+}
+
+pub fn is_mnova(path: &Path) -> bool {
+    path.extension().is_some_and(|extension| extension.eq_ignore_ascii_case("mnova"))
+}
+
+pub fn mnova_files(tree: &[FileNode]) -> impl Iterator<Item = &str> {
+    project::tree_files(tree)
+        .into_iter()
+        .map(|file| file.path.as_str())
+        .filter(|path| is_mnova(Path::new(path)))
 }
 
 pub fn read_document(path: &Path) -> Result<DrawingDocument, String> {
@@ -67,10 +81,14 @@ pub(crate) fn cache_file(root: &Path, relative: &str) -> Result<PathBuf, String>
     project::creation_path(root, &format!("{CACHE}/{relative}"))
 }
 
+pub(crate) fn spectrum_cache_file(root: &Path, relative: &str) -> Result<PathBuf, String> {
+    project::creation_path(root, &format!("{SPECTRUM_CACHE}/{relative}"))
+}
+
 pub(crate) fn write_if_changed(path: &Path, bytes: &[u8]) -> Result<(), String> {
     match path.symlink_metadata() {
         Ok(metadata) if !metadata.is_file() => {
-            return Err(format!("{} is not a regular file", path.display()))
+            return Err(format!("{} is not a regular file", path.display()));
         }
         Ok(metadata) if metadata.len() == bytes.len() as u64 => {
             if fs::read(path).map_err(err)? == bytes {
@@ -128,8 +146,8 @@ pub(crate) fn export_spectrum_pdf(
     root: &Path, source: &Path, spectrum: NonZeroUsize,
     run: impl FnOnce(Command, &Path) -> Result<(), String>,
 ) -> Result<PathBuf, String> {
-    let assets = cache_file(root, "assets/.keep")?;
-    let cache = assets.parent().ok_or("Missing Chemex asset directory")?;
+    let asset = spectrum_cache_file(root, ".keep")?;
+    let cache = asset.parent().ok_or("Missing MestReNova cache directory")?;
     chemex_cli::export_spectrum_pdf(cache, source, spectrum, run)
 }
 
@@ -331,6 +349,16 @@ mod tests {
         assert_eq!(None, drawing_preview_svg(&fixture.root, "figure.svg").unwrap());
         assert_eq!(None, drawing_preview_svg(&fixture.root, "figure.cdx").unwrap());
         assert!(drawing_preview_svg(&fixture.root, "../outside.cdxml").is_err());
+    }
+
+    #[test]
+    fn lists_mnova_files_without_following_links() {
+        let fixture = crate::project::test_support::Fixture::project("mnova-files");
+        fixture.write("spectra/first.MNOVA", b"first");
+        fixture.write("spectra/notes.txt", b"notes");
+        let tree = project::scan_tree(&fixture.root, project::TreeView::Project).unwrap();
+
+        assert_eq!(vec!["spectra/first.MNOVA"], mnova_files(&tree).collect::<Vec<_>>());
     }
 
     #[test]

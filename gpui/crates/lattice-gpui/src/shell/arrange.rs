@@ -137,6 +137,7 @@ impl Shell {
         self.sync_views(window, cx);
         self.sync_chemdraw_preview(cx);
         self.sync_molecules(cx);
+        self.sync_spectrum(cx);
         self.forget_closed_pdfs(cx);
         self.forget_closed_assets();
         self.refresh_dirty(cx);

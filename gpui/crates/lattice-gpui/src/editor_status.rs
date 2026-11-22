@@ -10,7 +10,7 @@
 //! the whole project's, which the GPUI app does not count yet, so the
 //! buffer's count is always labelled as the file's.
 //!
-//! Build chip (`.trellis-build-button`): 24px with control corners, the ink
+//! Build chip (`.trellis-build-button`): 28px with control corners, the ink
 //! at 9% laid on the sheet (#E7E7E7 light, #313134 dark, as measured) under
 //! an inset hairline; a 13px mark 8px in, 6px to its label in 12px semibold,
 //! 10px to the end. Idle it reads "Build" beside a filled play mark, a
@@ -434,7 +434,7 @@ pub fn build_chip(
             .justify_center()
             .gap(px(6.))
             .w(width)
-            .h(px(24.))
+            .h(px(28.))
             .rounded(px(6.))
             .bg(mix(ground, hover, interaction.hover))
             .shadow(vec![edge])

@@ -123,8 +123,8 @@ pub use manifest_settings::{
     update_manifest_settings, ManifestSettings,
 };
 pub use moved_file::find_moved_file;
-pub use paths::safe_path;
-pub(crate) use paths::{creation_path, stays_inside};
+pub(crate) use paths::{creation_path, is_internal_project_component, stays_inside};
+pub use paths::{is_internal_project_path, safe_path};
 pub use pdf_copy::save_asset_copy;
 pub use references::references;
 pub use references::ReferenceIndex;

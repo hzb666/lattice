@@ -405,9 +405,10 @@ do, so the preview never shows that PDF as this copy's build.
 
 ## 3. On-disk data model
 
-A Lattice project is an ordinary folder. Everything Lattice adds lives under
-`.research/`. `prepare_project_skeleton` (`src-tauri/lattice-core/src/project/create.rs`)
-creates it.
+A Lattice project is an ordinary folder. Lattice's app state lives under
+`.research/`; chemistry renderings and indexes live under `.chem/`.
+`prepare_project_skeleton` (`src-tauri/lattice-core/src/project/create.rs`) creates
+the project-side state.
 
 | Path | Owner | Contents |
 | --- | --- | --- |
@@ -419,6 +420,7 @@ creates it.
 | `.research/sessions/` | `project/create.rs` | agent session records |
 | `.research/checkpoints/` | agent runtime | turn checkpoints; capped at 100 per session / 256 MB (`project/history.rs`) |
 | `.research/cache/` | various | `fts.sqlite` (full-text index), `paper-index/` (the tantivy index of the cited papers' cached text; `papers/search_index.rs`), `citation-health-v1.json`, `linked-bibliography.json` (the linked library's source path, target `.bib` and last-imported baseline; `project/linked_bibliography.rs`), `shown-pdf/` (a copy of each root document's last built PDF and its SyncTeX file, put back when a build leaves none, and what that document's own PDF tab reads when the project opens again; `latex/shown_pdf.rs`), `build-pdf-hashes.json` (the SHA-256 of each root document's PDF as this copy's last build of it left it, so a build that finds nothing to do still typesets again when something else wrote over that PDF; `latex/shown_pdf.rs`), `build-beside.json` and `build-beside-failed.json` (the documents that build only beside themselves under Hide auxiliary files, and those whose try beside failed) and `hidden-build-aside/` (the hidden build folder, set aside during that try; `latex/build/beside.rs`) |
+| `.chem/` | `chemistry.rs`, `chemistry/molecules.rs` | per-CDXML molecule analysis cache in `molecules.sqlite`; ChemDraw cache under `cache/chemdraw/`; MestReNova cache under `cache/mestrenova/`; local generated state, never committed, synced or exported |
 | `.research/build/` | `latex/aux_files.rs` (`HIDDEN_FOLDER`) | with Settings › Hide auxiliary files on, each root document's intermediate build files (`.aux`, `.log`, `.fls`, `.fdb_latexmk`, `.bbl`, the SyncTeX map), mirroring the project's folders; the PDF stays beside the document. Never committed, synced to Overleaf, exported or written by `write_bytes` |
 | `.research/licenses/` | `project/create.rs` | license texts for imported material |
 | `.research/overleaf.json` | `overleaf/link.rs` | Overleaf link state: project id, file hashes, sync mode |

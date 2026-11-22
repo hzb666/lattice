@@ -34,13 +34,13 @@ const CITATION_COMMANDS: &[&str] = &[
     "fullcite",
 ];
 
-/// Every `.tex` file outside `.research` (eight levels deep), sorted by path,
+/// Every `.tex` file outside `.research` and `.chem` (eight levels deep), sorted by path,
 /// or an error naming the first one that cannot be read.
 pub(super) fn iter_tex_sources(root: &Path) -> Result<Vec<(String, String)>, String> {
     read_tex_sources(root)?.complete()
 }
 
-/// Every readable `.tex` file outside `.research` (eight levels deep), sorted
+/// Every readable `.tex` file outside `.research` and `.chem` (eight levels deep), sorted
 /// by path, and the ones that could not be read.
 pub(super) fn read_tex_sources(root: &Path) -> Result<IndexSources, String> {
     let mut files = IndexSources::default();
@@ -51,10 +51,10 @@ pub(super) fn read_tex_sources(root: &Path) -> Result<IndexSources, String> {
         .filter(|entry| entry.file_type().is_file())
         .filter(|entry| entry.path().extension().is_some_and(|extension| extension == "tex"))
         .filter(|entry| {
-            !entry
-                .path()
-                .strip_prefix(root)
-                .is_ok_and(|path| path.components().any(|part| part.as_os_str() == ".research"))
+            !entry.path().strip_prefix(root).is_ok_and(|path| {
+                path.components()
+                    .any(|part| crate::project::is_internal_project_component(part.as_os_str()))
+            })
         })
     {
         files.read(relative_to(root, entry.path())?, entry.path());

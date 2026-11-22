@@ -56,8 +56,6 @@ pub(super) const TRANSIENT_PDF_RENDER_DIRECTORY: &str = "tmp/pdfs";
 pub(super) const BASE_DIR: &str = ".research/overleaf-base";
 
 /// Lattice's own folders (state, versions, legacy agent config), never synced.
-pub(super) const APP_FOLDERS: [&str; 3] = [".research", ".git", ".omp"];
-
 /// Marks the start of an unresolved conflict; also the guard that stops a file
 /// full of markers from being uploaded to Overleaf.
 pub(super) const CONFLICT_MARKER: &str = "<<<<<<<";
@@ -214,9 +212,7 @@ pub(super) fn is_excluded(path: &str) -> bool {
     // Legacy `.omp/` folders may hold MCP server config, whose `env` is where
     // someone puts an API key. Uploading it would hand that key to everyone on
     // the Overleaf project and write it into the project's history.
-    let in_app_folder = APP_FOLDERS.iter().any(|dir| {
-        path.strip_prefix(dir).is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
-    });
+    let in_app_folder = crate::project::is_internal_project_path(Path::new(path));
     in_app_folder
         || is_transient_pdf_render_path(path)
         || path == ".gitignore"
@@ -317,10 +313,9 @@ pub(super) fn read_local_files(root: &Path) -> Result<LocalFiles, String> {
     let mut local = LocalFiles { files: BTreeMap::new(), oversized: Vec::new() };
     let build_pdf = BuildPdf::of(root);
     let walker = walkdir::WalkDir::new(root).into_iter().filter_entry(|e| {
-        let name = e.file_name().to_string_lossy();
         e.depth() == 0
             || !(e.file_type().is_dir()
-                && (APP_FOLDERS.contains(&name.as_ref())
+                && (crate::project::is_internal_project_component(e.file_name())
                     || relative_slash_path(root, e.path())
                         .is_some_and(|path| is_transient_pdf_render_path(&path))))
     });
@@ -511,6 +506,7 @@ mod tests {
             // MCP server config: `env` is where an API key goes.
             (".omp/mcp.json", true),
             (".omp", true),
+            (".CHEM/molecules.sqlite", true),
             (".git/HEAD", true),
             (".gitignore", true),
             ("sub/.DS_Store", true),

@@ -74,7 +74,7 @@ impl Entry {
 }
 
 fn is_build_input(path: &str) -> bool {
-    !path.starts_with(".research/") && !path.starts_with(".git/")
+    !lattice_core::project::is_internal_project_path(std::path::Path::new(path))
 }
 
 /// One snapshot of the panel's thread (`AgentProjectHistorySnapshot`).
@@ -490,7 +490,16 @@ mod tests {
     fn edits_to_lattices_own_records_build_nothing() {
         let mut checkpoints = Checkpoints::default();
         checkpoints.handle(snapshot("t", vec![]), true);
-        let notes = wire("n", "t", AT, &[(".research/notes.md", 1)]);
+        let notes = wire(
+            "n",
+            "t",
+            AT,
+            &[
+                (".research/notes.md", 1),
+                (".CHEM/molecules.sqlite", 1),
+                (".OMP/env", 1),
+            ],
+        );
         let outcome = checkpoints.handle(snapshot("t", vec![notes]), true);
         assert_eq!(outcome, Outcome::default());
     }

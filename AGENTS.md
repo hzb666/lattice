@@ -14,10 +14,12 @@ This checkout builds the GPUI desktop editor. The independent Tauri host and its
 
 Read callers and tests before editing. Preserve user changes, public behavior, saved data, licenses and upstream attribution. Keep changes local; do not move shared modules just to rename directories. Preserve the WebView pages and the mature PDFium renderer.
 
+For simple changes and small features, do not compile or run checks that trigger compilation unless the user explicitly asks. Prefer formatting and static checks; report any validation not performed.
+
 Do not use or create shared build caches. In particular, do not run `scripts/gpui-build.mjs`, which mirrors the source into `C:\Users\huzhibin\.cache\lattice-gpui-build`. Before compiling, testing or building, check whether that cache is in use. If occupied, skip compile/test/build validation, continue other requested work, and if none remains, stop and wait for instructions. Never stop another process to free the cache. When the cache is not occupied, run Cargo directly with the repository-local `gpui/target`; do not create another target tree. `cargo fmt` and metadata queries do not compile and need no build cache.
 
 Use `pnpm build:islands`, `pnpm build:native`, `pnpm check` and focused shared-module tests. Read `docs/agent-validation.md` before validation or recovering a failed check.
 
 Run the locally built GPUI binary on a scratch copy of `gpui/fixtures/e2e`, with isolated home and state directories. Do not use a real manuscript as a test fixture or stop unrelated processes. Report actual command outcomes and remaining failures separately.
 
-The translation catalogs also feed Rust UI strings. Do not run a clean extraction over TypeScript alone and discard native messages. Shared module generators are `scripts/gpui-host-errors.mjs`, `scripts/gpui-animated-icons.mjs`, `scripts/gpui-symbol-glyphs.mjs` and `design-system/code-themes.mjs`.
+Put every user-visible string through `lattice-i18n` (`t!` / `tc!`) and ensure Chinese exists in the shared app catalog or the appropriate GPUI catalog under `gpui/crates/lattice-i18n/locales/zh-CN/`. The translation catalogs also feed Rust UI strings. Do not run a clean extraction over TypeScript alone and discard native messages. Shared module generators are `scripts/gpui-host-errors.mjs`, `scripts/gpui-animated-icons.mjs`, `scripts/gpui-symbol-glyphs.mjs` and `design-system/code-themes.mjs`.

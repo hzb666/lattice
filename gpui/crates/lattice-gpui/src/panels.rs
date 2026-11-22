@@ -21,7 +21,7 @@ use crate::{
     file_tree::FileTreePanel,
     papers::PapersPanel,
     pdf::{PdfPanel, PdfPanelKind},
-    shell::{ChemDrawPanel, MoleculePanel},
+    shell::{ChemDrawPanel, MoleculePanel, SpectrumPanel},
 };
 
 pub fn present_tabs(cx: &mut App) {
@@ -63,6 +63,8 @@ pub fn present_tabs(cx: &mut App) {
             look(Icon::CHEMISTRY, Surface::Sheet)
         } else if view.clone().downcast::<MoleculePanel>().is_ok() {
             look(Icon::SEARCH, Surface::Sheet)
+        } else if view.clone().downcast::<SpectrumPanel>().is_ok() {
+            look(Icon::FILE_TEXT, Surface::Sheet)
         } else if let Ok(synara) = view.clone().downcast::<crate::agent::SynaraPanel>() {
             // The Agent stays on its opaque sidebar; the Git workspace is a
             // tool among the documents (`PANEL_ICONS`: Bot, GitBranch).

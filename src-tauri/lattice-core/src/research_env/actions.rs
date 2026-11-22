@@ -66,7 +66,7 @@ pub fn list_files(workspace: &Path) -> Result<Vec<String>, String> {
     for entry in walkdir::WalkDir::new(workspace).sort_by_file_name() {
         let entry = entry.map_err(|error| error.to_string())?;
         let relative = entry.path().strip_prefix(workspace).map_err(|error| error.to_string())?;
-        if relative.starts_with(".research") || !entry.file_type().is_file() {
+        if project::is_internal_project_path(relative) || !entry.file_type().is_file() {
             continue;
         }
         files.push(relative.to_string_lossy().replace('\\', "/"));

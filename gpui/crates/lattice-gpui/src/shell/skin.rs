@@ -641,7 +641,7 @@ impl Skin for LatticeSkin {
     }
 
     fn snap_label(&self, label: &str, cx: &mut App) -> AnyElement {
-        pill(label, cx).into_any_element()
+        pill(label, cx).absolute().top(px(12.)).into_any_element()
     }
 
     fn owns_gestures(&self, view_id: &str, _: &App) -> bool {

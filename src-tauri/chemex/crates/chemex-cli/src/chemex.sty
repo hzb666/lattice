@@ -15,6 +15,12 @@
 \graphicspath{{./}{\@currdir}}%
 \newcounter{chemex@drawing}
 \newbox\chemex@fieldbox
+\newbox\chemex@spectrumbox
+\newbox\chemex@formulabox
+\newdimen\chemex@overlayx
+\newdimen\chemex@overlayy
+\newdimen\chemex@overlaymax
+\newdimen\chemex@spectrumwidth
 \ifchemex@prepared\else
 \newwrite\chemex@figures
 \immediate\openout\chemex@figures=chemex-figures.dat
@@ -26,9 +32,14 @@
   \expandafter\def\csname chemex@fields@#1\endcsname{#3}%
   \expandafter\def\csname chemex@asset@#1\endcsname{#4}%
 }
-\newcommand{\chemex@registerspectrum}[3]{%
+\newcommand{\chemex@registerspectrum}[8]{%
   \expandafter\def\csname chemex@spectrum@#1\endcsname{#2}%
   \expandafter\def\csname chemex@asset@#1\endcsname{#3}%
+  \expandafter\def\csname chemex@compound@#1\endcsname{#4}%
+  \expandafter\def\csname chemex@x@#1\endcsname{#5}%
+  \expandafter\def\csname chemex@y@#1\endcsname{#6}%
+  \expandafter\def\csname chemex@size@#1\endcsname{#7}%
+  \expandafter\def\csname chemex@formula@#1\endcsname{#8}%
 }
 
 \newcommand{\chemex@claim}[2]{%
@@ -134,17 +145,17 @@
 \def\chemd{\@ifnextchar[{\chemex@chemd}{\chemex@chemddefault}}
 \def\chemex@chemddefault#1{%
   \csname chemex_if_mnova:nTF\endcsname{#1}%
-    {\chemex@spectrum{1}{#1}\includegraphics}%
+    {\chemex@withspectrumoptions{}{#1}}%
     {\chemex@drawing{compound}{#1}\includegraphics}%
 }
 \def\chemex@chemd[#1]#2{%
   \csname chemex_if_mnova:nTF\endcsname{#2}%
-    {\chemex@spectrum{#1}{#2}\includegraphics}%
+    {\chemex@withspectrumoptions{#1}{#2}}%
     {\chemex@drawing{#1}{#2}\includegraphics}%
 }
 \def\chemn{\@ifnextchar[{\chemex@chemn}{\chemex@chemndefault}}
-\def\chemex@chemndefault#1{\chemex@spectrum{1}{#1}\includegraphics}
-\def\chemex@chemn[#1]#2{\chemex@spectrum{#1}{#2}\includegraphics}
+\def\chemex@chemndefault#1{\chemex@withspectrumoptions{}{#1}}
+\def\chemex@chemn[#1]#2{\chemex@withspectrumoptions{#1}{#2}}
 \def\chemex@drawing#1#2#3{%
   \stepcounter{chemex@drawing}%
   \ifchemex@prepared\else
@@ -177,10 +188,17 @@
     \fi
   \fi
 }
-\def\chemex@spectrum#1#2#3{%
+\def\chemex@withspectrumoptions#1#2{%
+  \begingroup
+  \chemex@parse@spectrum{#1}%
+  \chemex@spectrum{\chemex@parsed@spec}{\chemex@parsed@cmpd}%
+    {\chemex@parsed@x}{\chemex@parsed@y}{\chemex@parsed@size}{#2}{\includegraphics}%
+  \endgroup
+}
+\def\chemex@spectrum#1#2#3#4#5#6#7{%
   \stepcounter{chemex@drawing}%
   \ifchemex@prepared\else
-    \immediate\write\chemex@figures{\string\chemex@spectrumrequest{#1}{\unexpanded{#2}}}%
+    \immediate\write\chemex@figures{\string\chemex@spectrumrequest{#1}{#2}{#3}{#4}{#5}{\unexpanded{#6}}}%
   \fi
   \ifchemex@discovery\else
     \edef\chemex@index{\arabic{chemex@drawing}}%
@@ -191,7 +209,27 @@
         \ifx\chemex@requested\chemex@registered\else
           \PackageError{chemex}{Mnova spectrum changed between build passes}{Keep the spectrum index consistent.}%
         \fi
-        #3{\csname chemex@asset@\chemex@index\endcsname}%
+        \edef\chemex@registeredcompound{\csname chemex@compound@\chemex@index\endcsname}%
+        \edef\chemex@registeredx{\csname chemex@x@\chemex@index\endcsname}%
+        \edef\chemex@registeredy{\csname chemex@y@\chemex@index\endcsname}%
+        \edef\chemex@registeredsize{\csname chemex@size@\chemex@index\endcsname}%
+        \edef\chemex@requestedcompound{#2}%
+        \edef\chemex@requestedx{#3}%
+        \edef\chemex@requestedy{#4}%
+        \edef\chemex@requestedsize{#5}%
+        \ifx\chemex@requestedcompound\chemex@registeredcompound\else
+          \PackageError{chemex}{Mnova compound changed between build passes}{Keep the compound key consistent.}%
+        \fi
+        \ifx\chemex@requestedx\chemex@registeredx\else
+          \PackageError{chemex}{Mnova formula x changed between build passes}{Keep the formula position consistent.}%
+        \fi
+        \ifx\chemex@requestedy\chemex@registeredy\else
+          \PackageError{chemex}{Mnova formula y changed between build passes}{Keep the formula position consistent.}%
+        \fi
+        \ifx\chemex@requestedsize\chemex@registeredsize\else
+          \PackageError{chemex}{Mnova formula size changed between build passes}{Keep the formula size consistent.}%
+        \fi
+        \chemex@overlay{#7{\csname chemex@asset@\chemex@index\endcsname}}{#3}{#4}{#5}{\csname chemex@formula@\chemex@index\endcsname}%
       \else
         \PackageError{chemex}{Spectrum registration is missing}{Run the Chemex build from the manuscript source.}%
       \fi
@@ -199,8 +237,80 @@
   \fi
 }
 
+\def\chemex@overlay#1#2#3#4#5{%
+  \protected@edef\chemex@formulaValue{#5}%
+  \ifx\chemex@formulaValue\@empty
+    #1%
+  \else
+    \setbox\chemex@spectrumbox=\hbox{#1}%
+    \chemex@spectrumwidth=\wd\chemex@spectrumbox
+    \setbox\chemex@formulabox=\hbox{\fontsize{#4}{#4}\selectfont $\displaystyle \chemex@formulaValue$}%
+    \ifdim\wd\chemex@formulabox>\wd\chemex@spectrumbox
+      \setbox\chemex@formulabox=\hbox{\resizebox{\wd\chemex@spectrumbox}{!}{\box\chemex@formulabox}}%
+    \fi
+    \chemex@overlaymax=\ht\chemex@spectrumbox
+    \advance\chemex@overlaymax \dp\chemex@spectrumbox
+    \chemex@overlayx=\ht\chemex@formulabox
+    \advance\chemex@overlayx \dp\chemex@formulabox
+    \ifdim\chemex@overlayx>\chemex@overlaymax
+      \setbox\chemex@formulabox=\hbox{\resizebox*{!}{\chemex@overlaymax}{\box\chemex@formulabox}}%
+    \fi
+    \chemex@overlayx=\wd\chemex@spectrumbox
+    \multiply\chemex@overlayx #2
+    \divide\chemex@overlayx 100
+    \chemex@overlaymax=\wd\chemex@spectrumbox
+    \advance\chemex@overlaymax -\wd\chemex@formulabox
+    \ifdim\chemex@overlayx>\chemex@overlaymax \chemex@overlayx=\chemex@overlaymax\fi
+    \chemex@overlaymax=\ht\chemex@spectrumbox
+    \advance\chemex@overlaymax \dp\chemex@spectrumbox
+    \multiply\chemex@overlaymax #3
+    \divide\chemex@overlaymax 100
+    \chemex@overlayy=\ht\chemex@spectrumbox
+    \advance\chemex@overlayy -\chemex@overlaymax
+    \advance\chemex@overlayy -\ht\chemex@formulabox
+    \chemex@overlaymax=\dp\chemex@formulabox
+    \advance\chemex@overlaymax -\dp\chemex@spectrumbox
+    \ifdim\chemex@overlayy<\chemex@overlaymax \chemex@overlayy=\chemex@overlaymax\fi
+    \chemex@overlaymax=\ht\chemex@spectrumbox
+    \advance\chemex@overlaymax -\ht\chemex@formulabox
+    \ifdim\chemex@overlayy>\chemex@overlaymax \chemex@overlayy=\chemex@overlaymax\fi
+    \rlap{\box\chemex@spectrumbox}%
+    \smash{\rlap{\kern\chemex@overlayx\raise\chemex@overlayy\box\chemex@formulabox}}%
+    \kern\chemex@spectrumwidth
+  \fi
+}
+
 \let\chemex@originalgraphics\Ginclude@graphics
 \ExplSyntaxOn
+\tl_new:N \l_chemex_spectrum_spec_tl
+\tl_new:N \l_chemex_spectrum_cmpd_tl
+\tl_new:N \l_chemex_spectrum_size_tl
+\int_new:N \l_chemex_spectrum_x_int
+\int_new:N \l_chemex_spectrum_y_int
+\keys_define:nn { chemex/spectrum }
+  {
+    spec .tl_set:N = \l_chemex_spectrum_spec_tl,
+    cmpd .tl_set:N = \l_chemex_spectrum_cmpd_tl,
+    x .int_set:N = \l_chemex_spectrum_x_int,
+    y .int_set:N = \l_chemex_spectrum_y_int,
+    size .tl_set:N = \l_chemex_spectrum_size_tl
+  }
+\cs_new_protected:Npn \chemex@parse@spectrum #1
+  {
+    \tl_set:Nn \l_chemex_spectrum_spec_tl { 1 }
+    \tl_clear:N \l_chemex_spectrum_cmpd_tl
+    \int_set:Nn \l_chemex_spectrum_x_int { 50 }
+    \int_set:Nn \l_chemex_spectrum_y_int { 15 }
+    \tl_set:Nn \l_chemex_spectrum_size_tl { 8pt }
+    \tl_if_in:nnTF {#1} { = }
+      { \keys_set:nn { chemex/spectrum } {#1} }
+      { \tl_if_blank:nF {#1} { \tl_set:Nn \l_chemex_spectrum_spec_tl {#1} } }
+    \edef\chemex@parsed@spec{\tl_use:N \l_chemex_spectrum_spec_tl}
+    \edef\chemex@parsed@cmpd{\tl_use:N \l_chemex_spectrum_cmpd_tl}
+    \edef\chemex@parsed@x{\int_use:N \l_chemex_spectrum_x_int}
+    \edef\chemex@parsed@y{\int_use:N \l_chemex_spectrum_y_int}
+    \edef\chemex@parsed@size{\tl_use:N \l_chemex_spectrum_size_tl}
+  }
 \cs_new_protected:Npn \chemex_if_mnova:nTF #1#2#3
   {
     \exp_args:Nne \regex_match:nnTF
@@ -215,7 +325,7 @@
       { \chemex@drawing{compound}{#1}\chemex@originalgraphics }
       {
         \exp_args:Nne \regex_match:nnTF { \.[mM][nN][oO][vV][aA] "? \Z } { \tl_to_str:n {#1} }
-          { \chemex@spectrum{1}{#1}\chemex@originalgraphics }
+          { \chemex@spectrum{1}{}{50}{15}{8pt}{#1}{\chemex@originalgraphics} }
           { \chemex@originalgraphics{#1} }
       }
   }

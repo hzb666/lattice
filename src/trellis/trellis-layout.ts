@@ -59,7 +59,7 @@ type SavedLayout = {
 export const VIEW_TYPES = [
   "project", "papers", "agent", "pdf", ROOT_PDF, "file", "slot", "terminal",
   "history", "git", "comments", "overleaf", "literature", "todos", "checklist",
-  "chemdraw", "molecule", "start",
+  "chemdraw", "molecule", "spectrum", "start",
 ] as const;
 
 /**

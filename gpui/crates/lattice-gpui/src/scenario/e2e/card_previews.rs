@@ -65,7 +65,7 @@ fn seed_compound_preview(root: &Path) -> Result<()> {
     std::fs::write(root.join(DRAWING), source)?;
     let group = chemex_cdxml::DrawingDocument::parse(source.into())?
         .compound_group_source_without_fields(COMPOUND)?;
-    let assets = root.join(".research/cache/chemex-v1/assets");
+    let assets = root.join(".chem/cache/chemdraw/assets");
     std::fs::create_dir_all(&assets)?;
     let hash = lattice_core::util::sha256_hex(group);
     std::fs::write(
@@ -283,7 +283,7 @@ impl Run {
             let read = self
                 .wait_for(cx, Duration::from_secs(5), |_, cx| {
                     matches!(
-                        previews::figure(root, &figure, None, &editor, cx),
+                        previews::figure(root, &figure, None, None, &editor, cx),
                         Some(Preview::Ready(Figure::Shown(_)))
                     )
                 })
@@ -301,7 +301,7 @@ impl Run {
         let unavailable = self
             .wait_for(cx, Duration::from_secs(5), |_, cx| {
                 matches!(
-                    previews::figure(root, &vector, None, &editor, cx),
+                    previews::figure(root, &vector, None, None, &editor, cx),
                     Some(Preview::Ready(Figure::Unavailable))
                 )
             })

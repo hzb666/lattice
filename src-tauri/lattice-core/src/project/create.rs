@@ -358,6 +358,7 @@ fn create_skeleton(root: &Path) -> Result<(), String> {
         ".research/cache/",
         ".research/review/",
         ".research/build/",
+        ".chem/",
         "/main.pdf",
     ]
     .into_iter()

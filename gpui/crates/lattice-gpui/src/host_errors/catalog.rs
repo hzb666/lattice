@@ -27,8 +27,8 @@ pub(super) static ENTRIES: &[Entry] = &[
     },
     Entry {
         file: "project/paths.rs",
-        literal: "Choose a project-relative path outside .research.",
-        text: Text::Message("Choose a project-relative path outside .research.", &[]),
+        literal: "Choose a project-relative path outside app-private folders.",
+        text: Text::Message("Choose a project-relative path outside app-private folders.", &[]),
     },
     Entry {
         file: "project/paths.rs",

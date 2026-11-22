@@ -20,6 +20,7 @@ pub fn check_label(name: &str) -> &str {
         "project-root" => t!("Root document"),
         "bibliography" => t!("Bibliography"),
         "chemdraw" => "ChemDraw",
+        "mestrenova" => "MestReNova",
         "conference-fonts" => t!("Conference fonts"),
         "icml-packages" => t!("ICML packages"),
         "neurips-packages" => t!("NeurIPS packages"),
@@ -44,6 +45,7 @@ fn tool_description(name: &str) -> Option<&'static str> {
         "uv" => t!("Python tooling used for literature and bibliography tools"),
         "uvx" => t!("Runner used for Lattice's pinned literature tools"),
         "chemdraw" => "ChemDraw",
+        "mestrenova" => "MestReNova",
         _ => return None,
     })
 }

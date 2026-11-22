@@ -240,7 +240,7 @@ References: \chemex{compound-001}.
     assert!(document.texts().iter().any(|text| text.text == "产物 & 2"));
     let pdf = fs::read(rendered.join("numbering.pdf")).unwrap();
     fs::write(project.0.join("ordinary.pdf"), &pdf).unwrap();
-    let cache = project.0.join(".chem/drawing-cache/v1");
+    let cache = project.0.join(".chem/cache/chemdraw");
     fs::create_dir_all(&cache).unwrap();
     for source in [first, second] {
         let key = format!("{:x}", Sha256::digest(source));
@@ -313,7 +313,7 @@ Compound \chemex{first}.
     )
     .unwrap();
     assert_success(project.run("render", "after"));
-    let cache = project.0.join(".chem/drawing-cache/v1");
+    let cache = project.0.join(".chem/cache/chemdraw");
     fs::create_dir_all(&cache).unwrap();
     let pdf = fs::read(project.0.join("after/numbering.pdf")).unwrap();
     for drawing in fs::read_dir(project.0.join("after/drawings")).unwrap() {

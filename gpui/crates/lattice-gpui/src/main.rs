@@ -15,7 +15,7 @@ mod asset_preview;
 mod assets;
 mod build;
 mod build_panel;
-mod card_previews;
+pub(crate) mod card_previews;
 mod confirm;
 mod crash;
 mod editor_panel;

@@ -5,7 +5,7 @@
 //! recorder file (`<root>.fls`): the root document, what it inputs, its
 //! figures and classes, and the `.bbl` (arXiv does not run BibTeX). Anything
 //! TeX also wrote (`.aux`, `.toc`, the PDF) is build output and stays behind;
-//! `.research/` and `.git/` never go, whatever the build read. A build that
+//! `.research/`, `.chem/` and `.git/` never go, whatever the build read. A build that
 //! kept its files in the hidden build folder (`aux_files`) read its `.bbl`
 //! there: it ships beside the document, where a build without the folder,
 //! arXiv's among them, reads it. Then the
@@ -52,9 +52,6 @@ const CANCEL_POLL: Duration = Duration::from_millis(100);
 
 /// Comment lines listed for review; the count covers them all.
 const LISTED_COMMENTS: usize = 200;
-
-/// Folders that never ship, whatever the build read: app state and VCS.
-const PRIVATE_DIRS: &[&str] = &[".research", ".git"];
 
 /// File endings of hand-written TeX sources, whose comments are the writer's
 /// notes. Not `.sty`/`.cls` (venue templates), the `.bbl`, or EPS/PS figures,
@@ -532,8 +529,7 @@ fn normalize(path: &Path) -> PathBuf {
 }
 
 fn private(path: &str) -> bool {
-    let top = path.split('/').next().unwrap_or(path);
-    PRIVATE_DIRS.contains(&top)
+    project::is_internal_project_path(Path::new(path))
 }
 
 fn has_extension(path: &str, extensions: &[&str]) -> bool {

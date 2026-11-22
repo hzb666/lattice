@@ -62,6 +62,23 @@ pub(crate) fn run(manuscript: &Path, destination: &Path, kind: OutputKind) -> Re
             .cloned()
             .collect();
         let values = tex::field_values(&all_fields, &numbers)?;
+        if !matches!(kind, OutputKind::Render) {
+            let requests: Vec<_> = figures
+                .iter()
+                .map(|figure| figure.request.clone())
+                .collect();
+            let sources: Vec<_> = figures
+                .iter()
+                .filter_map(|figure| {
+                    figure
+                        .document
+                        .as_ref()
+                        .map(|document| document.source().to_owned())
+                })
+                .collect();
+            tex::attach_mnova_formulas(&requests, &mut registrations, &sources, &numbers)
+                .map_err(|error| error.to_string())?;
+        }
         let directories = render_figures(stage, &figures, &values)?;
         if !matches!(kind, OutputKind::Render) {
             export_figures(&project, stage, &figures, &directories, &mut registrations)?;
@@ -161,8 +178,20 @@ fn registrations(figures: &[LoadedFigure]) -> Vec<FigureRegistration> {
                     asset: String::new(),
                 })
             }
-            FigureRequest::Mnova { spectrum, .. } => FigureRegistration::Mnova {
+            FigureRequest::Mnova {
+                spectrum,
+                compound,
+                x,
+                y,
+                size,
+                ..
+            } => FigureRegistration::Mnova {
                 spectrum: *spectrum,
+                compound: compound.clone(),
+                x: *x,
+                y: *y,
+                size: size.clone(),
+                formula: None,
                 asset: String::new(),
             },
         })
@@ -216,6 +245,7 @@ fn export_figures(
     registrations: &mut [FigureRegistration],
 ) -> Result<()> {
     let cache = export::cache_directory(project)?;
+    let spectrum_cache = export::spectrum_cache_directory(project)?;
     for (index, ((figure, directory), registration)) in figures
         .iter()
         .zip(directories)
@@ -225,7 +255,7 @@ fn export_figures(
         let pdf = match &figure.request {
             FigureRequest::ChemDraw { .. } => export::drawing_pdf(&cache, directory)?,
             FigureRequest::Mnova { spectrum, .. } => chemex_cli::export_spectrum_pdf(
-                &cache,
+                &spectrum_cache,
                 &figure.path,
                 *spectrum,
                 |mut command, cwd| {

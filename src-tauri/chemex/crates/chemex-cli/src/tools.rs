@@ -10,6 +10,11 @@ use crate::Result;
 const RDKIT_PACKAGE_VERSION: &str = "2026.9.2";
 
 pub(crate) fn find(variable: &str, name: &str) -> Result<PathBuf> {
+    find_local(variable, name)?
+        .ok_or_else(|| format!("cannot find {name}; set {variable} to its executable path").into())
+}
+
+pub(crate) fn find_local(variable: &str, name: &str) -> Result<Option<PathBuf>> {
     if let Some(path) = env::var_os(variable) {
         let path = PathBuf::from(path);
         if !path.is_file() {
@@ -17,38 +22,17 @@ pub(crate) fn find(variable: &str, name: &str) -> Result<PathBuf> {
                 format!("{variable} does not name an executable: {}", path.display()).into(),
             );
         }
-        return Ok(canonicalize(&path)?);
+        return Ok(Some(canonicalize(&path)?));
     }
     for directory in env::split_paths(&env::var_os("PATH").unwrap_or_default()) {
         for extension in ["", ".com", ".exe"] {
             let path = directory.join(format!("{name}{extension}"));
             if path.is_file() {
-                return Ok(canonicalize(&path)?);
+                return Ok(Some(canonicalize(&path)?));
             }
         }
     }
-    #[cfg(windows)]
-    if name == "MestReNova"
-        && let Some(path) = running_mestrenova()
-    {
-        return Ok(path.into());
-    }
-    Err(format!("cannot find {name}; set {variable} to its executable path").into())
-}
-
-#[cfg(windows)]
-fn running_mestrenova() -> Option<PathBuf> {
-    let output = Command::new("powershell.exe")
-        .args([
-            "-NoProfile",
-            "-NonInteractive",
-            "-Command",
-            "Get-Process -Name 'MestReNova' -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty Path",
-        ])
-        .output()
-        .ok()?;
-    let path = PathBuf::from(String::from_utf8_lossy(&output.stdout).trim());
-    path.is_file().then(|| canonicalize(&path).ok()).flatten()
+    Ok(None)
 }
 
 pub(crate) fn canonicalize(path: &Path) -> std::io::Result<PathBuf> {
@@ -117,7 +101,7 @@ pub(crate) fn run_rdkit(script: &str, request: &str) -> Result<String> {
         .map_err(|error| format!("cannot read RDKit JSON output: {error}").into())
 }
 
-fn run_with_timeout(
+pub(crate) fn run_with_timeout(
     command: &mut Command,
     directory: &Path,
     name: &str,
@@ -156,10 +140,7 @@ fn run_with_timeout(
         }
         if started.elapsed() >= timeout {
             terminate_process_tree(&mut child)?;
-            return Err(format!(
-                "{name} timed out; helper stopped, native ChemDraw was not terminated"
-            )
-            .into());
+            return Err(format!("{name} timed out after {} seconds", timeout.as_secs_f64()).into());
         }
         std::thread::sleep(Duration::from_millis(50));
     }
