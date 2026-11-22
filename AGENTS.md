@@ -12,6 +12,8 @@ This checkout builds the GPUI desktop editor. The independent Tauri host and its
 
 ## Work
 
+Develop on `chemex` and cherry-pick reviewed GPUI changes from `upstream/main` directly onto it. See `CONTRIBUTING.md` for the branch workflow.
+
 Read callers and tests before editing. Preserve user changes, public behavior, saved data, licenses and upstream attribution. Keep changes local; do not move shared modules just to rename directories. Preserve the WebView pages and the mature PDFium renderer.
 
 For simple changes and small features, do not compile or run checks that trigger compilation unless the user explicitly asks. Prefer formatting and static checks; report any validation not performed.
