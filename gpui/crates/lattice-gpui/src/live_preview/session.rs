@@ -21,6 +21,7 @@ use std::{
         Arc, Mutex,
         atomic::{AtomicU64, Ordering},
     },
+    time::Duration,
 };
 
 use futures::{StreamExt as _, channel::mpsc};
@@ -40,59 +41,10 @@ use super::{
 use crate::pdf::PdfEngine;
 
 mod loading;
+mod snapshot;
 
-/// Where the session is. `Starting`: rtex is loading the preamble.
-/// `FirstLayout`: typesetting the whole document for the first time.
-/// `Live`: paragraphs follow typing. `Paused`: rtex could not load the
-/// preamble for live typing; whole-document passes still run.
-/// `Uncompiled`: the first whole-document pass stopped on a TeX error; rtex
-/// keeps running and lays the document out once it compiles. `Exited`: rtex
-/// is gone (it exited, or can no longer be written to), and only a new
-/// session brings live preview back (`LivePreview::restart_if_exited`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Phase {
-    Starting,
-    FirstLayout,
-    Live,
-    Paused,
-    Uncompiled,
-    Exited,
-}
-
-/// How rtex ended, when it ended on its own.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct RtexExit {
-    pub code: Option<i32>,
-    pub signal: Option<i32>,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct Snapshot {
-    pub phase: Phase,
-    /// A whole-document pass is catching up with the text: page breaks and
-    /// what follows an edit may move.
-    pub layout_pending: bool,
-    /// rtex's words when it stopped or failed.
-    pub detail: Option<String>,
-    /// How rtex ended (`Exited`); `None` while it runs or when it could no
-    /// longer be written to.
-    pub exit: Option<RtexExit>,
-    /// A quiet build is bringing the full PDF up to date: running, or its
-    /// PDF loading.
-    pub rebuilding: bool,
-}
-
-impl Default for Snapshot {
-    fn default() -> Self {
-        Self {
-            phase: Phase::Starting,
-            layout_pending: false,
-            detail: None,
-            exit: None,
-            rebuilding: false,
-        }
-    }
-}
+pub use snapshot::{Phase, RtexExit, Snapshot};
+use snapshot::{awaiting_first_layout, ready_phase};
 
 /// rtex's fallback PDF of one layout, open in PDFium: rtex deletes the file
 /// two layouts later.
@@ -155,6 +107,17 @@ pub struct Session {
     base_pages: Option<u32>,
     fonts_loading: HashSet<String>,
     images_loading: HashSet<String>,
+    /// The first whole-document pass failed before any layout. rtex reports
+    /// the failed pass and the engine's Ready in either order (a loaded Mac
+    /// finishes the pass first), and Ready must not put "First layout…" back
+    /// over it.
+    first_pass_failed: bool,
+    /// `LivePreview::first_layout_timeout`, as it was when this session
+    /// started.
+    first_layout_timeout: Duration,
+    /// Counts the bound from the engine's first Ready: loading the preamble
+    /// (and the font list a first LuaLaTeX run builds) is not the layout.
+    overdue_timer: Option<Task<()>>,
     _events: Task<()>,
 }
 
@@ -215,6 +178,7 @@ impl Session {
                 .update(cx, |this, cx| {
                     let mut session = Session {
                         id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
+                        first_layout_timeout: this.first_layout_timeout,
                         root: root.clone(),
                         rtex,
                         build_dir,
@@ -245,7 +209,9 @@ impl Session {
                         base_pages: None,
                         fonts_loading: HashSet::new(),
                         images_loading: HashSet::new(),
+                        first_pass_failed: false,
                         _events: reader,
+                        overdue_timer: None,
                     };
                     // First in the queue, ahead of any edit: the revision rtex
                     // loaded the files at, which the base PDF was built from.
@@ -525,6 +491,29 @@ impl Session {
         self.update_snapshot(cx, |snapshot| snapshot.layout_pending = pending);
     }
 
+    /// Once the first-layout bound passes, say so, if rtex is still on its
+    /// way.
+    fn start_overdue_timer(&self, cx: &mut Context<LivePreview>) -> Task<()> {
+        let (id, timeout) = (self.id, self.first_layout_timeout);
+        cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(timeout).await;
+            this.update(cx, |this, cx| {
+                if let Some(session) = this.session_with(id)
+                    && session.awaiting_first_layout(session.snapshot.phase)
+                {
+                    session.update_snapshot(cx, |snapshot| snapshot.overdue = true);
+                }
+            })
+            .ok();
+        })
+    }
+
+    /// rtex is still on its way to a first layout: no layout yet, and no
+    /// failed pass to say why.
+    fn awaiting_first_layout(&self, phase: Phase) -> bool {
+        awaiting_first_layout(phase, self.model.has_layout(), self.first_pass_failed)
+    }
+
     fn update_snapshot(
         &mut self,
         cx: &mut Context<LivePreview>,
@@ -532,6 +521,10 @@ impl Session {
     ) {
         let mut next = self.snapshot.clone();
         change(&mut next);
+        // Only a session still waiting for its first layout is overdue.
+        if !self.awaiting_first_layout(next.phase) {
+            next.overdue = false;
+        }
         if next != self.snapshot {
             self.snapshot = next;
             cx.emit(LivePreviewEvent::Changed);
@@ -572,11 +565,10 @@ impl Session {
                         snapshot.detail = reason;
                     }),
                     "Ready" => {
-                        let phase = if self.model.has_layout() {
-                            Phase::Live
-                        } else {
-                            Phase::FirstLayout
-                        };
+                        if self.overdue_timer.is_none() && !self.model.has_layout() {
+                            self.overdue_timer = Some(self.start_overdue_timer(cx));
+                        }
+                        let phase = ready_phase(self.model.has_layout(), self.first_pass_failed);
                         self.update_snapshot(cx, |snapshot| {
                             snapshot.phase = phase;
                             snapshot.detail = None;
@@ -659,6 +651,7 @@ impl Session {
             // rtex keeps the previous layout; before the first one there is
             // nothing to show until an edit makes the document compile.
             if !self.model.has_layout() {
+                self.first_pass_failed = true;
                 self.update_snapshot(cx, |snapshot| {
                     snapshot.phase = Phase::Uncompiled;
                     snapshot.detail = None;

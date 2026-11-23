@@ -4,8 +4,10 @@
 //! build gives the base PDF, typing into a paragraph paints it over its page
 //! within moments, the save's build waits for the pause and runs quietly (no
 //! spinner on the Build button), its PDF takes over and the paint goes, rtex
-//! killed mid-session comes back by itself, and Settings' switch turns it off. The project's engine and text are put back
-//! after.
+//! killed mid-session comes back by itself, a document that never gets its
+//! first layout says so and offers to reinstall rtex, which downloads it
+//! again, and Settings' switch turns it off. The project's engine and text
+//! are put back after.
 
 use std::time::{Duration, Instant};
 
@@ -19,6 +21,7 @@ use crate::{
     build_panel::ChipState,
     live_preview::{LivePreview, Phase, State, status},
     pdf::PdfView,
+    shell::StopBuild,
 };
 
 /// The first download, the preamble loaded into LuaLaTeX and the first
@@ -392,6 +395,81 @@ impl Run {
                     .any(|state| state.to_lowercase().contains("starting"))
                 && !states.iter().any(|state| state.starts_with("failed")),
             json!({ "killed": killed, "states": states }),
+        );
+
+        // A document that keeps LuaLaTeX busy (a loop here; a first run
+        // listing its fonts looks the same) never gets its first layout: past
+        // the bound the pill says so and offers to reinstall rtex, rather
+        // than spinning on "First layout…" for good. The reinstall downloads
+        // rtex again and the preview comes back.
+        let main = cx
+            .update(|cx| project.read(cx).main_document().map(|main| root.join(main)))
+            .context("the project has a main document")?;
+        let main_text = std::fs::read_to_string(&main)?;
+        std::fs::write(
+            &main,
+            main_text.replacen("\\begin{document}", "\\begin{document}\\loop\\iftrue\\repeat", 1),
+        )?;
+        let bound = cx.update(|cx| preview.read(cx).first_layout_timeout);
+        cx.update(|cx| {
+            preview.update(cx, |preview, cx| {
+                preview.first_layout_timeout = Duration::from_secs(8);
+                preview.retry(cx);
+            })
+        });
+        let mut labels: Vec<String> = Vec::new();
+        let overdue = self
+            .wait_for(cx, Duration::from_secs(60), |_, cx| {
+                let pill = status::status(preview.read(cx));
+                if let Some(label) = pill.as_ref().map(|pill| pill.label.to_string())
+                    && labels.last() != Some(&label)
+                {
+                    labels.push(label);
+                }
+                pill.is_some_and(|pill| {
+                    pill.action == Some(status::PillAction::Reinstall)
+                        && pill.tone == status::Tone::Pending
+                })
+            })
+            .await;
+        self.snapshot(cx, "live-preview-overdue").await;
+        std::fs::write(&main, &main_text)?;
+        // The loop hangs the build the outside edit started as well: stop it,
+        // and what queued behind it, so no LuaLaTeX outlives the scenario.
+        self.dispatch_to_shell(cx, &StopBuild)?;
+        let build_stopped = self
+            .wait_for(cx, Duration::from_secs(20), |shell, cx| !shell.read(cx).building())
+            .await;
+        cx.update(|cx| {
+            preview.update(cx, |preview, cx| {
+                preview.first_layout_timeout = bound;
+                preview.reinstall(cx);
+            })
+        });
+        let mut reinstall_states: Vec<String> = Vec::new();
+        let restarted = self
+            .wait_for(cx, STARTS_WITHIN, |_, cx| {
+                let name = state_name(preview.read(cx));
+                if reinstall_states.last() != Some(&name) {
+                    reinstall_states.push(name);
+                }
+                preview.read(cx).is_live()
+            })
+            .await;
+        steps.check(
+            "a document that never gets its first layout says so after the bound instead of spinning, and reinstalling rtex brings the preview back",
+            overdue
+                && restarted
+                && build_stopped
+                && reinstall_states.iter().any(|state| state == "downloading")
+                && labels.iter().any(|label| label == "First layout…")
+                && labels.last().is_some_and(|label| label == "Live preview is taking long"),
+            json!({
+                "labels": labels,
+                "restarted": restarted,
+                "build_stopped": build_stopped,
+                "reinstall_states": reinstall_states,
+            }),
         );
 
         // Settings' switch turns it off for the project, and the pill goes.

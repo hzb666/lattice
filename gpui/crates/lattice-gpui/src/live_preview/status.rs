@@ -1,7 +1,10 @@
 //! The live preview's state, as a small pill over the PDF
 //! (`src/live-preview/live-preview-status.tsx` and `live-preview.css`):
 //! downloading rtex, starting, the first layout, live, a layout catching up,
-//! or stopped; its dot pulses while a quiet build brings the full PDF up to
+//! or stopped; a first layout that never comes says so a minute after the
+//! preamble loaded and, if it persists, offers to reinstall rtex (a fresh
+//! download and build folders). Its dot
+//! pulses while a quiet build brings the full PDF up to
 //! date. It floats at the bottom left of the pages rather than joining the
 //! PDF toolbar, so it costs the toolbar no width in a narrow panel, and while
 //! all is live it shrinks to its dot, so it does not sit over the page while
@@ -44,6 +47,18 @@ pub struct Status {
     pub tip: SharedString,
     /// A quiet build is bringing the full PDF up to date: the dot pulses.
     pub rebuilding: bool,
+    /// What a click does, if anything.
+    pub action: Option<PillAction>,
+}
+
+/// What clicking the pill does.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PillAction {
+    /// Live preview stopped: start it again.
+    Restart,
+    /// Still no first layout after a minute: delete rtex and its build
+    /// folders and download it afresh.
+    Reinstall,
 }
 
 /// What the pill shows for `preview`, or `None` when it shows nothing.
@@ -62,6 +77,7 @@ pub fn status(preview: &LivePreview) -> Option<Status> {
          still come from the normal build."
     );
     let phase = snapshot.map(|snapshot| snapshot.phase);
+    let overdue = snapshot.is_some_and(|snapshot| snapshot.overdue);
     let (tone, label, detail): (Tone, String, Option<String>) = match state {
         State::Downloading(progress) => {
             let percent = (progress * 100.).round() as u32;
@@ -71,6 +87,18 @@ pub fn status(preview: &LivePreview) -> Option<Status> {
                 Some(t!("Downloading rtex once, about 4 MB. Builds work as usual meanwhile. You can turn it off in Settings › Editor & builds.").to_string()),
             )
         }
+        _ if overdue => (
+            Tone::Pending,
+            t!("Live preview is taking long").to_string(),
+            Some(
+                [
+                    t!("rtex loaded your preamble over a minute ago and has not laid the document out yet."),
+                    t!("Something in the document may keep LuaLaTeX busy, such as a loop or a package waiting for input: that needs a fix in the document, which a reinstall will not bring. The PDF still updates with each build."),
+                    t!("If it persists with a document that compiles, click to reinstall live preview: rtex downloads again and lays the document out from scratch. You can also turn it off in Settings › Editor & builds."),
+                ]
+                .join("\n\n"),
+            ),
+        ),
         State::Starting => (
             Tone::Busy,
             t!("Starting live preview…").to_string(),
@@ -138,6 +166,11 @@ pub fn status(preview: &LivePreview) -> Option<Status> {
         label: label.into(),
         tip: tip.into(),
         rebuilding,
+        action: if overdue {
+            Some(PillAction::Reinstall)
+        } else {
+            (tone == Tone::Stopped).then_some(PillAction::Restart)
+        },
     })
 }
 
@@ -183,7 +216,8 @@ pub fn pill(
 ) -> Option<AnyElement> {
     let status = status(preview.read(cx))?;
     let palette = cx.palette().clone();
-    let stopped = status.tone == Tone::Stopped;
+    let action = status.action;
+    let clickable = action.is_some();
     let live = status.tone == Tone::Live;
     let dot_color = match status.tone {
         Tone::Live => palette.success,
@@ -227,14 +261,14 @@ pub fn pill(
         .gap(SPACING_3)
         .max_w_full()
         .rounded(RADIUS_CONTROL)
-        .bg(if stopped {
+        .bg(if clickable {
             mix(palette.raised, palette.hover, interaction.hover)
         } else {
             palette.raised
         })
         .shadow(Elevation::Popover.shadows(&palette))
         .text_role(TextRole::Micro, cx)
-        .text_color(if stopped {
+        .text_color(if clickable {
             palette.text
         } else {
             palette.text_secondary
@@ -254,12 +288,17 @@ pub fn pill(
             )
         })
         .tooltip(move |_, cx| -> AnyView { cx.new(|_| PillTip { text: tip.clone() }).into() });
-    if stopped {
+    if let Some(action) = action {
         let preview = preview.clone();
         body = track_pointer(body, pointer)
             .cursor_pointer()
             .child(Icon::ROTATE_CW.element(px(11.), palette.text))
-            .on_click(move |_, _, cx| preview.update(cx, |preview, cx| preview.retry(cx)));
+            .on_click(move |_, _, cx| {
+                preview.update(cx, |preview, cx| match action {
+                    PillAction::Restart => preview.retry(cx),
+                    PillAction::Reinstall => preview.reinstall(cx),
+                })
+            });
     }
     Some(
         div()

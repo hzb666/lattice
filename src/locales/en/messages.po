@@ -744,8 +744,8 @@ msgid "{label} at {place}. Click to jump there"
 msgstr "{label} at {place}. Click to jump there"
 
 #: src/live-preview/live-preview-status.tsx
-msgid "{label}. Restart live preview"
-msgstr "{label}. Restart live preview"
+msgid "{label}. {actionLabel}"
+msgstr "{label}. {actionLabel}"
 
 #: src/papers/linked-library-sheet.tsx
 msgid "{library} is up to date."
@@ -4926,6 +4926,10 @@ msgstr "Could not record Overleaf's {scopedPermission} permission locally ({deta
 msgid "Could not record the sync base for {path}: {error}"
 msgstr "Could not record the sync base for {path}: {error}"
 
+#: src/live-preview/use-live-preview.ts
+msgid "Could not reinstall live preview: {error}"
+msgstr "Could not reinstall live preview: {error}"
+
 #. placeholder {0}: entry.path
 #. placeholder {1}: hostErrorMessage(reason)
 #: src/app/use-overleaf-remote-deletes.ts
@@ -7609,6 +7613,10 @@ msgstr "IEEE journal article ({name})"
 msgid "If and only if"
 msgstr "If and only if"
 
+#: src/live-preview/live-preview-status.tsx
+msgid "If it persists with a document that compiles, click to reinstall live preview: rtex downloads again and lays the document out from scratch. You can also turn it off in Settings › Editor & builds."
+msgstr "If it persists with a document that compiles, click to reinstall live preview: rtex downloads again and lays the document out from scratch. You can also turn it off in Settings › Editor & builds."
+
 #: src/overleaf/overleaf-pasted-link.tsx
 msgid "If someone shared it with you, accept their invitation or open their share link once on Overleaf. If they shared it with another account, sign in with that one in Settings → Overleaf."
 msgstr "If someone shared it with you, accept their invitation or open their share link once on Overleaf. If they shared it with another account, sign in with that one in Settings → Overleaf."
@@ -9188,6 +9196,10 @@ msgstr "Live preview"
 #: src/live-preview/live-preview-settings.tsx
 msgid "Live preview engine"
 msgstr "Live preview engine"
+
+#: src/live-preview/live-preview-status.tsx
+msgid "Live preview is taking long"
+msgstr "Live preview is taking long"
 
 #: src/live-preview/live-preview-settings.tsx
 msgid "Live preview needs a Mac"
@@ -12939,6 +12951,10 @@ msgstr "Regex"
 msgid "Regular expression"
 msgstr "Regular expression"
 
+#: src/live-preview/live-preview-status.tsx
+msgid "Reinstall live preview"
+msgstr "Reinstall live preview"
+
 #: src/canvas/annotation-review.tsx
 #: src/editor/markdown/engine/chrome/review-chrome.tsx
 #: src/history/review-mode-bar.tsx
@@ -13535,6 +13551,10 @@ msgstr "Restart Lattice"
 msgid "Restart Lattice now?"
 msgstr "Restart Lattice now?"
 
+#: gpui/crates/lattice-gpui/src/live_preview/status.rs
+msgid "Restart live preview"
+msgstr "Restart live preview"
+
 #: src/settings/settings-dialog.tsx
 #: src/telemetry/app-updater.tsx
 msgid "Restart now"
@@ -13959,6 +13979,10 @@ msgstr "rtex could not load the preamble for live typing. The preview still upda
 #: src/live-preview/live-preview-session.ts
 msgid "rtex exited with status {code}."
 msgstr "rtex exited with status {code}."
+
+#: src/live-preview/live-preview-status.tsx
+msgid "rtex loaded your preamble over a minute ago and has not laid the document out yet."
+msgstr "rtex loaded your preamble over a minute ago and has not laid the document out yet."
 
 #: src/live-preview/live-preview-session.ts
 msgid "rtex stopped {times} times in five minutes. Click to restart it."
@@ -14928,6 +14952,10 @@ msgstr "Some sources unavailable"
 #: src/app/overleaf-sync-warnings.ts
 msgid "Someone edited the Overleaf project while {files} uploaded. An upload replaces the whole file, so it may have overwritten their latest typing there. Check the file's history on Overleaf to bring back anything missing."
 msgstr "Someone edited the Overleaf project while {files} uploaded. An upload replaces the whole file, so it may have overwritten their latest typing there. Check the file's history on Overleaf to bring back anything missing."
+
+#: src/live-preview/live-preview-status.tsx
+msgid "Something in the document may keep LuaLaTeX busy, such as a loop or a package waiting for input: that needs a fix in the document, which a reinstall will not bring. The PDF still updates with each build."
+msgstr "Something in the document may keep LuaLaTeX busy, such as a loop or a package waiting for input: that needs a fix in the document, which a reinstall will not bring. The PDF still updates with each build."
 
 #: src/papers/bib-visual-editor.tsx
 #: src/project/paper-list-toolbar.tsx
