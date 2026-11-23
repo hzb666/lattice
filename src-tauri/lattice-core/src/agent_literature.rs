@@ -175,7 +175,7 @@ pub fn run_cli() -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{bounded_value, LiteratureRequest};
+    use super::{bounded_value, AgentBibliographyMutation, LiteratureRequest};
 
     /// The gateway always sends a params object, even for tools without
     /// arguments — the empty-struct variant must accept `{}` (a unit variant

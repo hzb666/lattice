@@ -1,5 +1,6 @@
 //! Host-side filesystem boundary for a writable MXC project copy.
 
+mod checkpoint_git;
 mod native;
 mod snapshot;
 mod transaction;
@@ -51,28 +52,40 @@ impl Workspace {
             return Err(invalid("Project and staging roots overlap", &staging.path));
         }
         let lease = Lease::acquire(&original, &staging)?;
-        snapshot::validate_checkpoint_root(&staging)?;
-        let initial = Snapshot::read(&original)?;
-        let stage = Snapshot::read(&staging)?;
         let mut recovery_required = false;
-        if reuse && !created {
-            if !snapshot::same_contents(&initial.entries, &stage.entries) {
-                return Err(invalid(
-                    "Existing staging differs from the project and needs recovery",
-                    &staging.path,
-                ));
+        let (baseline, initialize_checkpoint) = {
+            let initial = Snapshot::read(&original)?;
+            let stage = Snapshot::read(&staging)?;
+            let initialize_checkpoint = (created || (!reuse && stage.entries.is_empty()))
+                && !snapshot::has_checkpoint_root(&staging)?;
+            if !initialize_checkpoint {
+                snapshot::validate_checkpoint_root(&staging)?;
             }
-        } else {
-            if !stage.entries.is_empty() {
-                return Err(invalid(
-                    "Staging must be empty before preparing the workspace",
-                    &staging.path,
-                ));
+            if reuse && !created {
+                if !snapshot::same_contents(&initial.entries, &stage.entries) {
+                    return Err(invalid(
+                        "Existing staging differs from the project and needs recovery",
+                        &staging.path,
+                    ));
+                }
+            } else {
+                if !stage.entries.is_empty() {
+                    return Err(invalid(
+                        "Staging must be empty before preparing the workspace",
+                        &staging.path,
+                    ));
+                }
+                let steps = snapshot::plan(&stage.entries, &initial, &stage, false)?;
+                transaction::run(&initial, &stage, steps, &mut recovery_required)?;
             }
-            let steps = snapshot::plan(&stage.entries, &initial, &stage, false)?;
-            transaction::run(&initial, &stage, steps, &mut recovery_required)?;
+            (initial.entries, initialize_checkpoint)
+        };
+        if initialize_checkpoint {
+            snapshot::initialize_checkpoint_root(&staging).map_err(|error| {
+                snapshot::contextual(error, "Initialize checkpoint Git", &staging.path)
+            })?;
         }
-        Ok(Self { original, staging, baseline: initial.entries, recovery_required, _lease: lease })
+        Ok(Self { original, staging, baseline, recovery_required, _lease: lease })
     }
 
     /// Publish a turn after the caller has drained all sandbox processes that can write staging.

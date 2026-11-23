@@ -17,7 +17,8 @@ use windows_sys::Win32::Storage::FileSystem::{
     GetDriveTypeW, GetFileInformationByHandle, GetFinalPathNameByHandleW,
     GetVolumeInformationByHandleW, BY_HANDLE_FILE_INFORMATION, FILE_ATTRIBUTE_REPARSE_POINT,
     FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_NAME_NORMALIZED,
-    FILE_READ_ATTRIBUTES, FILE_SHARE_READ, FILE_SHARE_WRITE, VOLUME_NAME_DOS, VOLUME_NAME_GUID,
+    FILE_READ_ATTRIBUTES, FILE_SHARE_READ, FILE_SHARE_WRITE, READ_CONTROL, VOLUME_NAME_DOS,
+    VOLUME_NAME_GUID,
 };
 use windows_sys::Win32::System::SystemInformation::GetSystemWindowsDirectoryW;
 
@@ -242,7 +243,7 @@ impl Roots {
             "PI_CODING_AGENT_DIR".into(),
             unicode(self.home.join("pi-agent").as_os_str())?.into(),
         );
-        vars.insert("LATTICE_BIN".into(), unicode(&self.host_executable)?.into());
+        vars.insert("LATTICE_BIN".into(), unicode(self.host_executable.as_os_str())?.into());
         vars.insert("NODE_ENV".into(), "production".into());
         vars.insert("SYNARA_MODE".into(), "desktop".into());
         vars.insert("SYNARA_HOST".into(), "127.0.0.1".into());
@@ -370,7 +371,7 @@ pub(super) fn open_directory(path: &Path) -> io::Result<(PathBuf, File)> {
         return Err(invalid("MXC requires absolute local directory paths"));
     }
     let file = OpenOptions::new()
-        .access_mode(FILE_READ_ATTRIBUTES)
+        .access_mode(FILE_READ_ATTRIBUTES | READ_CONTROL)
         .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
         .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT)
         .open(path)?;

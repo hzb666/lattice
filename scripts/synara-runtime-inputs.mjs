@@ -9,6 +9,7 @@ export const SYNARA_RUNTIME_INPUTS = [
   "scripts/synara-runtime-inputs.mjs",
   "scripts/prepare-synara-sidecar.mjs",
   "scripts/synara-codex-host.mjs",
+  "scripts/lib/mxc-executor.mjs",
   "scripts/lib/util.mjs",
   "scripts/lib/node-runtime.mjs",
   "scripts/lib/codesign.mjs",

@@ -8,6 +8,9 @@ use std::sync::Arc;
 use sha2::{Digest, Sha256};
 use unicode_normalization::UnicodeNormalization;
 
+pub(super) use super::checkpoint_git::{
+    has_checkpoint_root, initialize_checkpoint_root, validate_checkpoint_root, CHECKPOINT_CONFIG,
+};
 use super::native::{self, Identity, Root};
 use super::{invalid, permitted_name, RECOVERY_PREFIX};
 
@@ -93,19 +96,6 @@ impl<'a> Snapshot<'a> {
             .map(Arc::as_ref)
             .ok_or_else(|| invalid("Missing workspace ancestor", path))
     }
-}
-
-pub(super) fn validate_checkpoint_root(root: &Root) -> io::Result<()> {
-    for entry in native::children(&root.directory)? {
-        if entry.name.eq_ignore_ascii_case(".git") {
-            let directory =
-                native::open_directory(&root.directory, OsStr::new(&entry.name), false)?;
-            let id =
-                Identity { volume: native::identity(&root.directory)?.volume, index: entry.index };
-            verify_identity(&directory, id, Path::new(".git"))?;
-        }
-    }
-    Ok(())
 }
 
 pub(super) fn split(path: &Path) -> io::Result<(&Path, &OsStr)> {
