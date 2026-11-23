@@ -1,6 +1,7 @@
 mod objects;
+mod verify;
 
-use std::collections::HashSet;
+use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::fs::File;
 use std::io::{self, Read, Write};
@@ -14,6 +15,8 @@ pub(super) const CHECKPOINT_CONFIG: &[u8] =
     b"[core]\n\trepositoryformatversion = 0\n\tfilemode = false\n\tbare = false\n\tlogallrefupdates = false\n\tignorecase = true\n";
 
 type GitOid = [u8; 20];
+
+pub(super) use verify::verify_checkpoint_contents;
 
 pub(super) fn validate_checkpoint_root(root: &Root) -> io::Result<()> {
     let entry = checkpoint_root_entry(root)?
@@ -110,19 +113,19 @@ fn validate_checkpoint_refs(refs: &File, git: &File, root: &Path) -> io::Result<
             branch_found |= name == "refs/heads/lattice";
         }
     }
-    branch_found |= validate_packed_refs(git, root)?;
+    branch_found |= read_packed_refs(git, root)?.contains_key("refs/heads/lattice");
     if !branch_found {
         return Err(invalid("Checkpoint repository branch is missing", root));
     }
     Ok(())
 }
 
-fn validate_packed_refs(git: &File, root: &Path) -> io::Result<bool> {
+fn read_packed_refs(git: &File, root: &Path) -> io::Result<BTreeMap<String, String>> {
     let Some(entry) = native::children(git)?
         .into_iter()
         .find(|entry| entry.name.eq_ignore_ascii_case("packed-refs"))
     else {
-        return Ok(false);
+        return Ok(BTreeMap::new());
     };
     if entry.directory {
         return Err(invalid("Checkpoint packed refs are not a file", root));
@@ -139,8 +142,7 @@ fn validate_packed_refs(git: &File, root: &Path) -> io::Result<bool> {
     if contents.len() > 16 * 1024 * 1024 {
         return Err(invalid("Checkpoint packed refs exceed the size limit", root));
     }
-    let mut branch_found = false;
-    let mut seen = HashSet::new();
+    let mut refs = BTreeMap::new();
     for line in contents.lines().filter(|line| !line.starts_with('#')) {
         let Some((oid, name)) = line.split_once(' ') else {
             return Err(invalid("Checkpoint packed refs are malformed", root));
@@ -148,13 +150,12 @@ fn validate_packed_refs(git: &File, root: &Path) -> io::Result<bool> {
         if oid.len() != 40
             || !oid.bytes().all(|byte| byte.is_ascii_hexdigit())
             || !supported_checkpoint_ref(name)
-            || !seen.insert(name)
+            || refs.insert(name.to_owned(), oid.to_owned()).is_some()
         {
             return Err(invalid("Checkpoint packed refs contain an unsupported ref", root));
         }
-        branch_found |= name == "refs/heads/lattice";
     }
-    Ok(branch_found)
+    Ok(refs)
 }
 
 fn supported_checkpoint_ref(name: &str) -> bool {

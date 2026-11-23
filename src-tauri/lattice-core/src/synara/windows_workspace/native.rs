@@ -82,9 +82,9 @@ fn nt_result(status: NTSTATUS) -> io::Result<()> {
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, serde::Serialize)]
-pub(super) struct Identity {
-    pub(super) volume: u32,
-    pub(super) index: u64,
+pub(in crate::synara) struct Identity {
+    pub(in crate::synara) volume: u32,
+    pub(in crate::synara) index: u64,
 }
 
 pub(super) struct Root {
@@ -336,7 +336,7 @@ fn info(file: &File) -> io::Result<BY_HANDLE_FILE_INFORMATION> {
     Ok(info)
 }
 
-pub(super) fn identity(file: &File) -> io::Result<Identity> {
+pub(in crate::synara) fn identity(file: &File) -> io::Result<Identity> {
     let info = info(file)?;
     Ok(Identity {
         volume: info.dwVolumeSerialNumber,

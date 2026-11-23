@@ -21,6 +21,7 @@ pub(super) fn run(
     if steps.is_empty() {
         return Ok(Vec::new());
     }
+    check_recovery(destination.root)?;
     let mut batch = Batch::new(destination)?;
     let result = batch
         .write_journal(&steps)
@@ -55,6 +56,16 @@ pub(super) fn run(
             }
         },
     }
+}
+
+pub(super) fn check_recovery(root: &super::native::Root) -> io::Result<()> {
+    if native::children(&root.directory)?
+        .iter()
+        .any(|entry| entry.name.to_ascii_lowercase().starts_with(RECOVERY_PREFIX))
+    {
+        return Err(invalid("Unfinished workspace transaction", &root.path));
+    }
+    Ok(())
 }
 
 struct Batch {

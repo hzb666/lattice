@@ -39,17 +39,39 @@ describe("SynaraLoadingSurface", () => {
     expect(copied).not.toContain("abc123");
   });
 
-  it("says why the Agent is off where the protected-asset guard is missing, with nothing to retry", () => {
+  it("explains the unsupported Linux Agent state without offering a retry", () => {
     const runtime: SynaraRuntimeInfo = { ...EMPTY_SYNARA_RUNTIME, state: "unsupported", message: "The built-in agent is off on this platform." };
     // The agent panel's thread shape too: no skeleton waiting on a start that never comes.
     for (const thread of [false, true]) {
       const { unmount } = render(<SynaraLoadingSurface runtime={runtime} thread={thread} onRetry={vi.fn()} />);
       const notice = screen.getByRole("status");
       expect(notice).toHaveTextContent("Agent isn’t available on Linux yet");
-      expect(notice).toHaveTextContent("stops the Agent from editing .bib, .chem, ChemDraw, or MestReNova files directly");
+      expect(notice).toHaveTextContent("Linux doesn’t have that protection yet");
       expect(screen.queryByRole("button")).not.toBeInTheDocument();
       expect(notice.querySelector("details")).toBeNull();
       unmount();
+    }
+  });
+
+  it("explains why the Windows Agent remains unavailable", () => {
+    const userAgent = navigator.userAgent;
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      value: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+    });
+    const runtime: SynaraRuntimeInfo = {
+      ...EMPTY_SYNARA_RUNTIME,
+      state: "unsupported",
+      message: "Windows x64 required",
+    };
+    try {
+      render(<SynaraLoadingSurface runtime={runtime} onRetry={vi.fn()} />);
+      const notice = screen.getByRole("status");
+      expect(notice).toHaveTextContent("Agent isn’t available on Windows yet");
+      expect(notice).toHaveTextContent("cannot yet deny protected files below a writable project root");
+      expect(notice).toHaveTextContent("this is not the macOS-equivalent boundary");
+    } finally {
+      Object.defineProperty(navigator, "userAgent", { configurable: true, value: userAgent });
     }
   });
 

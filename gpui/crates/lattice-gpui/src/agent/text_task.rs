@@ -62,7 +62,10 @@ struct Started {
 impl TextTask {
     /// Start `prompt` as a task in the project at `root`.
     pub fn start(root: PathBuf, prompt: String, cx: &mut App) -> Self {
-        let runtime = AgentRuntime::get(cx).supervisor().clone();
+        let (runtime, runtime_error) = match AgentRuntime::get(cx).supervisor_for(&root) {
+            Ok(runtime) => (runtime, None),
+            Err(error) => (Arc::new(SynaraRuntime::default()), Some(error)),
+        };
         let started = Arc::new(Mutex::new(Started::default()));
         let executor = cx.background_executor().clone();
         let answer = {
@@ -71,6 +74,9 @@ impl TextTask {
             let root = root.clone();
             let timer = executor.clone();
             executor.spawn(async move {
+                if let Some(error) = runtime_error {
+                    return Err(Failure::Failed(error));
+                }
                 let payload = json!({ "workspaceRoot": root, "prompt": prompt });
                 let begun =
                     synara::task_relay_request(&runtime, TEXT_TASK_ROUTE, "start", None, payload)

@@ -72,11 +72,15 @@ pub use aux_files::AuxFiles;
 #[cfg(all(test, unix))]
 pub(crate) use build::begin_active as begin_for_test;
 pub use build::{abort, build, classify_build_error, clean, is_running, ActiveBuild};
+#[cfg(windows)]
+pub(crate) use build::{isolated_project_build, project_build_target, stop_requested};
 pub(crate) use build_log::{is_pass_noise_warning, unwrap_log_lines};
 pub use build_steps::{BuildStep, BuildSteps};
 pub use changes::{
     export_changes_pdf, review_changes_pdf, ChangesExports, ChangesPdf, ChangesPdfOptions,
 };
+#[cfg(windows)]
+pub(crate) use figure_preview::preview_figure_with;
 pub use figure_preview::{preview_figure, FigurePreview, FigurePreviewRequest};
 pub use pinned::{build_pinned, PinnedBuild};
 pub(crate) use shown_pdf::built_pdfs;

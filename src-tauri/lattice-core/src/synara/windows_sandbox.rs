@@ -14,6 +14,7 @@ mod git;
 mod policy;
 mod process;
 mod state;
+pub(super) mod tex;
 
 pub(super) fn paths_overlap(first: &Path, second: &Path) -> bool {
     policy::contains(first, second) || policy::contains(second, first)
@@ -24,6 +25,7 @@ pub(super) struct SandboxConfig<'a> {
     pub host_executable: &'a Path,
     pub agent_home: &'a Path,
     pub staging_parent: &'a Path,
+    pub workspace_root: &'a Path,
     pub control_dir: &'a Path,
     pub original: Option<&'a Path>,
     pub stdout: File,

@@ -52,6 +52,11 @@ pub fn is_running(active: &ActiveBuild) -> bool {
     guard.pid.is_some() || guard.builds > 0
 }
 
+#[cfg(windows)]
+pub(crate) fn stop_requested(active: &ActiveBuild) -> bool {
+    state(active).cancelled
+}
+
 /// latexmk and every pass it starts share the process group made at spawn.
 pub(super) fn terminate(pid: u32) {
     commands::signal_process_group(pid, commands::TERM_SIGNAL);

@@ -23,13 +23,15 @@
 use super::build::{abort, run_tracked, ActiveBuild};
 use super::build_log::parse_diagnostics;
 use super::BuildSteps;
-use super::{default_root, unwrapped_log, venue::strip_comment};
+use super::{default_root, search_paths::figure_search_path, unwrapped_log, venue::strip_comment};
 use crate::{commands, project};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::io::Read as _;
 use std::path::{Path, PathBuf};
+use std::process::{Command, Output};
 use std::sync::{mpsc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -94,6 +96,13 @@ pub struct FigurePreview {
 pub fn preview_figure(
     root: &Path, request: &FigurePreviewRequest,
 ) -> Result<FigurePreview, String> {
+    preview_figure_with(root, request, run_native)
+}
+
+pub(crate) fn preview_figure_with(
+    root: &Path, request: &FigurePreviewRequest,
+    run: impl Fn(Command, &str, Duration) -> Result<(Output, bool), String>,
+) -> Result<FigurePreview, String> {
     let started = Instant::now();
     validate(request)?;
     let line_width = line_width(request.line_width.as_deref())?;
@@ -126,7 +135,7 @@ pub fn preview_figure(
     let mut attempt = match paper_preamble {
         Some(head) => {
             let source = Source::new(head, document.as_deref(), extra, &request.code, &line_width);
-            let first = typeset(engine, &inputs, &source, TIMEOUT)?;
+            let first = typeset(engine, &inputs, &source, &run, TIMEOUT)?;
             if first.reached_body || first.timed_out {
                 Some(first)
             } else {
@@ -140,7 +149,7 @@ pub fn preview_figure(
     };
     if attempt.is_none() {
         let plain = Source::new(PLAIN_PREAMBLE, None, extra, &request.code, &line_width);
-        attempt = Some(typeset(engine, &inputs, &plain, TIMEOUT)?);
+        attempt = Some(typeset(engine, &inputs, &plain, &run, TIMEOUT)?);
     }
     let attempt = attempt.expect("one attempt ran");
     let errors = match (&fallback, attempt.pdf.is_none()) {
@@ -340,23 +349,15 @@ struct Attempt {
 }
 
 fn typeset(
-    engine: &str, inputs: &[PathBuf], source: &Source, timeout: Duration,
+    engine: &str, inputs: &[PathBuf], source: &Source,
+    run: &impl Fn(Command, &str, Duration) -> Result<(Output, bool), String>, timeout: Duration,
 ) -> Result<Attempt, String> {
     let scratch = Scratch::new()?;
     let tex = scratch.0.join(format!("{JOB}.tex"));
     fs::write(&tex, &source.text).map_err(|error| error.to_string())?;
     let mut command = commands::command(engine);
     unwrapped_log(&mut command).current_dir(&scratch.0);
-    // The scratch folder first, so the document's folder can hold a file
-    // named like the job; the trailing separator keeps TeX's own trees. A
-    // folder whose path holds the separator cannot be named in the list.
-    let folders: String = inputs
-        .iter()
-        .map(|folder| folder.to_string_lossy())
-        .filter(|folder| !folder.contains(':'))
-        .map(|folder| format!("{folder}:"))
-        .collect();
-    command.env("TEXINPUTS", format!(".:{folders}"));
+    command.env("TEXINPUTS", figure_search_path(inputs));
     command.env("openout_any", "p");
     command
         .args([
@@ -367,6 +368,46 @@ fn typeset(
         ])
         .arg(format!("{JOB}.tex"));
 
+    let (output, timed_out) = run(command, engine, timeout)?;
+    let log = fs::read_to_string(scratch.0.join(format!("{JOB}.log")))
+        .unwrap_or_else(|_| commands::combined_output(&output));
+    let reached_body = log.contains(BODY_MARKER);
+    if timed_out {
+        return Ok(Attempt {
+            pdf: None,
+            errors: vec![format!(
+                "The figure was still typesetting after {} seconds and was stopped. Look for a loop, or a plot with far too many samples.",
+                timeout.as_secs()
+            )],
+            warnings: Vec::new(),
+            reached_body,
+            timed_out,
+        });
+    }
+    let pdf_path = scratch.0.join(format!("{JOB}.pdf"));
+    let pdf = if output.status.success() && pdf_path.is_file() {
+        let mut bytes = Vec::new();
+        fs::File::open(&pdf_path)
+            .and_then(|file| file.take(MAX_PDF_BYTES as u64 + 1).read_to_end(&mut bytes))
+            .map_err(|error| error.to_string())?;
+        if bytes.len() > MAX_PDF_BYTES {
+            return Err(format!(
+                "The figure's PDF is over {} MiB; draw it with fewer elements or samples.",
+                MAX_PDF_BYTES / 1024 / 1024
+            ));
+        }
+        bytes.starts_with(b"%PDF-").then_some(bytes)
+    } else {
+        None
+    };
+    let mut errors = located_errors(&log, source);
+    if pdf.is_none() && errors.is_empty() {
+        errors = unlocated_errors(&log);
+    }
+    Ok(Attempt { warnings: overfull_lines(&log, source), pdf, errors, reached_body, timed_out })
+}
+
+fn run_native(command: Command, engine: &str, timeout: Duration) -> Result<(Output, bool), String> {
     let active = ActiveBuild::default();
     let steps = BuildSteps::new(|_, _| {});
     let (done, finished) = mpsc::channel::<()>();
@@ -387,40 +428,7 @@ fn typeset(
     );
     let _ = done.send(());
     let _ = watchdog.join();
-    let (output, timed_out) = ran?;
-    let log = fs::read_to_string(scratch.0.join(format!("{JOB}.log")))
-        .unwrap_or_else(|_| commands::combined_output(&output));
-    let reached_body = log.contains(BODY_MARKER);
-    if timed_out {
-        return Ok(Attempt {
-            pdf: None,
-            errors: vec![format!(
-                "The figure was still typesetting after {} seconds and was stopped. Look for a loop, or a plot with far too many samples.",
-                timeout.as_secs()
-            )],
-            warnings: Vec::new(),
-            reached_body,
-            timed_out,
-        });
-    }
-    let pdf_path = scratch.0.join(format!("{JOB}.pdf"));
-    let pdf = if output.status.success() && pdf_path.is_file() {
-        let bytes = fs::read(&pdf_path).map_err(|error| error.to_string())?;
-        if bytes.len() > MAX_PDF_BYTES {
-            return Err(format!(
-                "The figure's PDF is over {} MiB; draw it with fewer elements or samples.",
-                MAX_PDF_BYTES / 1024 / 1024
-            ));
-        }
-        Some(bytes)
-    } else {
-        None
-    };
-    let mut errors = located_errors(&log, source);
-    if pdf.is_none() && errors.is_empty() {
-        errors = unlocated_errors(&log);
-    }
-    Ok(Attempt { warnings: overfull_lines(&log, source), pdf, errors, reached_body, timed_out })
+    ran
 }
 
 /// The errors TeX names a line for, each with the source text it stopped at
@@ -742,8 +750,14 @@ mod tests {
     fn a_runaway_figure_is_stopped_at_the_timeout() {
         let root = TempDir::new("figure-timeout");
         let source = Source::new(PLAIN_PREAMBLE, None, "", "\\def\\x{\\x}\\x", "\\columnwidth");
-        let attempt =
-            typeset("pdflatex", &[root.to_path_buf()], &source, Duration::from_secs(2)).unwrap();
+        let attempt = typeset(
+            "pdflatex",
+            &[root.to_path_buf()],
+            &source,
+            &run_native,
+            Duration::from_secs(2),
+        )
+        .unwrap();
         assert!(attempt.timed_out && attempt.pdf.is_none());
         assert!(attempt.errors[0].contains("still typesetting after 2 seconds"));
     }

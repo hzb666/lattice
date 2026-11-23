@@ -116,7 +116,10 @@ pub fn invoke(
         "synara_ensure_ready" => runtime.ensure_ready(root.to_path_buf(), cx),
         "synara_refresh_workspace" => {
             let root = root.to_path_buf();
-            let supervisor = runtime.supervisor().clone();
+            let supervisor = match runtime.supervisor_for(&root) {
+                Ok(supervisor) => supervisor,
+                Err(error) => return Task::ready(Err(error)),
+            };
             cx.background_spawn(async move {
                 supervisor.refresh_project_workspace(&root)?;
                 Ok(Value::Null)
@@ -132,7 +135,11 @@ pub fn invoke(
         // Reveal the logs a startup failure quotes from; nothing is created,
         // so a runtime that wrote none says so (`Ok(false)`).
         "synara_open_log_folder" => {
-            let log_dir = runtime.supervisor().sidecar_log_dir();
+            let supervisor = match runtime.supervisor_for(root) {
+                Ok(supervisor) => supervisor,
+                Err(error) => return Task::ready(Err(error)),
+            };
+            let log_dir = supervisor.sidecar_log_dir();
             if !log_dir.is_dir() {
                 return Task::ready(Ok(Value::Bool(false)));
             }
@@ -140,7 +147,11 @@ pub fn invoke(
             Task::ready(Ok(Value::Bool(true)))
         }
         "synara_open_skills_folder" => {
-            let skills = super::agent_home().join("skills");
+            let supervisor = match runtime.supervisor_for(root) {
+                Ok(supervisor) => supervisor,
+                Err(error) => return Task::ready(Err(error)),
+            };
+            let skills = supervisor.skills_dir();
             match std::fs::create_dir_all(&skills) {
                 Ok(()) => {
                     cx.open_with_system(&skills);
@@ -150,7 +161,10 @@ pub fn invoke(
             }
         }
         "synara_agent_environment" => {
-            let supervisor = runtime.supervisor().clone();
+            let supervisor = match runtime.supervisor_for(root) {
+                Ok(supervisor) => supervisor,
+                Err(error) => return Task::ready(Err(error)),
+            };
             cx.background_spawn(async move { json(supervisor.agent_environment()) })
         }
         "get_model_endpoint" => cx.background_spawn(async move {
@@ -180,7 +194,10 @@ pub fn invoke(
             } else {
                 Ok(())
             };
-            let supervisor = runtime.supervisor().clone();
+            let supervisor = match runtime.supervisor_for(root) {
+                Ok(supervisor) => supervisor,
+                Err(error) => return Task::ready(Err(error)),
+            };
             cx.background_spawn(async move {
                 checked?;
                 lattice_core::synara::task_relay_request(
@@ -190,6 +207,20 @@ pub fn invoke(
                     args.get("taskId").and_then(Value::as_str),
                     json!({ "workspaceRoot": args.get("projectRoot"), "prompt": args.get("prompt") }),
                 )
+            })
+        }
+        "preview_latex_figure" => {
+            let root = root.to_path_buf();
+            let supervisor = match runtime.supervisor_for(&root) {
+                Ok(supervisor) => supervisor,
+                Err(error) => return Task::ready(Err(error)),
+            };
+            cx.background_spawn(async move {
+                let root = pinned(&root, &args, "the figure could be previewed")?;
+                let request = args.get("request").cloned().unwrap_or(Value::Null);
+                let request = serde_json::from_value(request)
+                    .map_err(|error| format!("Invalid figure preview: {error}"))?;
+                json(supervisor.preview_figure(&root, &request)?)
             })
         }
         // An Agent visual's HTML, which the panel cannot download itself
@@ -299,14 +330,6 @@ fn project_command(root: &Path, command: &str, args: &Value) -> Result<Value, St
             let root = pinned(root, args, "the figure could be prepared")?;
             let path = text(args, "path").unwrap_or_default();
             lattice_core::project::prepare_latex_figure(&root, &path).map(Value::String)
-        }
-        "preview_latex_figure" => {
-            let root = pinned(root, args, "the figure could be previewed")?;
-            let request = args.get("request").cloned().unwrap_or(Value::Null);
-            let request: lattice_core::latex::FigurePreviewRequest =
-                serde_json::from_value(request)
-                    .map_err(|error| format!("Invalid figure preview: {error}"))?;
-            json(lattice_core::latex::preview_figure(&root, &request)?)
         }
         "list_papers" => json(papers::list_papers(root)?),
         "read_annotation_round" => json(project::read_annotation_round(root, round_number(args)?)?),

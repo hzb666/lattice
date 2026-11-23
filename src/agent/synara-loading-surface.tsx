@@ -87,7 +87,7 @@ function SynaraUnsupportedNotice() {
       </span>
       <div className="synara-loading-copy">
         <strong>{isWindowsHost() ? t`Agent isn’t available on Windows yet` : t`Agent isn’t available on Linux yet`}</strong>
-      <p>{isWindowsHost() ? t`This Windows build cannot yet protect .bib, .chem, ChemDraw, or MestReNova files from direct agent edits. Use Claude Code or Codex in the Terminal panel. Features that require the built-in agent are unavailable.` : t`On macOS, Lattice stops the Agent from editing .bib, .chem, ChemDraw, and MestReNova files directly, so every reference it adds is checked first. Linux doesn’t have that protection yet, so the Agent stays off here instead of running without it. Agent support for Linux is coming.`}</p>
+      <p>{isWindowsHost() ? t`Windows can isolate each project copy, but MXC cannot yet deny protected files below a writable project root while preserving ordinary Agent writes. Host writeback refuses protected changes, but this is not the macOS-equivalent boundary, so the built-in Agent stays off.` : t`On macOS, Lattice stops the Agent from editing .bib, .chem, ChemDraw, and MestReNova files directly, so every reference it adds is checked first. Linux doesn’t have that protection yet, so the Agent stays off here instead of running without it. Agent support for Linux is coming.`}</p>
       </div>
     </div>
   );

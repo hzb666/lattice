@@ -178,12 +178,14 @@ pub(super) fn plan(
     Ok(steps)
 }
 
-pub(super) fn check_checkpoint_paths(steps: &[Step], paths: &BTreeSet<PathBuf>) -> io::Result<()> {
+pub(super) fn check_checkpoint_paths(
+    steps: &[Step], targets: &BTreeMap<PathBuf, String>,
+) -> io::Result<()> {
     for step in steps {
         let expected = if step.after.is_some_and(|record| record.contents == Contents::Directory) {
-            paths.iter().any(|path| path.starts_with(&step.path))
+            targets.keys().any(|path| path.starts_with(&step.path))
         } else {
-            paths.contains(&step.path)
+            targets.contains_key(&step.path)
         };
         if !expected {
             return Err(invalid("Workspace changed outside the selected checkpoint", &step.path));

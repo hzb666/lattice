@@ -63,9 +63,21 @@ impl Shell {
         // The open document's root, which Build would compile: not the last
         // build's, which may be another root whose `.aux` this one reads.
         let open_document = self.open_document(cx).map(|(path, _)| path);
+        #[cfg(windows)]
+        let supervisor = crate::agent::runtime::AgentRuntime::get(cx).supervisor_for(&root);
         cx.spawn(async move |this, cx| {
             let cleaned = cx
-                .background_spawn(async move { latex::clean(&root, open_document.as_deref()) })
+                .background_spawn(async move {
+                    #[cfg(windows)]
+                    return supervisor
+                        .as_ref()
+                        .map_err(Clone::clone)
+                        .and_then(|supervisor| {
+                            supervisor.clean_project_build(&root, open_document.as_deref())
+                        });
+                    #[cfg(not(windows))]
+                    latex::clean(&root, open_document.as_deref())
+                })
                 .await;
             this.update(cx, |this, cx| {
                 this.cleaning = false;

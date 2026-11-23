@@ -207,6 +207,8 @@ impl Shell {
             });
         }));
         let build_panel = self.build_panel.clone();
+        #[cfg(windows)]
+        let supervisor = crate::agent::runtime::AgentRuntime::get(cx).supervisor_for(&root);
         // Read now: a switch flipped while the build waits applies to the next one.
         let aux_files = crate::settings::aux_files(cx);
         self.pdf
@@ -229,7 +231,18 @@ impl Shell {
                     .background_spawn({
                         let root = root.clone();
                         let open_document = open_document.clone();
-                        async move { latex::clean(&root, open_document.as_deref()) }
+                        #[cfg(windows)]
+                        let supervisor = supervisor.clone();
+                        async move {
+                            #[cfg(windows)]
+                            return supervisor.as_ref().map_err(Clone::clone).and_then(
+                                |supervisor| {
+                                    supervisor.clean_project_build(&root, open_document.as_deref())
+                                },
+                            );
+                            #[cfg(not(windows))]
+                            latex::clean(&root, open_document.as_deref())
+                        }
                     })
                     .await;
                 if let Err(error) = cleaned {
@@ -256,6 +269,22 @@ impl Shell {
                 let root = root.clone();
                 async move {
                     let before = fingerprint_pdfs(&root, &candidates);
+                    #[cfg(windows)]
+                    let result = supervisor
+                        .as_ref()
+                        .map_err(Clone::clone)
+                        .and_then(|supervisor| {
+                            supervisor.build_project(lattice_core::synara::ProjectBuild {
+                                root: &root,
+                                force: request.force,
+                                unattended: request.unattended,
+                                active: &active,
+                                open_document: open_document.as_deref(),
+                                steps: &steps,
+                                layout: aux_files,
+                            })
+                        });
+                    #[cfg(not(windows))]
                     let result = latex::build(
                         &root,
                         request.force,
@@ -422,7 +451,7 @@ impl Shell {
                 }
                 if result.success && !cancelled {
                     if !result.steps.is_empty() {
-        self.chemdraw_built(&result.root_document, cx);
+                        self.chemdraw_built(&result.root_document, cx);
                     }
                     notices::dismiss(BUILD_FAILED_NOTICE, cx);
                     self.get_started_built(cx);
@@ -498,7 +527,7 @@ impl Shell {
                 }
                 self.settle_builds(cx);
                 self.builds_idle(window, cx);
-        self.sync_chemdraw_preview(cx);
+                self.sync_chemdraw_preview(cx);
             }
         }
         cx.notify();

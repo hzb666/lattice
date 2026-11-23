@@ -2,9 +2,8 @@
 //! them, each the Agent island's page (`gpui/islands/agent`, the Tauri app's
 //! own Synara host) in a panel of the window.
 //!
-//! - [`runtime`]: the Synara service, lattice-core's supervisor with its
-//!   macOS protected-project sandbox, made once per process; off where the
-//!   Tauri app keeps it off.
+//! - [`runtime`]: lattice-core's Synara supervisor, shared per process on
+//!   macOS and isolated per project on Windows.
 //! - [`commands`]: the backend commands the page invokes, the bibliography
 //!   brokers among them, answered through lattice-core for the panel's own
 //!   project only.

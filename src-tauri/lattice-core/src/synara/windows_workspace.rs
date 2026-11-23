@@ -3,12 +3,15 @@
 mod checkpoint_git;
 mod native;
 mod snapshot;
+pub(super) mod tex_outputs;
 mod transaction;
+
+pub(super) use native::identity as file_identity;
 
 #[cfg(test)]
 mod tests;
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, HashMap};
 use std::ffi::OsStr;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -88,27 +91,32 @@ impl Workspace {
         Ok(Self { original, staging, baseline, recovery_required, _lease: lease })
     }
 
-    /// Publish a turn after the caller has drained all sandbox processes that can write staging.
-    /// An intermediate checkpoint must remain queued. File handles protect paths and bytes
-    /// individually, while the caller controls the consistency of an entire turn.
     #[cfg(test)]
     pub(super) fn reconcile(&mut self) -> Result<Vec<PathBuf>, String> {
-        self.reconcile_inner(None).map_err(|error| error.to_string())
+        self.reconcile_inner(None, || Ok(())).map_err(|error| error.to_string())
     }
 
     pub(super) fn reconcile_checkpoint(
-        &mut self, paths: &BTreeSet<PathBuf>,
+        &mut self, targets: &BTreeMap<PathBuf, String>,
+        before_publish: impl FnOnce() -> io::Result<()>,
     ) -> Result<Vec<PathBuf>, String> {
-        self.reconcile_inner(Some(paths)).map_err(|error| error.to_string())
+        self.reconcile_inner(Some(targets), before_publish).map_err(|error| error.to_string())
     }
 
-    fn reconcile_inner(&mut self, paths: Option<&BTreeSet<PathBuf>>) -> io::Result<Vec<PathBuf>> {
+    fn reconcile_inner(
+        &mut self, targets: Option<&BTreeMap<PathBuf, String>>,
+        before_publish: impl FnOnce() -> io::Result<()>,
+    ) -> io::Result<Vec<PathBuf>> {
         self.check_ready()?;
         let stage = Snapshot::read(&self.staging)?;
         let original = Snapshot::read(&self.original)?;
         let steps = snapshot::plan(&self.baseline, &stage, &original, true)?;
-        if let Some(paths) = paths {
-            snapshot::check_checkpoint_paths(&steps, paths)?;
+        if let Some(targets) = targets {
+            snapshot::check_checkpoint_paths(&steps, targets)?;
+            checkpoint_git::verify_checkpoint_contents(&stage, targets)?;
+        }
+        if !steps.is_empty() {
+            before_publish()?;
         }
         let applied = transaction::run(&stage, &original, steps, &mut self.recovery_required)?;
         let mut paths = Vec::with_capacity(applied.len());

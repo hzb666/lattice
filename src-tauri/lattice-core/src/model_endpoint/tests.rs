@@ -223,6 +223,22 @@ fn the_sidecar_gets_the_agent_dir_only_once_an_endpoint_is_saved() {
 }
 
 #[test]
+fn project_runtime_receives_a_private_copy_of_shared_model_settings() {
+    let settings = TempDir::new("model-endpoint-shared");
+    let runtime = TempDir::new("model-endpoint-project");
+    let draft = endpoint(Protocol::OpenAiCompletions, "https://a.com/v1", vec![model("m")]);
+    save(&settings, Path::new(EXE), draft, KeyUpdate::Keep).unwrap();
+    let before = saved(&settings);
+
+    let mut command = Command::new("true");
+    configure_sidecar_for_runtime(&mut command, &settings, &runtime, Path::new(EXE));
+
+    assert_eq!(env_of(&command, "PI_CODING_AGENT_DIR"), Some(runtime.join("pi-agent")));
+    assert_eq!(before, saved(&settings));
+    assert_eq!(saved(&runtime)["providers"]["lattice"]["apiKey"], NO_KEY);
+}
+
+#[test]
 fn a_keyless_endpoint_keeps_its_placeholder_when_the_app_moves() {
     let home = TempDir::new("model-endpoint");
     let draft = endpoint(Protocol::OpenAiCompletions, "http://localhost:1234/v1", vec![model("m")]);

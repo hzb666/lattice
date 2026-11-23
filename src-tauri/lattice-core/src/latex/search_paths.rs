@@ -17,7 +17,7 @@
 //! changes nothing. A name written `./` or `../` is never searched for, by
 //! kpathsea or by the editor (`onTexSearchPath` in `latex-text.ts`).
 
-use std::path::{Component, Path};
+use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 
 const VARIABLES: [&str; 3] = ["TEXINPUTS", "BIBINPUTS", "BSTINPUTS"];
@@ -26,6 +26,21 @@ const VARIABLES: [&str; 3] = ["TEXINPUTS", "BIBINPUTS", "BSTINPUTS"];
 const SEPARATOR: &str = ";";
 #[cfg(not(windows))]
 const SEPARATOR: &str = ":";
+
+pub(super) fn figure_search_path(inputs: &[PathBuf]) -> String {
+    let mut search = format!(".{SEPARATOR}");
+    for path in inputs {
+        #[cfg(windows)]
+        let path = crate::host_paths::tex_path(path);
+        #[cfg(not(windows))]
+        let path = path.to_string_lossy();
+        if !path.contains(SEPARATOR) {
+            search.push_str(&path);
+            search.push_str(SEPARATOR);
+        }
+    }
+    search
+}
 
 /// Let a build of `document` (relative to the project folder) find files
 /// named from the project folder; nothing for a document at the top.
@@ -61,6 +76,15 @@ fn search_paths(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn figure_inputs_keep_windows_drive_letters() {
+        assert_eq!(
+            ".;D:/paper/sections;D:/paper;",
+            figure_search_path(&[r"\\?\D:\paper\sections".into(), r"D:\paper".into()])
+        );
+    }
 
     #[test]
     fn a_root_at_the_top_keeps_tex_s_own_search() {

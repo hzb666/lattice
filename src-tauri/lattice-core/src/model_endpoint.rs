@@ -277,18 +277,27 @@ fn with_endpoint(document: Option<Value>, endpoint: &Endpoint, api_key: &str) ->
 /// written again here when it differs. A broken file starts the sidecar
 /// without the endpoint rather than not at all.
 pub(crate) fn configure_sidecar(command: &mut Command, home_dir: &Path, executable: &Path) {
-    let Ok(Some(document)) = read_models(home_dir) else { return };
+    configure_sidecar_for_runtime(command, home_dir, home_dir, executable);
+}
+
+pub(crate) fn configure_sidecar_for_runtime(
+    command: &mut Command, settings_home: &Path, runtime_home: &Path, executable: &Path,
+) {
+    let Ok(Some(mut document)) = read_models(settings_home) else { return };
     let Some(entry) = provider(&document) else { return };
-    let saved_key = entry.get("apiKey").and_then(Value::as_str).unwrap_or_default();
+    let saved_key = entry.get("apiKey").and_then(Value::as_str).unwrap_or_default().to_string();
     let key = key_command(executable);
-    if saved_key.starts_with('!') && saved_key != key {
-        let mut document = document.clone();
+    let rewrite_key = saved_key.starts_with('!') && saved_key != key;
+    if rewrite_key {
         document["providers"][PROVIDER]["apiKey"] = json!(key);
-        if let Err(error) = write_models(home_dir, &document) {
+    }
+    if settings_home != runtime_home || rewrite_key {
+        if let Err(error) = write_models(runtime_home, &document) {
             log::warn!(target: "lattice::model_endpoint", "could not update the key command: {error}");
+            return;
         }
     }
-    command.env("PI_CODING_AGENT_DIR", agent_dir(home_dir));
+    command.env("PI_CODING_AGENT_DIR", agent_dir(runtime_home));
 }
 
 /// `status_of`, with the key reported only while the keychain still holds it:

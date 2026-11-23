@@ -70,9 +70,19 @@ fn rejects_internal_configuration_and_protected_asset_changes_as_a_batch() {
     fs::write(fixture.original.join("paper.tex"), "draft").unwrap();
     let mut workspace = fixture.prepare();
     fs::write(fixture.stage.join("paper.tex"), "agent edit").unwrap();
-    for name in
-        [".latexmkrc", "LATEXMKRC", ".envrc", ".gitmodules", "references.BıB", "sample.MnOvA"]
-    {
+    for name in [
+        ".latexmkrc",
+        "LATEXMKRC",
+        ".envrc",
+        ".gitmodules",
+        "references.BıB",
+        "sample.MnOvA",
+        "drawing.CDX",
+        "scheme.CDXML",
+        "automation.MNJS",
+        "report.MNL",
+        "report.MNLT",
+    ] {
         let file = fixture.stage.join(name);
         fs::write(&file, "untrusted contents").unwrap();
         assert!(workspace.reconcile().unwrap_err().contains("protected"), "{name}");
@@ -98,15 +108,21 @@ fn checkpoint_writeback_rejects_unrelated_changes_before_publishing() {
     fs::create_dir(fixture.stage.join("sections")).unwrap();
     fs::write(fixture.stage.join("sections/new.tex"), "section").unwrap();
 
-    let allowed = [PathBuf::from("paper.tex")].into();
-    let error = workspace.reconcile_checkpoint(&allowed).unwrap_err();
+    let reference = "refs/lattice/checkpoints/thread/turn/1";
+    let allowed = [(PathBuf::from("paper.tex"), reference.to_owned())].into();
+    let error = workspace.reconcile_checkpoint(&allowed, || Ok(())).unwrap_err();
     assert!(error.contains("outside the selected checkpoint"), "{error}");
     assert_eq!("draft", fs::read_to_string(fixture.original.join("paper.tex")).unwrap());
     assert!(!fixture.original.join("sections").exists());
 
-    let allowed = [PathBuf::from("paper.tex"), PathBuf::from("sections/new.tex")].into();
-    workspace.reconcile_checkpoint(&allowed).unwrap();
-    assert_eq!("section", fs::read_to_string(fixture.original.join("sections/new.tex")).unwrap());
+    let allowed = [
+        (PathBuf::from("paper.tex"), reference.to_owned()),
+        (PathBuf::from("sections/new.tex"), reference.to_owned()),
+    ]
+    .into();
+    let error = workspace.reconcile_checkpoint(&allowed, || Ok(())).unwrap_err();
+    assert!(error.contains("Checkpoint ref is missing"), "{error}");
+    assert!(!fixture.original.join("sections").exists());
 }
 
 #[test]
@@ -245,11 +261,14 @@ fn checkpoint_repository_supports_synara_tree_capture_without_project_git() {
     let fixture = Fixture::new();
     fs::write(fixture.original.join("paper.tex"), "draft").unwrap();
     fs::remove_dir(&fixture.stage).unwrap();
-    let workspace = Workspace::reopen(&fixture.original, &fixture.stage).unwrap();
+    let mut workspace = Workspace::reopen(&fixture.original, &fixture.stage).unwrap();
+    let stage = fixture.stage.join("paper.tex");
+    let original = fixture.original.join("paper.tex");
+    let working_dir = workspace.staging.path.clone();
     let run_git = |args: &[&str], index: &Path| {
         let mut command = crate::commands::command("git");
         command
-            .current_dir(&workspace.staging.path)
+            .current_dir(&working_dir)
             .env("GIT_CONFIG_NOSYSTEM", "1")
             .env("GIT_INDEX_FILE", index)
             .env("GIT_AUTHOR_NAME", "Lattice")
@@ -266,6 +285,10 @@ fn checkpoint_repository_supports_synara_tree_capture_without_project_git() {
             panic!("Git for Windows is required for this checkpoint integration test")
         });
     assert!(repository.status.success(), "{}", String::from_utf8_lossy(&repository.stderr));
+    let start = "refs/lattice/checkpoints/bootstrap/turn-start/thread";
+    let baseline = run_git(&["update-ref", start, "HEAD"], &index).unwrap();
+    assert!(baseline.status.success(), "{}", String::from_utf8_lossy(&baseline.stderr));
+    fs::write(&stage, "after").unwrap();
     let added = run_git(&["add", "-A", "--", "."], &index).unwrap();
     assert!(added.status.success(), "{}", String::from_utf8_lossy(&added.stderr));
     let tree = run_git(&["write-tree"], &index).unwrap();
@@ -274,7 +297,7 @@ fn checkpoint_repository_supports_synara_tree_capture_without_project_git() {
     let commit = run_git(&["commit-tree", &tree, "-m", "Agent checkpoint"], &index).unwrap();
     assert!(commit.status.success(), "{}", String::from_utf8_lossy(&commit.stderr));
     let commit = String::from_utf8_lossy(&commit.stdout).trim().to_string();
-    let reference = "refs/lattice/checkpoints/bootstrap/turn-1";
+    let reference = "refs/lattice/checkpoints/bootstrap/turn/1";
     let update = run_git(&["update-ref", reference, &commit], &index).unwrap();
     assert!(update.status.success(), "{}", String::from_utf8_lossy(&update.stderr));
     let found = run_git(&["show-ref", "--verify", reference], &index).unwrap();
@@ -282,6 +305,27 @@ fn checkpoint_repository_supports_synara_tree_capture_without_project_git() {
     let packed = run_git(&["pack-refs", "--all", "--prune"], &index).unwrap();
     assert!(packed.status.success(), "{}", String::from_utf8_lossy(&packed.stderr));
     assert!(fixture.stage.join(".git/packed-refs").is_file());
+
+    let targets = [(PathBuf::from("paper.tex"), reference.to_owned())].into();
+    fs::write(&stage, "other").unwrap();
+    let error = workspace.reconcile_checkpoint(&targets, || Ok(())).unwrap_err();
+    assert!(error.contains("differ from the Git checkpoint"), "{error}");
+    assert_eq!("draft", fs::read_to_string(&original).unwrap());
+
+    fs::write(&stage, "after").unwrap();
+    let error = workspace
+        .reconcile_checkpoint(&targets, || Err(std::io::Error::other("Cannot enroll project")))
+        .unwrap_err();
+    assert_eq!("Cannot enroll project", error);
+    assert_eq!("draft", fs::read_to_string(&original).unwrap());
+
+    workspace.reconcile_checkpoint(&targets, || Ok(())).unwrap();
+    assert_eq!("after", fs::read_to_string(&original).unwrap());
+
+    fs::write(&stage, "draft").unwrap();
+    let targets = [(PathBuf::from("paper.tex"), start.to_owned())].into();
+    workspace.reconcile_checkpoint(&targets, || Ok(())).unwrap();
+    assert_eq!("draft", fs::read_to_string(&original).unwrap());
     drop(workspace);
     assert!(Workspace::reopen(&fixture.original, &fixture.stage).is_ok());
 }

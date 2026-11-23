@@ -2,8 +2,8 @@
 //!
 //! The sidecar is a loopback Node service started on demand by
 //! [`SynaraRuntime::ensure_ready`]. macOS launches under `bibliography_guard`.
-//! Windows has a separate MXC launcher and staged project writeback. Its
-//! release gate stays closed until the native integration is verified. The
+//! Windows has a per-project MXC launcher and staged project writeback. Its
+//! startup gate stays closed until protected-file access matches the macOS guard. The
 //! provider CLIs it spawns inherit the writer's proxy and provider settings
 //! (`environment`, from the login shell and the system proxy), which a
 //! restart picks up again (`restart`), and a default-off research-writing
@@ -20,11 +20,15 @@ mod proxy;
 mod restart;
 mod shell_env;
 #[cfg(windows)]
+mod windows_builds;
+#[cfg(windows)]
 mod windows_projects;
 #[cfg(windows)]
 mod windows_sandbox;
 #[cfg(windows)]
 mod windows_workspace;
+#[cfg(windows)]
+pub use windows_builds::ProjectBuild;
 
 use crate::host::{EventSink, Resources};
 #[cfg(any(not(windows), test))]
@@ -36,7 +40,7 @@ pub(crate) use bibliography_guard::AGENT_PROTECTION_SANDBOX_PROFILE;
 pub use environment::EnvironmentReport;
 use reqwest::blocking::Client;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use std::collections::BTreeSet;
+use std::collections::BTreeMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom};
 use std::net::{Ipv4Addr, TcpListener};
@@ -157,6 +161,7 @@ pub struct SynaraRuntime {
     server_entry: PathBuf,
     bundled_skills_dir: PathBuf,
     home_dir: PathBuf,
+    model_settings_home: PathBuf,
     preferred_port: Option<u16>,
     external_origin: Option<String>,
     version: Option<String>,
@@ -169,6 +174,8 @@ pub struct SynaraRuntime {
     proxy_watch: OnceLock<()>,
     #[cfg(windows)]
     projects: windows_projects::Projects,
+    #[cfg(windows)]
+    project_root: Option<PathBuf>,
 }
 
 impl SynaraRuntime {
@@ -195,6 +202,7 @@ impl SynaraRuntime {
             node: NodeRuntime::resolve(&runtime_root.join("bin")),
             server_entry: runtime_root.join("server/dist/index.mjs"),
             bundled_skills_dir: resources.bundle_dir.join("src").join("embedded_skills"),
+            model_settings_home: home_dir.clone(),
             home_dir,
             preferred_port,
             external_origin,
@@ -206,7 +214,34 @@ impl SynaraRuntime {
             proxy_watch: OnceLock::new(),
             #[cfg(windows)]
             projects: windows_projects::Projects::default(),
+            #[cfg(windows)]
+            project_root: None,
         }
+    }
+
+    #[cfg(windows)]
+    pub fn new_for_project(
+        resources: &Resources, events: Arc<dyn EventSink>, root: &Path,
+    ) -> Result<Self, String> {
+        use sha2::{Digest, Sha256};
+        use std::os::windows::ffi::OsStrExt;
+
+        let root = root.canonicalize().map_err(|error| error.to_string())?;
+        let mut hash = Sha256::new();
+        for unit in root.as_os_str().encode_wide() {
+            hash.update(unit.to_le_bytes());
+        }
+        let project_data =
+            resources.app_data_dir.join("synara-projects").join(format!("{:x}", hash.finalize()));
+        let project_resources = Resources {
+            bundle_dir: resources.bundle_dir.clone(),
+            app_data_dir: project_data,
+            app_cache_dir: resources.app_cache_dir.clone(),
+        };
+        let mut runtime = Self::new(&project_resources, events);
+        runtime.model_settings_home = resources.app_data_dir.join("synara");
+        runtime.project_root = Some(root);
+        Ok(runtime)
     }
 
     fn ready_info(
@@ -225,12 +260,24 @@ impl SynaraRuntime {
     }
 
     pub fn ensure_ready(&self) -> Result<SynaraRuntimeInfo, String> {
-        // A development origin (debug builds only) is a sidecar the developer
-        // started themselves, outside the guard on every platform.
+        // An external development origin bypasses the host's Windows boundary.
+        if cfg!(windows) && self.external_origin.is_some() {
+            return Ok(SynaraRuntimeInfo {
+                state: "unsupported".to_string(),
+                origin: None,
+                auth_token: None,
+                execution_root: None,
+                message: Some(bibliography_guard::MISSING.to_string()),
+                startup_ms: None,
+                version: self.version.clone(),
+                revision: self.revision.clone(),
+            });
+        }
+        // A development origin is a sidecar the developer started themselves.
         if let Some(origin) = &self.external_origin {
             return Ok(self.ready_info(origin, None, 0));
         }
-        if !bibliography_guard::AVAILABLE {
+        if !bibliography_guard::AVAILABLE || cfg!(windows) && self.project_root.is_none() {
             return Ok(SynaraRuntimeInfo {
                 state: "unsupported".to_string(),
                 origin: None,
@@ -289,6 +336,12 @@ impl SynaraRuntime {
     }
 
     pub fn ensure_project_ready(&self, root: &Path) -> Result<SynaraRuntimeInfo, String> {
+        #[cfg(windows)]
+        {
+            if self.project_root.as_deref() != root.canonicalize().ok().as_deref() {
+                return Err("This agent runtime is bound to a different project.".into());
+            }
+        }
         let info = self.ensure_ready()?;
         #[cfg(windows)]
         if info.state == "ready" && self.external_origin.is_none() {
@@ -311,14 +364,37 @@ impl SynaraRuntime {
     }
 
     pub fn reconcile_project_workspace(
-        &self, root: &Path, paths: &BTreeSet<PathBuf>,
+        &self, root: &Path, targets: &BTreeMap<PathBuf, String>,
     ) -> Result<Vec<PathBuf>, String> {
         #[cfg(windows)]
         if self.external_origin.is_none() {
-            return self.apply_workspace(root, paths);
+            return self.apply_workspace(root, targets);
         }
-        let _ = (root, paths);
+        let _ = (root, targets);
         Ok(Vec::new())
+    }
+
+    pub fn preview_figure(
+        &self, root: &Path, request: &crate::latex::FigurePreviewRequest,
+    ) -> Result<crate::latex::FigurePreview, String> {
+        #[cfg(windows)]
+        {
+            let project = root.canonicalize().map_err(|error| error.to_string())?;
+            let sandbox = windows_sandbox::tex::Preview {
+                runtime: self
+                    .server_entry
+                    .ancestors()
+                    .nth(3)
+                    .ok_or("The bundled agent runtime has no directory.")?,
+                control: &self.control_dir(),
+                project: &project,
+            };
+            crate::latex::preview_figure_with(&project, request, |command, _, timeout| {
+                sandbox.run(command, timeout).map_err(|error| error.to_string())
+            })
+        }
+        #[cfg(not(windows))]
+        crate::latex::preview_figure(root, request)
     }
 
     /// Start the sidecar; returns its auth token and the stdout and stderr
@@ -391,7 +467,12 @@ impl SynaraRuntime {
             .env("SYNARA_TELEMETRY_ENABLED", "false");
         environment.apply(&mut command);
         // After the shell's variables, so Lattice's Pi configuration wins.
-        crate::model_endpoint::configure_sidecar(&mut command, &self.home_dir, &executable);
+        crate::model_endpoint::configure_sidecar_for_runtime(
+            &mut command,
+            &self.model_settings_home,
+            &self.home_dir,
+            &executable,
+        );
         #[cfg(windows)]
         let child = self.spawn_sandboxed(&command, &executable, stdout, stderr)?;
         #[cfg(not(windows))]
@@ -433,13 +514,19 @@ impl SynaraRuntime {
             .map_err(|error| {
                 format!("Could not prepare the isolated agent directories: {error}")
             })?;
+        let workspace_root =
+            self.project_root.as_deref().map(|root| self.prepare_workspace(root)).transpose()?;
+        let workspace_root = workspace_root
+            .as_deref()
+            .ok_or("The Windows agent runtime has no bound project workspace.")?;
         let config = windows_sandbox::SandboxConfig {
             runtime_root,
             host_executable: executable,
             agent_home: &self.home_dir,
             staging_parent: &staging_parent,
+            workspace_root,
             control_dir: &control_dir,
-            original: None,
+            original: self.project_root.as_deref(),
             stdout,
             stderr,
         };
@@ -455,6 +542,10 @@ impl SynaraRuntime {
         return self.control_dir().join(SIDECAR_LOG_DIR);
         #[cfg(not(windows))]
         self.home_dir.join(SIDECAR_LOG_DIR)
+    }
+
+    pub fn skills_dir(&self) -> PathBuf {
+        self.home_dir.join("skills")
     }
 
     pub fn shutdown(&self) {
@@ -496,22 +587,21 @@ pub fn task_relay_request(
     payload: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
     #[cfg(windows)]
-    let (info, payload) = match payload.get("workspaceRoot").and_then(serde_json::Value::as_str) {
-        Some(root) if matches!(action, "start" | "cancel") => {
-            let root = Path::new(root);
-            let info = runtime.ensure_project_ready(root)?;
-            if let Some(execution) = &info.execution_root {
-                if action == "start" {
-                    runtime.refresh_project_workspace(root)?;
-                }
-                let mut payload = payload;
-                payload["workspaceRoot"] = serde_json::json!(execution);
-                (info, payload)
-            } else {
-                (info, payload)
-            }
+    let (info, payload) = {
+        let root = payload
+            .get("workspaceRoot")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| bibliography_guard::MISSING.to_string())?;
+        let root = Path::new(root);
+        let info = runtime.ensure_project_ready(root)?;
+        if action == "start" {
+            runtime.refresh_project_workspace(root)?;
         }
-        _ => (runtime.ensure_ready()?, payload),
+        let mut payload = payload;
+        if let Some(execution) = &info.execution_root {
+            payload["workspaceRoot"] = serde_json::json!(execution);
+        }
+        (info, payload)
     };
     #[cfg(not(windows))]
     let info = runtime.ensure_ready()?;
@@ -716,12 +806,18 @@ mod tests {
             .ok_or("Missing runtime resources directory")?
             .to_path_buf();
         let scratch = tempfile::tempdir().map_err(|error| error.to_string())?;
+        let project = scratch.path().join("project");
+        fs::create_dir(&project).map_err(|error| error.to_string())?;
         let resources = Resources {
             bundle_dir,
             app_data_dir: scratch.path().join("data"),
             app_cache_dir: scratch.path().join("cache"),
         };
-        let runtime = SynaraRuntime::new(&resources, Arc::new(|_: &str, _: serde_json::Value| {}));
+        let runtime = SynaraRuntime::new_for_project(
+            &resources,
+            Arc::new(|_: &str, _: serde_json::Value| {}),
+            &project,
+        )?;
         let (mut child, _, logs) = runtime.spawn(&environment::AgentEnvironment::default())?;
         let ready = wait_until_ready(&mut child, &logs, &runtime.home_dir, Instant::now());
         child.terminate();
@@ -865,6 +961,55 @@ mod tests {
             task_relay_request(&runtime, TEXT_TASK_ROUTE, "start", None, serde_json::Value::Null)
                 .unwrap_err();
         assert_eq!(error, bibliography_guard::MISSING);
+    }
+
+    #[test]
+    fn availability_requires_a_platform_write_boundary() {
+        assert_eq!(bibliography_guard::AVAILABLE, cfg!(target_os = "macos"));
+    }
+
+    #[test]
+    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+    fn windows_x64_stays_off_without_protected_asset_write_denial() {
+        assert!(!bibliography_guard::AVAILABLE);
+        let runtime = SynaraRuntime::default();
+        assert_eq!(runtime.ensure_ready().unwrap().state, "unsupported");
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn project_runtime_uses_a_private_home_and_rejects_other_projects() {
+        let scratch = tempfile::tempdir().unwrap();
+        let first = scratch.path().join("first");
+        let second = scratch.path().join("second");
+        fs::create_dir(&first).unwrap();
+        fs::create_dir(&second).unwrap();
+        let resources = Resources {
+            bundle_dir: scratch.path().join("bundle"),
+            app_data_dir: scratch.path().join("data"),
+            app_cache_dir: scratch.path().join("cache"),
+        };
+        let runtime = SynaraRuntime::new_for_project(
+            &resources,
+            Arc::new(|_: &str, _: serde_json::Value| {}),
+            &first,
+        )
+        .unwrap();
+
+        assert_ne!(resources.app_data_dir.join("synara"), runtime.home_dir);
+        assert!(runtime.ensure_project_ready(&second).is_err());
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn windows_external_agent_origin_stays_off() {
+        let mut runtime = SynaraRuntime::default();
+        runtime.external_origin = Some("http://127.0.0.1:3000".into());
+
+        let info = runtime.ensure_ready().unwrap();
+
+        assert_eq!(info.state, "unsupported");
+        assert_eq!(info.message.as_deref(), Some(bibliography_guard::MISSING));
     }
 
     #[test]

@@ -14,6 +14,9 @@
 //! restarted) go to every Synara surface's page, as the Tauri backend emits
 //! them to every window, and the restart offer is the app's notice.
 
+use std::path::Path;
+#[cfg(windows)]
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use futures::{StreamExt as _, channel::mpsc};
@@ -40,7 +43,70 @@ const RESTART_OFFER: &str = "agent-environment-restart";
 /// The process's Synara service.
 #[derive(Clone)]
 pub struct AgentRuntime {
+    #[cfg(not(windows))]
     runtime: Arc<SynaraRuntime>,
+    #[cfg(windows)]
+    projects: Arc<ProjectRuntimes>,
+}
+
+#[cfg(windows)]
+struct ProjectRuntimes {
+    bundle_dir: PathBuf,
+    data_dir: PathBuf,
+    cache_dir: PathBuf,
+    events: Arc<dyn EventSink>,
+    runtimes: Mutex<std::collections::BTreeMap<PathBuf, Arc<SynaraRuntime>>>,
+    fallback: Arc<SynaraRuntime>,
+}
+
+#[cfg(windows)]
+impl ProjectRuntimes {
+    fn supervisor_for(&self, root: &Path) -> Result<Arc<SynaraRuntime>, String> {
+        let root = root.canonicalize().map_err(|error| error.to_string())?;
+        let mut runtimes = self.runtimes.lock().map_err(|error| error.to_string())?;
+        if let Some(runtime) = runtimes.get(&root) {
+            return Ok(runtime.clone());
+        }
+        let runtime_resources = Resources {
+            bundle_dir: self.bundle_dir.clone(),
+            app_data_dir: self.data_dir.clone(),
+            app_cache_dir: self.cache_dir.clone(),
+        };
+        let runtime = Arc::new(SynaraRuntime::new_for_project(
+            &runtime_resources,
+            self.events.clone(),
+            &root,
+        )?);
+        runtimes.insert(root, runtime.clone());
+        Ok(runtime)
+    }
+
+    fn supervisors(&self) -> Vec<Arc<SynaraRuntime>> {
+        self.runtimes
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .values()
+            .cloned()
+            .collect()
+    }
+
+    fn restart(&self) {
+        let runtimes = self.supervisors();
+        if let Some((first, rest)) = runtimes.split_first() {
+            for runtime in rest {
+                runtime.shutdown();
+            }
+            first.restart();
+        } else {
+            self.fallback.restart();
+        }
+    }
+
+    fn shutdown(&self) {
+        for runtime in self.supervisors() {
+            runtime.shutdown();
+        }
+    }
 }
 
 struct RuntimeGlobal(AgentRuntime);
@@ -68,42 +134,77 @@ impl AgentRuntime {
             }
         });
         let dirs = resources::app_dirs();
+        let bundle_dir = resources::agent_bundle();
+        #[cfg(not(windows))]
         let runtime = Arc::new(SynaraRuntime::new(
             &Resources {
-                bundle_dir: resources::agent_bundle(),
+                bundle_dir,
                 app_data_dir: dirs.data,
                 app_cache_dir: dirs.cache,
             },
             sink,
         ));
-        // Stop the service with the app, as the Tauri app does on exit.
-        let stopping = runtime.clone();
-        cx.on_app_quit(move |_| {
-            let stopping = stopping.clone();
-            async move { stopping.shutdown() }
-        })
-        .detach();
+        #[cfg(windows)]
+        let projects = {
+            let resources = Resources {
+                bundle_dir: bundle_dir.clone(),
+                app_data_dir: dirs.data.clone(),
+                app_cache_dir: dirs.cache.clone(),
+            };
+            Arc::new(ProjectRuntimes {
+                bundle_dir,
+                data_dir: dirs.data,
+                cache_dir: dirs.cache,
+                events: sink.clone(),
+                runtimes: Mutex::default(),
+                fallback: Arc::new(SynaraRuntime::new(&resources, sink)),
+            })
+        };
         cx.spawn(async move |cx| {
             while let Some((event, payload)) = events.next().await {
                 cx.update(|cx| broadcast(&event, payload, cx));
             }
         })
         .detach();
+        #[cfg(not(windows))]
         let agent = Self { runtime };
+        #[cfg(windows)]
+        let agent = Self { projects };
+        let stopping = agent.clone();
+        cx.on_app_quit(move |_| async move { stopping.shutdown() })
+            .detach();
         cx.set_global(RuntimeGlobal(agent.clone()));
         agent
     }
 
-    pub fn supervisor(&self) -> &Arc<SynaraRuntime> {
-        &self.runtime
+    pub fn supervisor(&self) -> Arc<SynaraRuntime> {
+        #[cfg(not(windows))]
+        return self.runtime.clone();
+        #[cfg(windows)]
+        self.projects
+            .supervisors()
+            .into_iter()
+            .next()
+            .unwrap_or_else(|| self.projects.fallback.clone())
+    }
+
+    pub fn supervisor_for(&self, root: &Path) -> Result<Arc<SynaraRuntime>, String> {
+        #[cfg(not(windows))]
+        {
+            let _ = root;
+            Ok(self.runtime.clone())
+        }
+        #[cfg(windows)]
+        self.projects.supervisor_for(root)
     }
 
     /// Start the service if it is not running, off the main thread (a start
     /// verifies the sandbox and polls the service's health for seconds).
     pub fn ensure_ready(&self, root: std::path::PathBuf, cx: &App) -> Task<Result<Value, String>> {
-        let runtime = self.runtime.clone();
+        let agent = self.clone();
         cx.background_spawn(async move {
-            runtime
+            agent
+                .supervisor_for(&root)?
                 .ensure_project_ready(&root)
                 .and_then(|info| serde_json::to_value(info).map_err(|error| error.to_string()))
         })
@@ -111,8 +212,23 @@ impl AgentRuntime {
 
     /// Stop the service; every surface asks for the new one (`RESTARTED`).
     pub fn restart(&self, cx: &App) -> Task<()> {
+        #[cfg(not(windows))]
         let runtime = self.runtime.clone();
-        cx.background_spawn(async move { runtime.restart() })
+        #[cfg(windows)]
+        let projects = self.projects.clone();
+        cx.background_spawn(async move {
+            #[cfg(not(windows))]
+            runtime.restart();
+            #[cfg(windows)]
+            projects.restart();
+        })
+    }
+
+    fn shutdown(&self) {
+        #[cfg(not(windows))]
+        self.runtime.shutdown();
+        #[cfg(windows)]
+        self.projects.shutdown();
     }
 }
 

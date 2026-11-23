@@ -22,7 +22,7 @@ use windows_sys::Win32::Storage::FileSystem::{
 };
 use windows_sys::Win32::System::SystemInformation::GetSystemWindowsDirectoryW;
 
-use super::{git, SandboxConfig};
+use super::{git, paths_overlap, SandboxConfig};
 
 const MXC_SHA256: &str = "6d466c6b0109bab4bcace6738e11f886d801ea977346db49707488fcbd3afc8a";
 const DRIVE_FIXED: u32 = 3;
@@ -35,6 +35,7 @@ pub(super) struct Roots {
     host_executable: PathBuf,
     home: PathBuf,
     staging: PathBuf,
+    workspace: PathBuf,
     original: Option<PathBuf>,
     system: PathBuf,
     git: Option<git::Installation>,
@@ -59,6 +60,7 @@ impl Roots {
         let staging = open(config.staging_parent)?;
         let control = open(config.control_dir)?;
         let original = config.original.map(&mut open).transpose()?;
+        let (workspace, workspace_pin) = open_directory(config.workspace_root)?;
         let (host_executable, host_pin) = open_host_executable(config.host_executable)?;
         let system = windows_directory()?;
         let roots = pins
@@ -67,6 +69,15 @@ impl Roots {
             .collect::<io::Result<Vec<_>>>()?;
         if roots.iter().any(|root| contains(root, &host_executable)) {
             return Err(invalid("The Lattice key helper must be outside MXC policy roots"));
+        }
+        if !contains(&staging, &workspace)
+            || same_path(&staging, &workspace)
+            || [&runtime, &home, &control].into_iter().any(|root| paths_overlap(root, &workspace))
+            || original.as_ref().is_some_and(|root| paths_overlap(root, &workspace))
+            || contains(&workspace, &host_executable)
+            || contains(&host_executable, &workspace)
+        {
+            return Err(invalid("MXC workspace must be isolated under its staging parent"));
         }
         for (index, path) in roots.iter().enumerate() {
             if roots[..index].iter().any(|other| contains(path, other) || contains(other, path)) {
@@ -84,7 +95,7 @@ impl Roots {
         let profile =
             std::env::home_dir().ok_or_else(|| invalid("Windows user profile is unknown"))?;
         let profile = dos_path(&fs::canonicalize(profile)?)?;
-        for root in [&home, &staging, &control] {
+        for root in [&home, &staging, &workspace, &control] {
             if contains(root, &profile) || contains(root, &system) || contains(&system, root) {
                 return Err(invalid("MXC requires dedicated agent and host control directories"));
             }
@@ -96,14 +107,16 @@ impl Roots {
         }
         pins.push(bin_pin);
         reject_existing_aliases(&home)?;
-        reject_existing_aliases(&staging)?;
+        reject_existing_aliases(&workspace)?;
         let git = git::discover(&runtime, &roots, &profile)?;
+        pins.push(workspace_pin);
         Ok(Self {
             runtime,
             control,
             host_executable,
             home,
             staging,
+            workspace,
             original,
             system,
             git,
@@ -139,12 +152,12 @@ impl Roots {
             .join(" ");
         let environment = self.child_environment(command)?;
         // MXC enforces read-only access even for per-user relocated Program Files.
-        let readonly: Vec<_> = std::iter::once(&self.runtime)
+        let mut readonly: Vec<_> = std::iter::once(&self.runtime)
             .chain(self.git.iter().filter_map(git::Installation::additional_grant))
             .chain(std::iter::once(&self.host_executable))
             .collect();
         let mut enumerate = BTreeSet::new();
-        for root in readonly.iter().copied().chain([&self.home, &self.staging]) {
+        for root in readonly.iter().copied().chain([&self.home, &self.workspace]) {
             enumerate.extend(root.ancestors().skip(1));
         }
         let denied: Vec<_> = std::iter::once(&self.control).chain(self.original.iter()).collect();
@@ -157,7 +170,7 @@ impl Roots {
             },
             "filesystem": {
                 "readonlyPaths": readonly,
-                "readwritePaths": [&self.home, &self.staging],
+                "readwritePaths": [&self.home, &self.workspace],
                 "deniedPaths": denied,
             },
             "processContainer": { "filesystem": { "enumeratePaths": enumerate } },
@@ -171,17 +184,7 @@ impl Roots {
     }
 
     pub(super) fn launcher(&self, executable: &Path) -> Command {
-        let mut command = Command::new(executable);
-        command
-            .env_clear()
-            .env("SystemRoot", &self.system)
-            .env("WINDIR", &self.system)
-            .env("PATH", self.system.join("System32"))
-            .env("TEMP", &self.control)
-            .env("TMP", &self.control)
-            .current_dir(&self.control)
-            .stdin(Stdio::null());
-        command
+        launcher(executable, &self.system, &self.control)
     }
 
     fn child_environment(&self, command: &Command) -> io::Result<Vec<String>> {
@@ -423,7 +426,21 @@ pub(super) fn path_by_handle(file: &File, volume: u32) -> io::Result<PathBuf> {
     Ok(PathBuf::from(OsString::from_wide(&path[..written])))
 }
 
-fn windows_directory() -> io::Result<PathBuf> {
+pub(super) fn launcher(executable: &Path, system: &Path, control: &Path) -> Command {
+    let mut command = Command::new(executable);
+    command
+        .env_clear()
+        .env("SystemRoot", system)
+        .env("WINDIR", system)
+        .env("PATH", system.join("System32"))
+        .env("TEMP", control)
+        .env("TMP", control)
+        .current_dir(control)
+        .stdin(Stdio::null());
+    command
+}
+
+pub(super) fn windows_directory() -> io::Result<PathBuf> {
     let mut path = vec![0_u16; 32_768];
     let written =
         unsafe { GetSystemWindowsDirectoryW(path.as_mut_ptr(), path.len() as u32) } as usize;
@@ -484,14 +501,14 @@ fn windows_eq(left: &OsStr, right: &OsStr) -> bool {
     }) == CSTR_EQUAL
 }
 
-fn unicode(value: &OsStr) -> io::Result<&str> {
+pub(super) fn unicode(value: &OsStr) -> io::Result<&str> {
     value
         .to_str()
         .filter(|value| !value.contains('\0'))
         .ok_or_else(|| invalid("MXC input contains invalid Windows text"))
 }
 
-fn quote_arg(argument: &str) -> String {
+pub(super) fn quote_arg(argument: &str) -> String {
     let mut quoted = String::from("\"");
     let mut backslashes = 0;
     for character in argument.chars() {

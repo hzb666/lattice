@@ -28,10 +28,16 @@ use std::time::{Instant, SystemTime};
 
 mod active;
 mod beside;
+#[cfg(windows)]
+mod isolated;
 mod unchanged;
 pub(crate) use active::begin_active;
+#[cfg(windows)]
+pub(crate) use active::stop_requested;
 pub use active::{abort, is_running, ActiveBuild};
 use active::{finish_active, stop_stalled, terminate, was_stalled, BuildSession};
+#[cfg(windows)]
+pub(crate) use isolated::isolated_project_build;
 
 /// Run `command` as this project's build and capture its output, reporting
 /// whether it was cancelled. The error texts prefix the spawn/wait error.
@@ -118,9 +124,15 @@ fn read_lines(pipe: Option<impl Read>, steps: &BuildSteps, progress: &Progress) 
 /// `xr-hyper`, each reads the other's `.aux`, which only its own build
 /// writes.
 pub fn clean(root: &Path, open_document: Option<&str>) -> Result<String, String> {
-    let manifest = project::read_manifest(root)?;
-    let document = build_target(root, &manifest, open_document)?;
+    let document = project_build_target(root, open_document)?;
     clean_layouts(root, &document)
+}
+
+pub(crate) fn project_build_target(
+    root: &Path, open_document: Option<&str>,
+) -> Result<String, String> {
+    let manifest = project::read_manifest(root)?;
+    build_target(root, &manifest, open_document)
 }
 
 /// [`clean`] of `document`, relative to `root`, in both layouts.

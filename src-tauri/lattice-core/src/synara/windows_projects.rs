@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::fs::{self, File, OpenOptions};
 use std::os::windows::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
@@ -48,6 +48,9 @@ impl SynaraRuntime {
 
     pub(super) fn prepare_workspace(&self, root: &Path) -> Result<PathBuf, String> {
         let original = root.canonicalize().map_err(|error| error.to_string())?;
+        if self.project_root.as_deref() != Some(original.as_path()) {
+            return Err("This agent runtime is bound to a different project.".into());
+        }
         let mut state = self.projects.state.lock().map_err(|error| error.to_string())?;
         if state.lock.is_none() {
             return Err("The isolated agent workspace store is unavailable.".into());
@@ -85,9 +88,13 @@ impl SynaraRuntime {
     }
 
     pub(super) fn apply_workspace(
-        &self, root: &Path, paths: &BTreeSet<PathBuf>,
+        &self, root: &Path, targets: &BTreeMap<PathBuf, String>,
     ) -> Result<Vec<PathBuf>, String> {
-        self.with_workspace(root, |workspace| workspace.reconcile_checkpoint(paths))
+        let tex = self.lock_project_tex(root, true).map_err(|error| error.to_string())?;
+        let tex = tex.ok_or("Could not lock TeX execution for the isolated project.")?;
+        self.with_workspace(root, |workspace| {
+            workspace.reconcile_checkpoint(targets, || tex.enroll())
+        })
     }
 
     fn with_workspace<T>(

@@ -12,7 +12,7 @@
 //! The state the card draws is the build panel's (`BuildPanel::repair`);
 //! the operation behind it is this part's.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use gpui::{AppContext as _, Context, Task, Window};
 use lattice_core::{models::Diagnostic, synara};
@@ -64,13 +64,15 @@ pub(crate) struct Repair {
 
 /// The relay's answer to one action, off the main thread.
 fn relay(
+    root: &Path,
     action: &'static str,
     thread_id: Option<String>,
     payload: Value,
     cx: &mut gpui::App,
 ) -> Task<Result<Value, String>> {
-    let runtime = AgentRuntime::get(cx).supervisor().clone();
+    let runtime = AgentRuntime::get(cx).supervisor_for(root);
     cx.background_spawn(async move {
+        let runtime = runtime?;
         synara::task_relay_request(
             &runtime,
             synara::COMPILE_REPAIR_ROUTE,
@@ -216,7 +218,7 @@ impl Shell {
                     "rootDocument": root_document,
                     "runtimeMode": runtime_mode(permission_mode(cx)),
                 });
-                Some(Ok(relay("start", None, payload, cx)))
+                Some(Ok(relay(&root, "start", None, payload, cx)))
             });
             let started = match started {
                 Ok(Some(Ok(start))) => start.await,
@@ -260,8 +262,10 @@ impl Shell {
                 Ok(Some(false)) => {}
                 // The window moved on before the task started: stop it.
                 _ => {
+                    let project_root = root.clone();
                     let cancel = cx.update(|_, cx| {
                         relay(
+                            &project_root,
                             "cancel",
                             Some(thread_id),
                             json!({ "workspaceRoot": root.to_string_lossy() }),
@@ -275,9 +279,17 @@ impl Shell {
                 }
             }
             loop {
+                let project_root = root.clone();
                 let status = this.update(cx, |this, cx| {
-                    this.owns_repair(id, cx)
-                        .then(|| relay("status", Some(thread_id.clone()), Value::Null, cx))
+                    this.owns_repair(id, cx).then(|| {
+                        relay(
+                            &project_root,
+                            "status",
+                            Some(thread_id.clone()),
+                            json!({"workspaceRoot": project_root.to_string_lossy()}),
+                            cx,
+                        )
+                    })
                 });
                 let Ok(Some(status)) = status else {
                     return;
@@ -408,7 +420,7 @@ impl Shell {
         repair._grace = None;
         if let Some(thread_id) = operation.thread_id.clone() {
             let payload = json!({ "workspaceRoot": operation.root.to_string_lossy() });
-            relay("cancel", Some(thread_id), payload, cx).detach();
+            relay(&operation.root, "cancel", Some(thread_id), payload, cx).detach();
         }
         let message = message.unwrap_or_else(|| {
             t!("Lattice lost track of the repair task, so the editor is writable again. Open Agent to see how far the repair got.").to_string()
@@ -430,7 +442,7 @@ impl Shell {
             return;
         };
         let payload = json!({ "workspaceRoot": operation.root.to_string_lossy() });
-        let cancel = relay("cancel", Some(thread_id), payload, cx);
+        let cancel = relay(&operation.root, "cancel", Some(thread_id), payload, cx);
         cx.spawn(async move |this, cx| {
             if let Err(error) = cancel.await {
                 this.update(cx, |this, cx| {
@@ -510,7 +522,7 @@ impl Shell {
             && let Some(thread_id) = operation.thread_id
         {
             let payload = json!({ "workspaceRoot": operation.root.to_string_lossy() });
-            relay("cancel", Some(thread_id), payload, cx).detach();
+            relay(&operation.root, "cancel", Some(thread_id), payload, cx).detach();
         }
         self.show_repair(None, cx);
     }
