@@ -77,6 +77,26 @@ pub(crate) use build::begin_active as begin_for_test;
 pub use build::{abort, build, classify_build_error, clean, is_running, ActiveBuild};
 #[cfg(windows)]
 pub(crate) use build::{isolated_project_build, project_build_target, stop_requested};
+
+/// What [`build`] answers for a Typst root document: the native app compiles
+/// those itself (`lattice-typst`), and latexmk cannot.
+pub const TYPST_NATIVE_ONLY: &str =
+    "Typst documents need the Lattice Typst helper.";
+
+/// Whether a build should be routed to the Typst helper.
+pub fn targets_typst(root: &Path, open_document: Option<&str>) -> Result<bool, String> {
+    build::project_build_target(root, open_document).map(|document| project::is_typst_path(&document))
+}
+
+/// Record and return the document selected for a Typst build.
+pub fn choose_document(root: &Path, open_document: Option<&str>) -> Result<(String, bool), String> {
+    compile_root::choose_compile_root(root, open_document)?;
+    let manifest = project::read_manifest(root)?;
+    Ok((
+        compiled_document(root, &manifest)?,
+        compile_root::is_one_off_root(root),
+    ))
+}
 pub(crate) use build_log::{is_pass_noise_warning, unwrap_log_lines};
 pub use build_steps::{BuildStep, BuildSteps};
 pub use changes::{

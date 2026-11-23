@@ -278,6 +278,8 @@ Dark pages are the Tauri app's CSS filter, `invert(0.86) hue-rotate(180deg)`, ap
 
 ### The build
 
+The Cargo workspace builds `lattice-typst` alongside `lattice-gpui`. Keep the two executables together to compile and preview `.typ` files in a local build. On Windows both executable names end in `.exe`.
+
 The build is `lattice-core`'s `latex::build`, the Tauri app's own: the main document from the project's manifest (or a compilable `.tex` open in the editor, which it adopts), its engine, rc-file handling, preamble format, stale-build recovery and log diagnostics.
 While it runs, the Build button's card fills in the passes latexmk announces; one build runs at a time, and a build asked for meanwhile runs once it ends, standing for every ask made in between.
 A build after a save is unattended, as the Tauri app's automatic builds are, so a failing document nothing changed in is not typeset again: its errors are restated from the log the failed build left.

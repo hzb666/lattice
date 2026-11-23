@@ -10,6 +10,22 @@ msgstr "设置没保存成功"
 msgid "Display"
 msgstr "显示"
 
+#: lattice-gpui/src/settings/editor_pane.rs
+msgid "Download again"
+msgstr "重新下载"
+
+#: lattice-gpui/src/settings/editor_pane.rs
+msgid "Installed ({size} MB). Typst documents compile in Lattice."
+msgstr "已安装（{size} MB）。Typst 文档可在 Lattice 中编译。"
+
+#: lattice-gpui/src/settings/editor_pane.rs
+msgid "Not available on this computer."
+msgstr "此电脑不可用。"
+
+#: lattice-gpui/src/settings/editor_pane.rs
+msgid "Not installed. The first Typst build asks to download it."
+msgstr "未安装。首次编译 Typst 时会询问是否下载。"
+
 #: lattice-gpui/src/settings/agent_display_pane.rs
 msgid "The Agent’s conversation and composer, in the panel and in its own window. The editors keep their own size."
 msgstr "AI 助手面板及其独立窗口中的对话和输入框。编辑器保持各自的字号。"
@@ -17,6 +33,10 @@ msgstr "AI 助手面板及其独立窗口中的对话和输入框。编辑器保
 #: lattice-gpui/src/settings/logs_export.rs
 msgid "This run keeps no log folder."
 msgstr "此次运行不保留日志文件夹。"
+
+#: lattice-gpui/src/settings/editor_pane.rs
+msgid "Typst support"
+msgstr "Typst 支持"
 
 #: lattice-gpui/src/settings/agent_display_pane.rs
 msgid "text size zoom larger smaller chat"

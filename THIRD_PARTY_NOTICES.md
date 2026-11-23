@@ -57,6 +57,12 @@ The three license files are copied verbatim to [`public/licenses/trellis-LICENSE
 The GPUI app (`gpui/`) carries a port of Trellis 0.2.0 to Rust and GPUI, with the behaviour of that patch, in [`gpui/crates/trellis`](gpui/crates/trellis/README.md). The port is a derivative of Trellis and is under the same Trellis Public License v1.0 (Non-Commercial) as the packages above, not Apache-2.0 and not the GPL-3.0-or-later that covers the rest of `gpui/`; its three license files are copied verbatim into that crate, and every ported file names the Trellis file it came from. Lattice is free and non-commercial; anyone redistributing the GPUI app or the port must keep to Trellis's non-commercial terms as summarised above ([`gpui/README.md`](gpui/README.md#license)).
 GPL-3.0 forbids imposing further restrictions on a distributed work (sections 7 and 10), so Trellis's non-commercial terms conflict with it for a distributed GPUI binary that combines the two; the maintainer intends to ask Trellis's author for a GPL-compatible grant before any public release of the GPUI app.
 
+## Typst
+
+- **Compiler** (`gpui/crates/lattice-typst/`): `typst`, `typst-pdf`, `typst-kit` and their supporting crates, Apache License 2.0, Copyright Typst GmbH and the Typst contributors.
+- **Bundled fonts** (`typst-assets`, compiled into the helper): Libertinus Serif under the SIL Open Font License 1.1, New Computer Modern under the GUST Font License 1.0 (SIL OFL 1.1 for NewCM10-Regular), and DejaVu Sans Mono under the Bitstream Vera and Arev font licenses. The full notices are in `licenses/upstream/crates/typst-assets@0.15.1/NOTICE`.
+- **Highlighting grammar**: `codebook-tree-sitter-typst` 0.12.2 packages `tree-sitter-typst`, MIT, Copyright (c) 2023 Gerbais-Nief Eddie. Its license is in `licenses/upstream/crates/codebook-tree-sitter-typst@0.12.2/LICENSE`.
+
 ## tldraw
 
 The board editor is built with the [tldraw SDK](https://github.com/tldraw/tldraw), pinned at `tldraw@5.2.5` in `package.json`.
