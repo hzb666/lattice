@@ -302,6 +302,7 @@ impl EditorPanel {
     ) -> Self {
         let started = std::time::Instant::now();
         let language = latex::language_for_path(&path, cx);
+        let code_file = language.is_none();
         let saved_text = normalize_breaks(&text);
         let buffer = cx.new(|cx| Buffer::local(text, cx));
         let buffered = started.elapsed();
@@ -312,6 +313,7 @@ impl EditorPanel {
             buffer.set_language_registry(registry);
             buffer.set_language(language, cx);
         });
+        lattice_editor::code_languages::reparse_on_load(&buffer, cx);
         let languaged = started.elapsed();
         let lattice = cx.new(|cx| LatticeEditor::new(buffer.clone(), window, cx));
         let editor = lattice.read(cx).editor().clone();
@@ -532,6 +534,9 @@ impl EditorPanel {
         this.attach_review_marks(cx);
         this.paint_highlights(cx);
         this.paint_conflicts(cx);
+        if code_file {
+            this.set_code_language(cx);
+        }
         this
     }
 

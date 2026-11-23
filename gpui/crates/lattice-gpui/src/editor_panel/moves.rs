@@ -4,6 +4,8 @@
 
 use std::time::Duration;
 
+use futures::FutureExt as _;
+
 use super::*;
 
 impl EditorPanel {
@@ -57,9 +59,12 @@ impl EditorPanel {
             None => self.attach_spelling(cx),
         }
         self.disk = DiskVersion::Unread;
-        let language = latex::language_for_path(&self.path, cx);
-        self.buffer
-            .update(cx, |buffer, cx| buffer.set_language(language, cx));
+        match latex::language_for_path(&self.path, cx) {
+            Some(language) => self
+                .buffer
+                .update(cx, |buffer, cx| buffer.set_language(Some(language), cx)),
+            None => self.set_code_language(cx),
+        }
         let tex = latex::is_tex_source(&self.path);
         self.lattice.update(cx, |lattice, cx| {
             lattice.set_fold_source(tex.then(latex::folding::source), cx)
@@ -86,5 +91,41 @@ impl EditorPanel {
         self.offer_view_switch(cx);
         crate::crash::note_editor(self, cx);
         cx.notify();
+    }
+
+    /// Give a file `latex::language_for_path` has no language for its code
+    /// language (Python, Rust, a Makefile…), or none: at once when the
+    /// registry has built it, so a renamed file keeps its colours, else once
+    /// it is built, the first such file of a session waiting about a frame
+    /// for its query (`lattice_editor::code_languages`). A file renamed
+    /// meanwhile keeps what its new name chose.
+    pub(super) fn set_code_language(&self, cx: &mut Context<Self>) {
+        let mut load = lattice_editor::code_languages::load_for_path(&self.path, cx).map(Box::pin);
+        let ready = match load.as_mut() {
+            Some(load) => load.as_mut().now_or_never(),
+            None => Some(None),
+        };
+        if let Some(language) = ready {
+            self.buffer
+                .update(cx, |buffer, cx| buffer.set_language(language, cx));
+            return;
+        }
+        if self.buffer.read(cx).language().is_some() {
+            self.buffer
+                .update(cx, |buffer, cx| buffer.set_language(None, cx));
+        }
+        let Some(load) = load else { return };
+        let path = self.path.clone();
+        cx.spawn(async move |this, cx| {
+            let language = load.await?;
+            this.update(cx, |this, cx| {
+                if this.path == path {
+                    this.buffer
+                        .update(cx, |buffer, cx| buffer.set_language(Some(language), cx));
+                }
+            })
+            .ok()
+        })
+        .detach();
     }
 }
