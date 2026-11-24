@@ -32,7 +32,7 @@ import { fileURLToPath } from "node:url";
 import ts from "typescript";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const SOURCES = ["project", "workspace", "overleaf", "papers", "setup", "themes", "registry"].map(
+const SOURCES = ["project", "workspace", "overleaf", "papers", "setup", "themes", "plugins", "registry"].map(
   (area) => `src/platform/host-errors-${area}.ts`,
 );
 const OUTPUT = "gpui/crates/lattice-gpui/src/host_errors/catalog.rs";

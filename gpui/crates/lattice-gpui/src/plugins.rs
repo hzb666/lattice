@@ -8,7 +8,7 @@
 //! [`CancelToken`], renders its [`CommandResult`] there, performs its
 //! actions through the app's own paths (`plugins/actions.rs`), and offers
 //! install, enable and remove in Settings › Plugins
-//! (`settings/plugins_pane.rs`). The Tauri app does the same over IPC.
+//! (`settings/plugins_pane.rs`).
 //!
 //! - `text`: the words that depend on the data (the permissions in plain
 //!   language, an error by its code, an action's label), pure and tested;
@@ -141,7 +141,9 @@ pub fn host(cx: &mut App) -> Arc<PluginHost> {
     if let Some(plugins) = cx.try_global::<Plugins>() {
         return plugins.host.clone();
     }
-    let host = Arc::new(make_host(crate::settings::scripted(cx)));
+    let mut host = make_host(crate::settings::scripted(cx));
+    host.set_registry(Arc::new(crate::settings::registry()));
+    let host = Arc::new(host);
     cx.set_global(Plugins {
         host: host.clone(),
         commands: Arc::default(),

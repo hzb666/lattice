@@ -22,4 +22,13 @@ export const REGISTRY_HOST_ERRORS: readonly HostErrorEntry[] = [
   ["registry.rs", "{url} is not an https address.", ([url]) => t`${url} is not an https address.`],
   ["registry.rs", "{url} is larger than expected.", ([url]) => t`${url} is larger than expected.`],
   ["registry.rs", "Could not save the theme list: {err}", ([error]) => t`Could not save the theme list: ${error}`],
+  ["registry.rs", "Load the plugin list before installing a plugin from it.", () => t`Load the plugin list before installing a plugin from it.`],
+  ["registry.rs", "\"{id}\" is not in the plugin list.", ([id]) => t`"${id}" is not in the plugin list.`],
+  ["registry.rs", "The plugin download failed: {err}", ([error]) => t`The plugin download failed: ${error}`],
+  ["registry.rs", "The downloaded plugin is not the size the plugin list gives.", () => t`The downloaded plugin is not the size the plugin list gives.`],
+  ["registry.rs", "The downloaded plugin does not match the plugin list's checksum.", () => t`The downloaded plugin does not match the plugin list's checksum.`],
+  ["registry.rs", "The downloaded plugin is not the \"{id}\" {} the plugin list describes.", ([id, version]) => t`The downloaded plugin is not the "${id}" ${version} the plugin list describes.`],
+  ["registry.rs", "The plugin list offers only node plugins.", () => t`The plugin list offers only node plugins.`],
+  ["registry.rs", "The plugin's id is not valid.", () => t`The plugin's id is not valid.`],
+  ["registry.rs", "{name} needs plugin API level {level}; this Lattice has {host_level}.", ([name, level, hostLevel]) => t`${name} needs plugin API level ${level}; this Lattice has ${hostLevel}.`],
 ];

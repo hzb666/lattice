@@ -9319,6 +9319,10 @@ msgstr "Load more"
 msgid "Load the theme list before installing a theme from it."
 msgstr "Load the theme list before installing a theme from it."
 
+#: src/platform/host-errors-registry.ts
+msgid "Load the plugin list before installing a plugin from it."
+msgstr "Load the plugin list before installing a plugin from it."
+
 #: src/history/compare-versions.tsx
 msgid "Load older versions"
 msgstr "Load older versions"
@@ -16335,6 +16339,18 @@ msgstr "The downloaded theme is not \"{id}\" {version}."
 msgid "The downloaded theme is not the size the theme list gives."
 msgstr "The downloaded theme is not the size the theme list gives."
 
+#: src/platform/host-errors-registry.ts
+msgid "The downloaded plugin does not match the plugin list's checksum."
+msgstr "The downloaded plugin does not match the plugin list's checksum."
+
+#: src/platform/host-errors-registry.ts
+msgid "The downloaded plugin is not the \"{id}\" {version} the plugin list describes."
+msgstr "The downloaded plugin is not the \"{id}\" {version} the plugin list describes."
+
+#: src/platform/host-errors-registry.ts
+msgid "The downloaded plugin is not the size the plugin list gives."
+msgstr "The downloaded plugin is not the size the plugin list gives."
+
 #: src/platform/host-errors-setup.ts
 msgid "The downloaded {what} is larger than expected, so it was refused."
 msgstr "The downloaded {what} is larger than expected, so it was refused."
@@ -16833,6 +16849,26 @@ msgstr "The registry's {file} is signed for another file or serial."
 msgid "The registry's list is in a newer format. Update Lattice to use it."
 msgstr "The registry's list is in a newer format. Update Lattice to use it."
 
+#: src/platform/host-errors-registry.ts
+msgid "The plugin list is not available."
+msgstr "The plugin list is not available."
+
+#: src/platform/host-errors-registry.ts
+msgid "The plugin list offers only node plugins."
+msgstr "The plugin list offers only node plugins."
+
+#: src/platform/host-errors-registry.ts
+msgid "The plugin's id is not valid."
+msgstr "The plugin's id is not valid."
+
+#: src/platform/host-errors-registry.ts
+msgid "{name} needs plugin API level {level}; this Lattice has {hostLevel}."
+msgstr "{name} needs plugin API level {level}; this Lattice has {hostLevel}."
+
+#: src/platform/host-errors-registry.ts
+msgid "\"{id}\" is not in the plugin list."
+msgstr "\"{id}\" is not in the plugin list."
+
 #: src/papers/bibliography-audit.tsx
 msgid "The reference is verified"
 msgstr "The reference is verified"
@@ -17019,6 +17055,10 @@ msgstr "The TeX Live repository could not be searched.\n"
 #: src/platform/host-errors-registry.ts
 msgid "The theme download failed: {error}"
 msgstr "The theme download failed: {error}"
+
+#: src/platform/host-errors-registry.ts
+msgid "The plugin download failed: {error}"
+msgstr "The plugin download failed: {error}"
 
 #: src/platform/host-errors-workspace.ts
 msgid "The text is too large to save as a copy."
@@ -19063,3 +19103,111 @@ msgstr "Zotero has no file on this computer for this attachment."
 #: src/papers/add-papers-sheet.tsx
 msgid "Zotero…"
 msgstr "Zotero…"
+
+#: src/platform/host-errors-plugins.ts
+msgid "A node plugin needs `main`."
+msgstr "A node plugin needs `main`."
+
+#: src/platform/host-errors-plugins.ts
+msgid "A plugin declares between 1 and 32 commands."
+msgstr "A plugin declares between 1 and 32 commands."
+
+#: src/platform/host-errors-plugins.ts
+msgid "A plugin with the id {id} is already installed. Remove it first."
+msgstr "A plugin with the id {id} is already installed. Remove it first."
+
+#: src/platform/host-errors-plugins.ts
+msgid "An exec plugin needs `[targets]`."
+msgstr "An exec plugin needs `[targets]`."
+
+#: src/platform/host-errors-plugins.ts
+msgid "Cannot read the plugin registry: {error}"
+msgstr "Cannot read the plugin registry: {error}"
+
+#: src/platform/host-errors-plugins.ts
+msgid "Cannot read the plugin's secret: {error}"
+msgstr "Cannot read the plugin's secret: {error}"
+
+#: src/platform/host-errors-plugins.ts
+msgid "Cannot remove the secret: {error}"
+msgstr "Cannot remove the secret: {error}"
+
+#: src/platform/host-errors-plugins.ts
+msgid "Invalid or repeated command id `{id}`."
+msgstr "Invalid or repeated command id `{id}`."
+
+#: src/platform/host-errors-plugins.ts
+msgid "Lattice turned this plugin off: {reason}"
+msgstr "Lattice turned this plugin off: {reason}"
+
+#: src/platform/host-errors-plugins.ts
+msgid "Plugins install only over https."
+msgstr "Plugins install only over https."
+
+#: src/platform/host-errors-plugins.ts
+msgid "The archive has no {file} at its root."
+msgstr "The archive has no {file} at its root."
+
+#: src/platform/host-errors-plugins.ts
+msgid "The archive holds a link ({name}); plugins may not."
+msgstr "The archive holds a link ({name}); plugins may not."
+
+#: src/platform/host-errors-plugins.ts
+msgid "The download failed: HTTP {status}."
+msgstr "The download failed: HTTP {status}."
+
+#: src/platform/host-errors-plugins.ts
+msgid "The download's SHA-256 is {actual}, not the one given. Nothing was installed."
+msgstr "The download's SHA-256 is {actual}, not the one given. Nothing was installed."
+
+#: src/platform/host-errors-plugins.ts
+msgid "The plugin archive has too many files."
+msgstr "The plugin archive has too many files."
+
+#: src/platform/host-errors-plugins.ts
+msgid "The plugin archive is larger than 50 MiB."
+msgstr "The plugin archive is larger than 50 MiB."
+
+#: src/platform/host-errors-plugins.ts
+msgid "The plugin archive unpacks to more than 200 MiB."
+msgstr "The plugin archive unpacks to more than 200 MiB."
+
+#: src/platform/host-errors-plugins.ts
+msgid "The plugin id must be reverse-domain, like dev.example.my-plugin."
+msgstr "The plugin id must be reverse-domain, like dev.example.my-plugin."
+
+#: src/platform/host-errors-plugins.ts
+msgid "The plugin's id changed. Remove it and install it again."
+msgstr "The plugin's id changed. Remove it and install it again."
+
+#: src/platform/host-errors-plugins.ts
+msgid "The plugin's licence ({license}) is not one Lattice accepts for installed plugins."
+msgstr "The plugin's licence ({license}) is not one Lattice accepts for installed plugins."
+
+#: src/platform/host-errors-plugins.ts
+msgid "The plugin's result has no kind."
+msgstr "The plugin's result has no kind."
+
+#: src/platform/host-errors-plugins.ts
+msgid "The SHA-256 must be 64 hexadecimal characters."
+msgstr "The SHA-256 must be 64 hexadecimal characters."
+
+#: src/platform/host-errors-plugins.ts
+msgid "This plugin does not declare that secret."
+msgstr "This plugin does not declare that secret."
+
+#: src/platform/host-errors-plugins.ts
+msgid "This plugin needs plugin API level {needed}; this Lattice has {level}."
+msgstr "This plugin needs plugin API level {needed}; this Lattice has {level}."
+
+#: src/platform/host-errors-plugins.ts
+msgid "This plugin's manifest format ({format}) needs a newer Lattice."
+msgstr "This plugin's manifest format ({format}) needs a newer Lattice."
+
+#: src/platform/host-errors-plugins.ts
+msgid "Unknown `project-read` value `{value}`."
+msgstr "Unknown `project-read` value `{value}`."
+
+#: src/platform/host-errors-plugins.ts
+msgid "Unsupported path {path}"
+msgstr "Unsupported path {path}"

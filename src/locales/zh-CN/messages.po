@@ -9319,6 +9319,10 @@ msgstr "加载更多"
 msgid "Load the theme list before installing a theme from it."
 msgstr "请先加载主题列表，再从中安装主题。"
 
+#: src/platform/host-errors-registry.ts
+msgid "Load the plugin list before installing a plugin from it."
+msgstr "请先加载插件列表，再从中安装插件。"
+
 #: src/history/compare-versions.tsx
 msgid "Load older versions"
 msgstr "加载更早的版本"
@@ -16335,6 +16339,18 @@ msgstr "下载的主题不是“{id}” {version}。"
 msgid "The downloaded theme is not the size the theme list gives."
 msgstr "下载的主题大小与主题列表中的不符。"
 
+#: src/platform/host-errors-registry.ts
+msgid "The downloaded plugin does not match the plugin list's checksum."
+msgstr "下载的插件与插件列表中的校验和不符。"
+
+#: src/platform/host-errors-registry.ts
+msgid "The downloaded plugin is not the \"{id}\" {version} the plugin list describes."
+msgstr "下载的插件不是插件列表所描述的“{id}” {version}。"
+
+#: src/platform/host-errors-registry.ts
+msgid "The downloaded plugin is not the size the plugin list gives."
+msgstr "下载的插件大小与插件列表给出的不符。"
+
 #: src/platform/host-errors-setup.ts
 msgid "The downloaded {what} is larger than expected, so it was refused."
 msgstr "下载的 {what} 比预期大，已被拒绝。"
@@ -16833,6 +16849,26 @@ msgstr "Lattice 市场的 {file} 签名属于另一个文件或序号。"
 msgid "The registry's list is in a newer format. Update Lattice to use it."
 msgstr "Lattice 市场的列表格式较新，请更新 Lattice 后再使用。"
 
+#: src/platform/host-errors-registry.ts
+msgid "The plugin list is not available."
+msgstr "插件列表暂不可用。"
+
+#: src/platform/host-errors-registry.ts
+msgid "The plugin list offers only node plugins."
+msgstr "插件列表只提供 Node 插件。"
+
+#: src/platform/host-errors-registry.ts
+msgid "The plugin's id is not valid."
+msgstr "插件 ID 无效。"
+
+#: src/platform/host-errors-registry.ts
+msgid "{name} needs plugin API level {level}; this Lattice has {hostLevel}."
+msgstr "{name} 需要插件 API {level} 级别，当前 Lattice 支持 {hostLevel} 级别。"
+
+#: src/platform/host-errors-registry.ts
+msgid "\"{id}\" is not in the plugin list."
+msgstr "插件列表中没有“{id}”。"
+
 #: src/papers/bibliography-audit.tsx
 msgid "The reference is verified"
 msgstr "这条文献已核实"
@@ -17019,6 +17055,10 @@ msgstr "无法搜索 TeX Live 组件仓库。\n"
 #: src/platform/host-errors-registry.ts
 msgid "The theme download failed: {error}"
 msgstr "主题下载失败：{error}"
+
+#: src/platform/host-errors-registry.ts
+msgid "The plugin download failed: {error}"
+msgstr "插件下载失败：{error}"
 
 #: src/platform/host-errors-workspace.ts
 msgid "The text is too large to save as a copy."
@@ -19063,3 +19103,111 @@ msgstr "Zotero 的此附件在此电脑上没有对应文件。"
 #: src/papers/add-papers-sheet.tsx
 msgid "Zotero…"
 msgstr "从 Zotero 导入…"
+
+#: src/platform/host-errors-plugins.ts
+msgid "A node plugin needs `main`."
+msgstr "node 插件需要 `main`。"
+
+#: src/platform/host-errors-plugins.ts
+msgid "A plugin declares between 1 and 32 commands."
+msgstr "一个插件须声明 1 到 32 个命令。"
+
+#: src/platform/host-errors-plugins.ts
+msgid "A plugin with the id {id} is already installed. Remove it first."
+msgstr "已安装 ID 为 {id} 的插件。请先移除它。"
+
+#: src/platform/host-errors-plugins.ts
+msgid "An exec plugin needs `[targets]`."
+msgstr "exec 插件需要 `[targets]`。"
+
+#: src/platform/host-errors-plugins.ts
+msgid "Cannot read the plugin registry: {error}"
+msgstr "无法读取插件注册表：{error}"
+
+#: src/platform/host-errors-plugins.ts
+msgid "Cannot read the plugin's secret: {error}"
+msgstr "无法读取插件的密钥：{error}"
+
+#: src/platform/host-errors-plugins.ts
+msgid "Cannot remove the secret: {error}"
+msgstr "无法移除密钥：{error}"
+
+#: src/platform/host-errors-plugins.ts
+msgid "Invalid or repeated command id `{id}`."
+msgstr "命令 ID `{id}` 无效或重复。"
+
+#: src/platform/host-errors-plugins.ts
+msgid "Lattice turned this plugin off: {reason}"
+msgstr "Lattice 已停用此插件：{reason}"
+
+#: src/platform/host-errors-plugins.ts
+msgid "Plugins install only over https."
+msgstr "插件只能通过 https 安装。"
+
+#: src/platform/host-errors-plugins.ts
+msgid "The archive has no {file} at its root."
+msgstr "压缩包根目录中没有 {file}。"
+
+#: src/platform/host-errors-plugins.ts
+msgid "The archive holds a link ({name}); plugins may not."
+msgstr "压缩包中包含链接（{name}），插件不允许包含链接。"
+
+#: src/platform/host-errors-plugins.ts
+msgid "The download failed: HTTP {status}."
+msgstr "下载失败：HTTP {status}。"
+
+#: src/platform/host-errors-plugins.ts
+msgid "The download's SHA-256 is {actual}, not the one given. Nothing was installed."
+msgstr "下载文件的 SHA-256 为 {actual}，与给定值不符。未安装任何内容。"
+
+#: src/platform/host-errors-plugins.ts
+msgid "The plugin archive has too many files."
+msgstr "插件压缩包中的文件过多。"
+
+#: src/platform/host-errors-plugins.ts
+msgid "The plugin archive is larger than 50 MiB."
+msgstr "插件压缩包超过 50 MiB。"
+
+#: src/platform/host-errors-plugins.ts
+msgid "The plugin archive unpacks to more than 200 MiB."
+msgstr "插件压缩包解压后超过 200 MiB。"
+
+#: src/platform/host-errors-plugins.ts
+msgid "The plugin id must be reverse-domain, like dev.example.my-plugin."
+msgstr "插件 ID 必须是反向域名格式，例如 dev.example.my-plugin。"
+
+#: src/platform/host-errors-plugins.ts
+msgid "The plugin's id changed. Remove it and install it again."
+msgstr "插件的 ID 已更改。请移除后重新安装。"
+
+#: src/platform/host-errors-plugins.ts
+msgid "The plugin's licence ({license}) is not one Lattice accepts for installed plugins."
+msgstr "插件的许可证（{license}）不在 Lattice 接受的安装许可证之列。"
+
+#: src/platform/host-errors-plugins.ts
+msgid "The plugin's result has no kind."
+msgstr "插件返回的结果缺少类型。"
+
+#: src/platform/host-errors-plugins.ts
+msgid "The SHA-256 must be 64 hexadecimal characters."
+msgstr "SHA-256 必须是 64 位十六进制字符。"
+
+#: src/platform/host-errors-plugins.ts
+msgid "This plugin does not declare that secret."
+msgstr "此插件没有声明该密钥。"
+
+#: src/platform/host-errors-plugins.ts
+msgid "This plugin needs plugin API level {needed}; this Lattice has {level}."
+msgstr "此插件需要插件 API 级别 {needed}；当前 Lattice 为 {level}。"
+
+#: src/platform/host-errors-plugins.ts
+msgid "This plugin's manifest format ({format}) needs a newer Lattice."
+msgstr "此插件的清单格式（{format}）需要更新版本的 Lattice。"
+
+#: src/platform/host-errors-plugins.ts
+msgid "Unknown `project-read` value `{value}`."
+msgstr "未知的 `project-read` 值 `{value}`。"
+
+#: src/platform/host-errors-plugins.ts
+msgid "Unsupported path {path}"
+msgstr "不支持的路径 {path}"

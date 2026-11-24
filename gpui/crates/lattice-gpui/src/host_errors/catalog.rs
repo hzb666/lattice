@@ -2660,6 +2660,146 @@ pub(super) static ENTRIES: &[Entry] = &[
         text: Text::Message("Could not remove the theme: {error}", &[("error", Arg::Param(0))]),
     },
     Entry {
+        file: "plugins.rs",
+        literal: "The plugin list is not available.",
+        text: Text::Message("The plugin list is not available.", &[]),
+    },
+    Entry {
+        file: "plugins.rs",
+        literal: "Lattice turned this plugin off: {reason}",
+        text: Text::Message("Lattice turned this plugin off: {reason}", &[("reason", Arg::Param(0))]),
+    },
+    Entry {
+        file: "plugins.rs",
+        literal: "This plugin does not declare that secret.",
+        text: Text::Message("This plugin does not declare that secret.", &[]),
+    },
+    Entry {
+        file: "plugins/broker.rs",
+        literal: "Cannot read the plugin's secret: {e}",
+        text: Text::Message("Cannot read the plugin's secret: {error}", &[("error", Arg::Param(0))]),
+    },
+    Entry {
+        file: "plugins/broker.rs",
+        literal: "Cannot remove the secret: {e}",
+        text: Text::Message("Cannot remove the secret: {error}", &[("error", Arg::Param(0))]),
+    },
+    Entry {
+        file: "plugins/manifest.rs",
+        literal: "This plugin's manifest format ({}) needs a newer Lattice.",
+        text: Text::Message("This plugin's manifest format ({format}) needs a newer Lattice.", &[("format", Arg::Param(0))]),
+    },
+    Entry {
+        file: "plugins/manifest.rs",
+        literal: "This plugin needs plugin API level {}; this Lattice has {API_LEVEL}.",
+        text: Text::Message("This plugin needs plugin API level {needed}; this Lattice has {level}.", &[("needed", Arg::Param(0)), ("level", Arg::Param(1))]),
+    },
+    Entry {
+        file: "plugins/manifest.rs",
+        literal: "The plugin id must be reverse-domain, like dev.example.my-plugin.",
+        text: Text::Message("The plugin id must be reverse-domain, like dev.example.my-plugin.", &[]),
+    },
+    Entry {
+        file: "plugins/manifest.rs",
+        literal: "A node plugin needs `main`.",
+        text: Text::Message("A node plugin needs `main`.", &[]),
+    },
+    Entry {
+        file: "plugins/manifest.rs",
+        literal: "An exec plugin needs `[targets]`.",
+        text: Text::Message("An exec plugin needs `[targets]`.", &[]),
+    },
+    Entry {
+        file: "plugins/manifest.rs",
+        literal: "A plugin declares between 1 and 32 commands.",
+        text: Text::Message("A plugin declares between 1 and 32 commands.", &[]),
+    },
+    Entry {
+        file: "plugins/manifest.rs",
+        literal: "Invalid or repeated command id `{}`.",
+        text: Text::Message("Invalid or repeated command id `{id}`.", &[("id", Arg::Param(0))]),
+    },
+    Entry {
+        file: "plugins/manifest.rs",
+        literal: "Unknown `project-read` value `{other}`.",
+        text: Text::Message("Unknown `project-read` value `{value}`.", &[("value", Arg::Param(0))]),
+    },
+    Entry {
+        file: "plugins/store.rs",
+        literal: "Cannot read the plugin registry: {e}",
+        text: Text::Message("Cannot read the plugin registry: {error}", &[("error", Arg::Param(0))]),
+    },
+    Entry {
+        file: "plugins/store.rs",
+        literal: "A plugin with the id {} is already installed. Remove it first.",
+        text: Text::Message("A plugin with the id {id} is already installed. Remove it first.", &[("id", Arg::Param(0))]),
+    },
+    Entry {
+        file: "plugins/store.rs",
+        literal: "The SHA-256 must be 64 hexadecimal characters.",
+        text: Text::Message("The SHA-256 must be 64 hexadecimal characters.", &[]),
+    },
+    Entry {
+        file: "plugins/store.rs",
+        literal: "The download's SHA-256 is {actual}, not the one given. Nothing was installed.",
+        text: Text::Message("The download's SHA-256 is {actual}, not the one given. Nothing was installed.", &[("actual", Arg::Param(0))]),
+    },
+    Entry {
+        file: "plugins/store.rs",
+        literal: "The plugin's licence ({}) is not one Lattice accepts for installed plugins.",
+        text: Text::Message("The plugin's licence ({license}) is not one Lattice accepts for installed plugins.", &[("license", Arg::Param(0))]),
+    },
+    Entry {
+        file: "plugins/store.rs",
+        literal: "The plugin's id changed. Remove it and install it again.",
+        text: Text::Message("The plugin's id changed. Remove it and install it again.", &[]),
+    },
+    Entry {
+        file: "plugins/store.rs",
+        literal: "Plugins install only over https.",
+        text: Text::Message("Plugins install only over https.", &[]),
+    },
+    Entry {
+        file: "plugins/store.rs",
+        literal: "The download failed: HTTP {}.",
+        text: Text::Message("The download failed: HTTP {status}.", &[("status", Arg::Param(0))]),
+    },
+    Entry {
+        file: "plugins/store.rs",
+        literal: "The plugin archive is larger than 50 MiB.",
+        text: Text::Message("The plugin archive is larger than 50 MiB.", &[]),
+    },
+    Entry {
+        file: "plugins/store.rs",
+        literal: "The plugin archive has too many files.",
+        text: Text::Message("The plugin archive has too many files.", &[]),
+    },
+    Entry {
+        file: "plugins/store.rs",
+        literal: "The archive holds a link ({name}); plugins may not.",
+        text: Text::Message("The archive holds a link ({name}); plugins may not.", &[("name", Arg::Param(0))]),
+    },
+    Entry {
+        file: "plugins/store.rs",
+        literal: "The plugin archive unpacks to more than 200 MiB.",
+        text: Text::Message("The plugin archive unpacks to more than 200 MiB.", &[]),
+    },
+    Entry {
+        file: "plugins/store.rs",
+        literal: "The archive has no {} at its root.",
+        text: Text::Message("The archive has no {file} at its root.", &[("file", Arg::Param(0))]),
+    },
+    Entry {
+        file: "plugins/results.rs",
+        literal: "The plugin's result has no kind.",
+        text: Text::Message("The plugin's result has no kind.", &[]),
+    },
+    Entry {
+        file: "plugins/sandbox.rs",
+        literal: "Unsupported path {}",
+        text: Text::Message("Unsupported path {path}", &[("path", Arg::Param(0))]),
+    },
+    Entry {
         file: "registry/verify.rs",
         literal: "The registry's {file} has no valid signature.",
         text: Text::Message("The registry's {file} has no valid signature.", &[("file", Arg::Param(0))]),
@@ -2743,5 +2883,50 @@ pub(super) static ENTRIES: &[Entry] = &[
         file: "registry.rs",
         literal: "Could not save the theme list: {err}",
         text: Text::Message("Could not save the theme list: {error}", &[("error", Arg::Param(0))]),
+    },
+    Entry {
+        file: "registry.rs",
+        literal: "Load the plugin list before installing a plugin from it.",
+        text: Text::Message("Load the plugin list before installing a plugin from it.", &[]),
+    },
+    Entry {
+        file: "registry.rs",
+        literal: "\"{id}\" is not in the plugin list.",
+        text: Text::Message("\"{id}\" is not in the plugin list.", &[("id", Arg::Param(0))]),
+    },
+    Entry {
+        file: "registry.rs",
+        literal: "The plugin download failed: {err}",
+        text: Text::Message("The plugin download failed: {error}", &[("error", Arg::Param(0))]),
+    },
+    Entry {
+        file: "registry.rs",
+        literal: "The downloaded plugin is not the size the plugin list gives.",
+        text: Text::Message("The downloaded plugin is not the size the plugin list gives.", &[]),
+    },
+    Entry {
+        file: "registry.rs",
+        literal: "The downloaded plugin does not match the plugin list's checksum.",
+        text: Text::Message("The downloaded plugin does not match the plugin list's checksum.", &[]),
+    },
+    Entry {
+        file: "registry.rs",
+        literal: "The downloaded plugin is not the \"{id}\" {} the plugin list describes.",
+        text: Text::Message("The downloaded plugin is not the \"{id}\" {version} the plugin list describes.", &[("id", Arg::Param(0)), ("version", Arg::Param(1))]),
+    },
+    Entry {
+        file: "registry.rs",
+        literal: "The plugin list offers only node plugins.",
+        text: Text::Message("The plugin list offers only node plugins.", &[]),
+    },
+    Entry {
+        file: "registry.rs",
+        literal: "The plugin's id is not valid.",
+        text: Text::Message("The plugin's id is not valid.", &[]),
+    },
+    Entry {
+        file: "registry.rs",
+        literal: "{name} needs plugin API level {level}; this Lattice has {host_level}.",
+        text: Text::Message("{name} needs plugin API level {level}; this Lattice has {hostLevel}.", &[("name", Arg::Param(0)), ("level", Arg::Param(1)), ("hostLevel", Arg::Param(2))]),
     },
 ];
