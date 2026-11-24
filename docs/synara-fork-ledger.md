@@ -282,6 +282,8 @@ Neither fix was driven end to end through the staged sidecar, because raising th
 This was not run in a real Lattice window or against a real, authenticated Droid, so WKWebView, Lattice's own panel resizing and Factory's Droid itself were not exercised.
 The staged runtime is 175.3 MB.
 
+The pin now includes fork PR 33 (`581a0c09a735f8846c86963e53c2bbc8ab5f6163`), which checks Codex provider liveness with the signed host's process inspector inside the macOS sandbox. This lets a known writer-lock rejection settle and the original thread resume. Lattice adds the narrowly scoped `stat=` query to its existing inspector; it retains the local Agent protection sandbox. The Windows host patch remains valid on this pin.
+
 ## Synara 0.9.1 compatibility
 
 The 0.9.1 integration includes the upstream Opus 5.5 and GPT-6 Sol/Luna catalog updates, OpenCode startup fixes, and projection/provider/sidebar optimizations.
