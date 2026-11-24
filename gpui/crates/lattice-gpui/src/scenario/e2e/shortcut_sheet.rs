@@ -58,27 +58,34 @@ impl Run {
         let bold = keys("Bold (\\textbf)");
         let heading = keys("Heading 1 to 6");
         let tabs = keys("Previous or next tab");
+        let key = |mac: &'static str, other: &'static str| {
+            if cfg!(target_os = "macos") {
+                mac
+            } else {
+                other
+            }
+        };
         steps.check(
             "the shortcut sheet lists the table's keys and the workspace's, editor's, LaTeX's and visual Markdown's",
             ["Panels and tabs", "Text editing", "LaTeX", "Visual Markdown"]
                 .iter()
                 .all(|title| titles.contains(title))
-                && palette.as_ref().is_some_and(|row| row["combos"] == json!(["⌘K", "⇧⌘P"]))
+                && palette.as_ref().is_some_and(|row| row["combos"] == json!([key("⌘K", "Ctrl+K"), key("⇧⌘P", "Ctrl+Shift+P")]))
                 // One key per workspace the window has (the fixture's one),
                 // a range from three.
                 && workspaces.as_ref().is_some_and(|row| {
-                    row["combos"][0] == "⌘1"
+                    row["combos"][0] == key("⌘1", "Ctrl+1")
                         && (row["range"] == true) == (row["combos"].as_array().map_or(0, Vec::len) > 2)
                 })
                 && leave.as_ref().is_some_and(|row| row["combos"] == json!(["⎋"]))
-                && undo.as_ref().is_some_and(|row| row["combos"] == json!(["⌘Z"]))
-                && bold.as_ref().is_some_and(|row| row["combos"] == json!(["⌘B"]))
+                && undo.as_ref().is_some_and(|row| row["combos"] == json!([key("⌘Z", "Ctrl+Z")]))
+                && bold.as_ref().is_some_and(|row| row["combos"] == json!([key("⌘B", "Ctrl+B")]))
                 && heading
                     .as_ref()
-                    .is_some_and(|row| row["range"] == true && row["combos"][0] == "⌥⌘1")
+                    .is_some_and(|row| row["range"] == true && row["combos"][0] == key("⌥⌘1", "Ctrl+Alt+1"))
                 && tabs
                     .as_ref()
-                    .is_some_and(|row| row["combos"] == json!(["⇧⌘[", "⇧⌘]"])),
+                    .is_some_and(|row| row["combos"] == json!([key("⇧⌘[", "Ctrl+Shift+["), key("⇧⌘]", "Ctrl+Shift+]")])),
             json!({ "titles": titles, "palette": palette, "workspaces": workspaces, "leave": leave, "undo": undo, "bold": bold, "heading": heading, "tabs": tabs }),
         );
 
@@ -100,28 +107,32 @@ impl Run {
         );
         steps.check(
             "the sheet's LaTeX group lists Show the citation card on ⌥⌘K and Proofread the selection on ⌥⌘P, in the Tauri order",
-            combos("Show the citation card") == Some(json!(["⌥⌘K"]))
-                && combos("Proofread the selection") == Some(json!(["⌥⌘P"]))
+            combos("Show the citation card") == Some(json!([key("⌥⌘K", "Ctrl+Alt+K")]))
+                && combos("Proofread the selection") == Some(json!([key("⌥⌘P", "Ctrl+Alt+P")]))
                 && matches!((card, symbol, proofread), (Some(c), Some(s), Some(p)) if c < s && s < p),
             json!({ "citation_card": combos("Show the citation card"), "proofread": combos("Proofread the selection"), "order": [card, symbol, proofread] }),
         );
 
-        for (query, shot) in [("citation card", "sheet-citation-card"), ("Proofread", "sheet-proofread")] {
+        for (query, shot) in [
+            ("citation card", "sheet-citation-card"),
+            ("Proofread", "sheet-proofread"),
+        ] {
             self.sheet_type(cx, query)?;
             self.pause(cx, Duration::from_millis(200)).await;
             self.completion_shot(cx, shot).await;
         }
 
-        self.sheet_type(cx, "⇧⌘J")?;
+        self.sheet_type(cx, key("⇧⌘J", "Ctrl+Shift+J"))?;
         let by_key = self.sheet_groups(cx);
         self.sheet_type(cx, "no such shortcut")?;
         let none = self.sheet_groups(cx);
         steps.check(
             "the sheet's field filters by key, and finds nothing for a query nothing matches",
             by_key.len() == 1
-                && by_key[0]["rows"]
-                    .as_array()
-                    .is_some_and(|rows| rows.iter().all(|row| row["combos"][0] == "⇧⌘J"))
+                && by_key[0]["rows"].as_array().is_some_and(|rows| {
+                    rows.iter()
+                        .all(|row| row["combos"][0] == key("⇧⌘J", "Ctrl+Shift+J"))
+                })
                 && none.is_empty(),
             json!({ "by_key": by_key, "none": none }),
         );
