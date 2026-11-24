@@ -6,27 +6,40 @@
 | --- | --- |
 | 同步方向 | `upstream/main`（`leo1oel/lattice`）→ 本地 `chemex` |
 | 共同祖先 | `2cce98b71370fcff4b0db9aa20439d88650302cd` |
-| 最近逐笔审阅范围 | `9d43d560ad27599c5b1c4c91430df3f3be3d5aa7` 之后，共 53 笔 |
-| 已审阅至 | `a2a845a0726e4a0bd62c43ce57c8069c02373bce`，Release v0.19.4 (#1255) |
-| 本地同步结果 | `1b34776def71ff83bec8fbd278a5e21ea91f9d8c` |
-| 最近确认 | 2026-11-24，`git fetch upstream main` 后远端仍指向上述截止提交 |
+| 最近逐笔审阅范围 | `9d43d560ad27599c5b1c4c91430df3f3be3d5aa7` 之后，共 56 笔 |
+| 已审阅至 | `650b134fb6d5968f2b27e34750059e5df83cb3ef`，Agent 支持任意文件附件 (#1254/#1256) |
+| 本地同步结果 | `5e6b9aad42f6fa446752f652280b0e2ae5a08eaa` |
+| 最近确认 | 2026-11-25，`git fetch upstream main` 后仍指向 `650b134f` |
 
-早期记录曾审阅至 `032f99db969bbaac2ca4760cc3fda191f583d692`。`032f99db..9d43d560ad` 中已确认的回移和待办列在下文。这个时段仍有尚未逐笔核对的差异。
+早期记录曾审阅至 `032f99db969bbaac2ca4760cc3fda191f583d692`。`032f99db..9d43d560ad` 中已确认的回移和待办列在下文。`9d43d560..650b134f` 的 56 笔已逐笔核对；本轮补记了 Synara 1.6.2、主题/插件市场的回移，并核对了截止点后的三笔提交。
 
 ## 待整合
 
 | 上游提交 | 还需要处理什么 |
 | --- | --- |
-| `7403f93b`、`b0946158`、`5f9e3931` | **Synara 1.6.2、Diff 换行、附件选择和归档线程。** 上游锁定 `f87641c8`，本地 Windows 补丁实测在 `latticeProjectDocumentRelay.ts:53` 无法应用。该版本的宿主快捷键消息也缺少 `repeat`。升级时保留 Windows 隔离、编辑转发和每轮项目刷新，再接入归档页。圆角修复已单独回移。 |
 | `2e113b63` | **旧应用对话导入。** 随 Synara 升级评估。需适配本地状态目录，验证导入范围和重复导入行为。 |
 | `1dac6a71` | **macOS TeX Live 权限交接。** 上游会递归转移 TeX Live 安装目录的所有权，并静默更新已交接的安装。需在 macOS 验证提权范围、安装路径和本地 TeX 设置。 |
-| `78f475be`、`1bb3d25a`、`32fcbe29`、`f95ad6b4`、`bbdb4dd6`、`59dc3d68`、`9f3794a6` | **原生 Excalidraw 白板。** 当前使用 `.tldr` WebView。先验证旧白板转换、Agent 白板工具和 ChemEx 的 GPUI 补丁栈，再决定迁移。`1cb0d37f` 的 tldraw 清理随迁移评估。 |
+| `9f3794a6` | **界面细节。** 按需摘取 GPUI 画笔默认值和切换语言后的搜索占位提示；不恢复旧 Web 白板、导出通知和 Tauri 下载监听。 |
+| `f15c1589` | **Appearance 标签样式选项。** 上游新增 Filled/Outlined；本地保留 `frosted` 外观，先评估是否需要额外样式再决定。 |
 | `3143cbfd`、`fbd53966` | **原生 macOS 拼写检查。** 先核对 Harper 和现有拼写功能的调用，保留 Windows 的检查能力。 |
 | `da8545cd`、`c2463222`、`21d7c838` | **Linux Agent Guard。** 防护主体、环境传递和描述符修复需要成组适配，验证本地 Windows 和 macOS 隔离路径。 |
-| `f15c1589`、`8631c316`、`97774795`、`073cbd19`、`f2b99888` | **标签样式、主题文件和市场。** 需要适配现有面板外观及发行入口。Theme files 窄窗口布局随原生主题页整合。 |
-| `032f99db`、`2eca5284`、`03bfae1b`、`c7a57df4` | **原生插件宿主和市场。** 当前分支未引入插件宿主，需先确定支持的平台、执行边界及 registry。`4a514a33`、`2e39149c` 和 SDK 跟进随插件功能评估。 |
+| `7dd4203b`、`627f25cc`、`16d1569d` | **插件作者 SDK 和示例插件。** GPUI 插件宿主与市场消费者已接入；SDK、打包器及参考插件属于独立作者工具，不影响安装/运行市场插件，暂缓引入。 |
 
 较早的 `eb7f1a76` 横跨多个已分叉的 GPUI 文件，待按当前 Clippy 报告逐项对照。`5c6753f8` 的首次启动迁移和 `1559a443` 的用户指南涉及旧应用数据或上游网站，暂作独立候选。
+
+## 本轮补充审阅
+
+| 上游提交 | 结果 | 取舍 |
+| --- | --- | --- |
+| `7403f93b`、`b0946158` | `61020b09`、`7a62fb54` | Synara 固定到 1.6.2 fork `f87641c8`，并接入 Diff 换行和 `+ → Files and folders`；保留本地 Windows 隔离和编辑转发。快捷键 `repeat` 仍由单独适配处理。 |
+| `5f9e3931` | `e27dd5d0` | 仅移植 GPUI Archived threads 路由、搜索、E2E 和中英文文案；不恢复 Tauri Settings UI。 |
+| `bbdb4dd6`、`59dc3d68` | `623d1f7e` | Agent 在 GPUI 原生白板上查看和编辑形状；新建统一使用 `.excalidraw`，兼容旧 `.tldr` 请求名，非法请求即时返回。测试使用转换后的场景，保留原 `.tldr` 样例和本地手稿编辑链路。补齐 `1bb3d25a` 的空场景种子，并适配本地路径接口。 |
+| 本地编译修复 | `5e6b9aad` | 去掉插件回移时重复引入的 `ModalLayer::priority`，保留本地实现与初始焦点逻辑。 |
+| `35931fdd` | `edefde94` | 主题/插件 registry 优先读取 `lattice-writer.github.io`，再回退旧站点；保留签名、serial 回滚保护，并增加多源测试。GPUI 文档和 schema 已更新；本地已删除的旧 `docs/guide/` 发布指南保持删除。 |
+| `2e39149c` | `074bee9e` | 给 GPUI 主题市场测试索引补上插件列表字段，匹配共享 `Index` 类型。 |
+| `c704848e` | 已有 `15bd91ba` | 当前 `chemex` 已包含该 GPUI tree-row drag 等待布局修复；确认是等价本地提交，不重复 cherry-pick。 |
+| `4cf86a3a` | 跳过 | 只删除已不存在的 `scripts/gpui-e2e-known-failures.json`；不恢复旧豁免文件。 |
+| `650b134f` | `184d3cf8` | 选择性加入 GPUI 任意文件附件、共享文件读取与测试；保留本地 macOS 场景限定，不带回 Tauri 宿主。 |
 
 ## 已整合
 
@@ -44,6 +57,8 @@
 | `01166a71`、`9fd8919b`、`06a39ad3`、`30d0d52e` | `4252de28`、`1d900b08`、`ed526576`、`12ba8468` | 历史对比长行换行、文档页签键盘焦点、模态 Tab 范围、工作区菜单和命令。 |
 | `bdfb33bd` | `df7e70b2`、`86b8ae5b`、`c05910f3` | 原生确认框在 Settings 上接收点击和回车。 |
 | `ae159169`、`35839b12`、`09642d83`、`6fb20d41` | `1d338ce7`、`1b34776d`、`084f0367`、`4b892ebf` | 测试 Clippy、测试超时、现有 Windows 脚本适配和 MiKTeX 缓存修复。 |
+| `7403f93b`、`b0946158`、`5f9e3931` | `61020b09`、`7a62fb54`、`e27dd5d0` | Synara 1.6.2 pin、Diff/文件选择修复和 GPUI Archived threads；shortcut `repeat` 尚未进入 Synara 固定版本。 |
+| `78f475be`、`1bb3d25a`、`32fcbe29`、`f95ad6b4` | `36646b77`、`58c3c2a2`、`eb3b0ad5` | 本地已有 `.tldr` 转换、GPUI 原生 Excalidraw 白板与图元补丁；不再移植整套白板实现。Agent 的后续工具仍见待整合项。 |
 | `196de782`、`89a502a2`、`a1e9221d` | `a375dea8`、`b3fe3874`、`71788a56` | 闲置 Agent 页面休眠、当前 pin 的嵌入输入框圆角、输入法开启时的快捷键。 |
 | `84e1fd13`、`b3c9bf1b` | `cc443641`、`a9714462` | GPUI 键盘、预览焦点与重绘测试，关闭查找替换字段的自动更正。 |
 | `c6058326`、`5b0d32de` | `cc6eef33`、`cd625125` | Papers 识别宏引用的参考文献库，原生最近项目搜索和标记。 |
@@ -56,6 +71,9 @@
 | `71815871`、`737856b6`、`91bcd449` | `e20b7fe6`、`8f014c5d`、`432bb028` | 原生 WebView 光标与输入转发、代码文件语法高亮。 |
 | `1083710c`、`410b8da6`、`63d66fc3`、`1c90977e` | `b190f053`、`5a5f5068`、`4f39516c`、`7b445fe8`、`0ed8cdf0` | Typst 编译、预览和 PDF 双向跳转，文件夹创建、构建耗时与关闭空面板。 |
 | `4382c23e`、`7122e4ce` | `f77c1fbb`、`1853904e` | 共享快捷键长按控制、GPUI 和 WebView 的重复键处理。Synara iframe 的 `repeat` 转发仍待完成。 |
+| `8631c316`、`97774795`、`c556b85b`、`073cbd19`、`f2b99888` | `c474d891`、`891f8541`、`4fd97ee0`、`f6b10ec8`、`3d21a63d` | GPUI 主题文件/解析器、签名 registry、共享熔断逻辑、主题市场及窄窗口按钮修复；保留本地面板风格，排除 Tauri 页面和样式。 |
+| `032f99db`、`2eca5284`、`03bfae1b`、`c7a57df4` | `312aca34`、`69a516b4`、`446d29c3`、`7b961b3e` | 选择性加入沙箱插件宿主、GPUI 命令/设置、签名 registry 插件安装和 GPUI 市场；未恢复 Tauri host/IPC。 |
+| `35931fdd`、`2e39149c`、`c704848e`、`650b134f` | `edefde94`、`074bee9e`、`15bd91ba`、`184d3cf8` | 注册表双源、GPUI 测试适配、拖拽布局修复和 Agent 文件附件；逐笔取舍见本轮审阅表。 |
 
 ## 已跳过
 
@@ -67,16 +85,17 @@
 | `f4408c63`、`d7f09af0`、`c4a364ac`、`a2a845a0` | 上游版本号、发布说明和旧宿主元数据。保留独立发行版本。 |
 | `7304f7b5`、`145182ef`、`9d43d560ad` | 早期的启动预算、旧版本发布和上游 Mac runner 配置。 |
 | `f2cd6d20` | 保留本地面板的 `frosted` 外观。 |
+| `4a514a33`、`a0fde266`、`6fedc307` | Tauri 插件启用弹窗和旧市场页面；GPUI 市场已单独移植，不恢复 Tauri UI。 |
 
 ## 下一轮更新
 
 ```sh
 git fetch upstream main
-git log --reverse --oneline a2a845a0726e4a0bd62c43ce57c8069c02373bce..upstream/main
+git log --reverse --oneline 650b134fb6d5968f2b27e34750059e5df83cb3ef..upstream/main
 ```
 
 逐笔读实际 diff，核对本地等价实现、前置依赖和被删除的路径。只摘取适用部分，保留 ChemEx、本地配置、Windows 隔离和现有工作区改动。整笔采用时使用 `git cherry-pick -x`。部分采用时在提交正文和本页注明来源及保留范围。
 
 记录每笔的已整合、待整合或跳过结论，再更新截止 SHA、下一轮命令和本地结果 SHA。已审阅的待办保留在表中，避免因为推进截止点而遗漏。
 
-上一轮检查中，Windows `cargo check --manifest-path gpui/Cargo.toml --locked -p lattice-gpui --tests` 与 25 项定向测试通过。全量翻译检查仍有既有排序、重复和缺失项。原生界面场景未运行。
+本轮 Windows `cargo check --manifest-path gpui/Cargo.toml --locked --target-dir gpui/target -p lattice-gpui --tests` 通过；白板 `agent_canvas` 单测 4 项、`lattice-settings` 单测 21 项、附件和 Agent 文档协议 Vitest 各 5 项、`node scripts/gpui-host-errors.mjs --check` 均通过。未运行 registry Rust 单测和 macOS 原生场景，没有做全量翻译复验。
