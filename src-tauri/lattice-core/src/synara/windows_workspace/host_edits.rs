@@ -50,7 +50,7 @@ struct Revision {
 }
 
 impl Workspace {
-    pub(super) fn original_edit_paths(
+    pub(in crate::synara) fn original_edit_paths(
         &self, control: &Path, request: &ProjectTextHistory,
     ) -> io::Result<Vec<String>> {
         self.check_host_managed()?;
@@ -62,7 +62,7 @@ impl Workspace {
             .map_or_else(Vec::new, |turn| turn.entries.into_keys().collect()))
     }
 
-    pub(super) fn edit_original(
+    pub(in crate::synara) fn edit_original(
         &mut self, control: &Path, edit: &ProjectTextEdit,
         before_write: impl FnOnce() -> io::Result<()>,
     ) -> io::Result<()> {
@@ -102,7 +102,7 @@ impl Workspace {
         Ok(())
     }
 
-    pub(super) fn undo_original(
+    pub(in crate::synara) fn undo_original(
         &mut self, control: &Path, request: &ProjectTextUndo,
         before_write: impl FnOnce() -> io::Result<()>,
     ) -> io::Result<Vec<String>> {

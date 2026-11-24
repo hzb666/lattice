@@ -494,7 +494,7 @@ export function useSynaraHost({ project, projectRef, agentVisible, bridge, appea
         handler(data, host);
         return;
       }
-      const manuscriptEdit = replaceAgentProjectText(data, root, executionRoot);
+      const manuscriptEdit = replaceAgentProjectText(data, root, executionRoot ?? null);
       if (manuscriptEdit) {
         void manuscriptEdit.then(post);
         return;

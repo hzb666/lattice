@@ -171,8 +171,11 @@ impl AgentRuntime {
         #[cfg(windows)]
         let agent = Self { projects };
         let stopping = agent.clone();
-        cx.on_app_quit(move |_| async move { stopping.shutdown() })
-            .detach();
+        cx.on_app_quit(move |_| {
+            let stopping = stopping.clone();
+            async move { stopping.shutdown() }
+        })
+        .detach();
         cx.set_global(RuntimeGlobal(agent.clone()));
         agent
     }
