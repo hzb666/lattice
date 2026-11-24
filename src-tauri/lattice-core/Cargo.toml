@@ -80,6 +80,10 @@ tokio = { version = "1", features = ["sync", "net", "time", "rt", "rt-multi-thre
 # The theme format and resolver (themes.rs), shared with the GPUI app's
 # lattice-ui, which does not depend on the rest of the core.
 lattice-theme = { path = "../lattice-theme" }
+# Verify signatures on the shared theme and plugin registry.
+minisign-verify = "0.2"
+# Parse registry version ranges and compare installed versions.
+semver = "1"
 axum = { version = "0.8", features = ["ws"] }
 # The URL type tauri re-exports, for TexLab's file URIs.
 url = "2"
@@ -129,3 +133,5 @@ portable-pty = "0.9"
 
 [dev-dependencies]
 tiny_http = "0.12.0"
+blake2 = "0.10"
+ring = "0.17"

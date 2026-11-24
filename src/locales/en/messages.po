@@ -48,6 +48,10 @@ msgstr "“{0}” stays linked"
 msgid "“{command}” in the terminal"
 msgstr "“{command}” in the terminal"
 
+#: src/platform/host-errors-registry.ts
+msgid "\"{id}\" is not in the theme list."
+msgstr "\"{id}\" is not in the theme list."
+
 #: src/project/clone-repository-dialog.tsx
 msgid "“{destinationName}” already exists there. Choose another location"
 msgstr "“{destinationName}” already exists there. Choose another location"
@@ -804,6 +808,10 @@ msgstr "{name} {edition}"
 msgid "{name} {edition} (preprint)"
 msgstr "{name} {edition} (preprint)"
 
+#: src/platform/host-errors-registry.ts
+msgid "{name} {version} is blocked: {reason}"
+msgstr "{name} {version} is blocked: {reason}"
+
 #: src/project/project-dialogs.tsx
 msgid "{name} {edition} Rebuttal"
 msgstr "{name} {edition} Rebuttal"
@@ -1153,6 +1161,14 @@ msgstr "{totalPages} total, body ends on p.{mainPages}"
 #: src/project/manuscript-checklist.tsx
 msgid "{totalPages} total, end of the body not located in the PDF"
 msgstr "{totalPages} total, end of the body not located in the PDF"
+
+#: src/platform/host-errors-registry.ts
+msgid "{url} is larger than expected."
+msgstr "{url} is larger than expected."
+
+#: src/platform/host-errors-registry.ts
+msgid "{url} is not an https address."
+msgstr "{url} is not an https address."
 
 #: src/project/manuscript-checklist.tsx
 msgid "{totalPages} total, included files not read"
@@ -5027,6 +5043,10 @@ msgstr "Could not save the project"
 #: src/papers/bibliography-audit.tsx
 msgid "Could not save the report on this device. Keep this window open to retain the results."
 msgstr "Could not save the report on this device. Keep this window open to retain the results."
+
+#: src/platform/host-errors-registry.ts
+msgid "Could not save the theme list: {error}"
+msgstr "Could not save the theme list: {error}"
 
 #: src/platform/host-errors-themes.ts
 msgid "Could not save the theme: {error}"
@@ -9294,6 +9314,10 @@ msgstr "Load a package"
 #: src/papers/literature-discovery-panel.tsx
 msgid "Load more"
 msgstr "Load more"
+
+#: src/platform/host-errors-registry.ts
+msgid "Load the theme list before installing a theme from it."
+msgstr "Load the theme list before installing a theme from it."
 
 #: src/history/compare-versions.tsx
 msgid "Load older versions"
@@ -16299,6 +16323,18 @@ msgstr "The download was interrupted: the connection timed out or dropped. Try a
 msgid "The downloaded {what} failed its security check."
 msgstr "The downloaded {what} failed its security check."
 
+#: src/platform/host-errors-registry.ts
+msgid "The downloaded theme does not match the theme list's checksum."
+msgstr "The downloaded theme does not match the theme list's checksum."
+
+#: src/platform/host-errors-registry.ts
+msgid "The downloaded theme is not \"{id}\" {version}."
+msgstr "The downloaded theme is not \"{id}\" {version}."
+
+#: src/platform/host-errors-registry.ts
+msgid "The downloaded theme is not the size the theme list gives."
+msgstr "The downloaded theme is not the size the theme list gives."
+
 #: src/platform/host-errors-setup.ts
 msgid "The downloaded {what} is larger than expected, so it was refused."
 msgstr "The downloaded {what} is larger than expected, so it was refused."
@@ -16769,6 +16805,34 @@ msgstr "The publisher has issued a notice about this paper. Read it before you k
 msgid "The realtime connection closed."
 msgstr "The realtime connection closed."
 
+#: src/platform/host-errors-registry.ts
+msgid "The registry could not be reached: {error}"
+msgstr "The registry could not be reached: {error}"
+
+#: src/platform/host-errors-registry.ts
+msgid "The registry is updating its list. Try again in a few minutes."
+msgstr "The registry is updating its list. Try again in a few minutes."
+
+#: src/platform/host-errors-registry.ts
+msgid "The registry sent an older list (serial {sent} after {kept}), so Lattice kept the one it has."
+msgstr "The registry sent an older list (serial {sent} after {kept}), so Lattice kept the one it has."
+
+#: src/platform/host-errors-registry.ts
+msgid "The registry's {file} could not be read: {error}"
+msgstr "The registry's {file} could not be read: {error}"
+
+#: src/platform/host-errors-registry.ts
+msgid "The registry's {file} has no valid signature."
+msgstr "The registry's {file} has no valid signature."
+
+#: src/platform/host-errors-registry.ts
+msgid "The registry's {file} is signed for another file or serial."
+msgstr "The registry's {file} is signed for another file or serial."
+
+#: src/platform/host-errors-registry.ts
+msgid "The registry's list is in a newer format. Update Lattice to use it."
+msgstr "The registry's list is in a newer format. Update Lattice to use it."
+
 #: src/papers/bibliography-audit.tsx
 msgid "The reference is verified"
 msgstr "The reference is verified"
@@ -16951,6 +17015,10 @@ msgid "The TeX Live repository could not be searched.\n"
 "{detail}"
 msgstr "The TeX Live repository could not be searched.\n"
 "{detail}"
+
+#: src/platform/host-errors-registry.ts
+msgid "The theme download failed: {error}"
+msgstr "The theme download failed: {error}"
 
 #: src/platform/host-errors-workspace.ts
 msgid "The text is too large to save as a copy."

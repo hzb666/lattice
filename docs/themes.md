@@ -66,22 +66,21 @@ nearest one that does (`lattice_theme::color::fit_contrast`). The surfaces
 are the theme's own, or Lattice's where it leaves one out.
 
 Derived colors are not themeable: hover and pressed washes, the soft accent,
-the titlebar veil, the status washes, the selection surface. Each app derives
-them from the base roles. That keeps every interaction state consistent with
-the theme, including states added later.
+the titlebar veil, the status washes, the selection surface. GPUI derives them
+from the base roles. That keeps interaction states consistent with the theme,
+including states added later.
 
 ## Choosing a theme and an accent
 
 - A theme replaces the tint: while one is in effect the app stands on
   Graphite and the theme sets the roles it names.
-- **Accent (decision L13):** `Theme default` (`accent: "theme"`) takes the
+- **Accent:** `Theme default` (`accent: "theme"`) takes the
   theme's accent, or Graphite's when there is no theme or it has none. An
   accent the writer picks (a preset or a custom color) wins over the theme's,
   fitted to the theme's surfaces.
 - A theme that colors the syntax wins over the Code theme setting while it is
   chosen.
-- The choice is `appearance.theme` (the id, or `""`) in the shared settings
-  both apps read.
+- The choice is `appearance.theme` (the id, or `""`) in shared settings.
 
 ## Where themes live
 
@@ -90,6 +89,16 @@ the theme, including states added later.
 ones in `<app data>/themes/<id>.json`. Installing validates the file and keeps
 a copy; the picked file can move or change afterwards. Nothing in a project
 folder installs or selects a theme.
+
+## Theme market
+
+`lattice-core::registry` fetches the signed index and block list from the
+Lattice registry. Both signatures bind the file name and serial; refreshes
+reject invalid signatures, mismatched serials and rollback to an older list.
+The last verified pair is cached for offline use. Theme downloads require
+HTTPS and must match the signed size, SHA-256, id and version before install.
+The signed block list can prevent an unsafe version from being installed and
+marks an already installed version for review.
 
 ## How GPUI applies a theme
 
