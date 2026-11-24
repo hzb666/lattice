@@ -7,6 +7,7 @@ import { OVERLEAF_HOST_ERRORS } from "./host-errors-overleaf";
 import { PAPERS_HOST_ERRORS } from "./host-errors-papers";
 import { PROJECT_HOST_ERRORS } from "./host-errors-project";
 import { SETUP_HOST_ERRORS } from "./host-errors-setup";
+import { THEMES_HOST_ERRORS } from "./host-errors-themes";
 import { WORKSPACE_HOST_ERRORS } from "./host-errors-workspace";
 
 export const HOST_ERRORS: readonly HostErrorEntry[] = [
