@@ -37,16 +37,22 @@ pub(super) fn source(
         (path.starts_with(root) && !generated(&path)).then_some(path)
     };
     let mut seen = HashSet::new();
-    let sources: Vec<(PathBuf, String)> = input_names(synctex)
-        .filter_map(project_source)
-        .filter(|path| {
-            path.extension().is_some_and(|extension| extension.eq_ignore_ascii_case("tex"))
-                && seen.insert(path.clone())
+    let extension = |path: &Path, wanted: &[&str]| {
+        path.extension().is_some_and(|extension| {
+            wanted.iter().any(|wanted| extension.eq_ignore_ascii_case(wanted))
         })
+    };
+    // Only what can hold a block or declare one: not the `.aux`, `.bbl` or
+    // figures TeX also read.
+    let (sources, packages): (Vec<_>, Vec<_>) = input_names(synctex)
+        .filter_map(project_source)
+        .filter(|path| extension(path, &["tex", "sty", "cls"]) && seen.insert(path.clone()))
         .filter_map(|path| Some((path.clone(), fs::read_to_string(&path).ok()?)))
-        .collect();
+        .partition(|(path, _)| extension(path, &["tex"]));
+    // A package of the project's may declare the environments too.
+    let packages: Vec<&str> = packages.iter().map(|(_, text)| text.as_str()).collect();
     let blocks = fs::read_to_string(input)
-        .map(|highlighted| blocks(&highlighted, line, sources.iter().cloned()))
+        .map(|highlighted| blocks(&highlighted, line, sources.iter().cloned(), &packages))
         .unwrap_or_default();
     if blocks.is_empty() {
         let (name, line, _) =
@@ -80,12 +86,13 @@ fn input_tags(synctex: &str) -> impl Iterator<Item = (u32, &str)> {
 /// or `\subfile`s where it does, then any block that leaves unread (a
 /// source reached another way) in the order of `sources`.
 fn reading_order<'a>(
-    sources: &[(PathBuf, String)], blocks: &'a [Block<PathBuf>],
+    sources: &'a [(PathBuf, String)], blocks: &'a [Block<PathBuf>],
 ) -> Vec<&'a Block<PathBuf>> {
     let mut ordered = Vec::new();
     if let Some((document, _)) = sources.first() {
         let folder = document.parent().unwrap_or(document);
-        read(document, folder, sources, blocks, &mut vec![], &mut ordered);
+        let mut reading = Reading { folder, sources, blocks, open: Vec::new(), reads: 0 };
+        reading.read(document, &mut ordered);
     }
     for block in blocks {
         if !ordered.iter().any(|seen| std::ptr::eq(*seen, block)) {
@@ -95,35 +102,62 @@ fn reading_order<'a>(
     ordered
 }
 
-/// Add `path`'s blocks to `ordered` line by line, reading each source it
-/// includes where it does. TeX names an included file relative to the
-/// document's `folder`, with `.tex` left off or not. `open` holds the sources
-/// being read, so a file that includes itself ends.
-fn read<'a>(
-    path: &Path, folder: &Path, sources: &[(PathBuf, String)], blocks: &'a [Block<PathBuf>],
-    open: &mut Vec<PathBuf>, ordered: &mut Vec<&'a Block<PathBuf>>,
-) {
-    let Some((_, text)) = sources.iter().find(|(source, _)| source == path) else { return };
-    open.push(path.to_path_buf());
-    for (index, line) in text.lines().enumerate() {
-        let number = index as u32 + 1;
-        ordered.extend(blocks.iter().filter(|block| block.path == path && block.start == number));
-        let code = line.split('%').next().unwrap_or_default();
-        for command in ["\\input{", "\\include{", "\\subfile{"] {
-            for rest in code.split(command).skip(1) {
-                let name = rest.split('}').next().unwrap_or_default().trim();
-                let named = folder.join(name);
-                let included = [named.with_extension("tex"), named]
-                    .into_iter()
-                    .filter_map(|candidate| candidate.canonicalize().ok())
-                    .find(|candidate| sources.iter().any(|(source, _)| source == candidate));
-                if let Some(included) = included.filter(|included| !open.contains(included)) {
-                    read(&included, folder, sources, blocks, open, ordered);
+/// Reading the sources from the document down, as TeX does.
+struct Reading<'a> {
+    /// The document's folder, which TeX names an included file relative to.
+    folder: &'a Path,
+    sources: &'a [(PathBuf, String)],
+    blocks: &'a [Block<PathBuf>],
+    /// The sources being read, so a file that includes itself ends.
+    open: Vec<PathBuf>,
+    /// How many sources were read: a chain of files that each include the
+    /// next one twice doubles it at every step.
+    reads: usize,
+}
+
+impl<'a> Reading<'a> {
+    /// Past this many reads the rest of the blocks keep the sources' order.
+    const MOST_READS: usize = 1000;
+
+    /// Add `path`'s blocks to `ordered` line by line, reading each source it
+    /// includes where it does.
+    fn read(&mut self, path: &Path, ordered: &mut Vec<&'a Block<PathBuf>>) {
+        let Some((_, text)) = self.sources.iter().find(|(source, _)| source == path) else {
+            return;
+        };
+        if self.reads >= Self::MOST_READS || self.open.iter().any(|open| open == path) {
+            return;
+        }
+        self.reads += 1;
+        self.open.push(path.to_path_buf());
+        for (index, line) in text.lines().enumerate() {
+            let number = index as u32 + 1;
+            let blocks = self.blocks.iter();
+            ordered.extend(blocks.filter(|block| block.path == path && block.start == number));
+            let code = uncommented(line);
+            for command in ["\\input{", "\\include{", "\\subfile{"] {
+                for rest in code.split(command).skip(1) {
+                    let name = rest.split('}').next().unwrap_or_default().trim();
+                    if let Some(included) = self.source(name) {
+                        self.read(&included, ordered);
+                    }
                 }
             }
         }
+        self.open.pop();
     }
-    open.pop();
+
+    /// The source `\input{name}` reads: `name.tex`, else `name` itself
+    /// (`ch.v2` is `ch.v2.tex`), when it is one of the project's.
+    fn source(&self, name: &str) -> Option<PathBuf> {
+        let named = self.folder.join(name);
+        let mut with_tex = named.clone().into_os_string();
+        with_tex.push(".tex");
+        [PathBuf::from(with_tex), named]
+            .into_iter()
+            .filter_map(|candidate| candidate.canonicalize().ok())
+            .find(|candidate| self.sources.iter().any(|(source, _)| source == candidate))
+    }
 }
 
 /// A minted environment holding a block's code: where its code starts, and
@@ -138,9 +172,10 @@ struct Block<P> {
 /// Every minted environment in `sources` (path and text, in order) holding
 /// the code of `highlighted`, a minted cache file, with its line `line`'s
 /// place in it. Empty when none does: an `\inputminted` file, code `gobble`
-/// changed, or a source edited since the build.
+/// changed, or a source edited since the build. `packages` (the project's
+/// `.sty` and `.cls`) may declare minted environments too.
 fn blocks<P: Clone>(
-    highlighted: &str, line: u32, sources: impl IntoIterator<Item = (P, String)>,
+    highlighted: &str, line: u32, sources: impl IntoIterator<Item = (P, String)>, packages: &[&str],
 ) -> Vec<Block<P>> {
     let lines: Vec<&str> = highlighted.lines().collect();
     // Pygments wraps the block in a verbatim environment (`Verbatim`, minted
@@ -155,13 +190,23 @@ fn blocks<P: Clone>(
         return Vec::new();
     }
     let offset = (line as usize).saturating_sub(begin + 1).min(code.len() - 1);
+    let sources: Vec<(P, String)> = sources.into_iter().collect();
+    let environments = minted_environments(
+        sources.iter().map(|(_, text)| text.as_str()).chain(packages.iter().copied()),
+    );
     let mut found = Vec::new();
     for (path, source) in sources {
         let source: Vec<&str> = source.lines().collect();
         let text: Vec<String> = source.iter().map(|text| code_text(text)).collect();
         for (start, run) in text.windows(code.len()).enumerate() {
-            let opens = || source[..start].iter().rev().find(|text| !text.trim().is_empty());
-            if run == code.as_slice() && opens().is_some_and(|text| opens_minted(text)) {
+            // The block's whole code, not the start of a longer block's: the
+            // environment ends after it (past any blank lines Pygments dropped).
+            let closes = || {
+                let after =
+                    source[start + code.len()..].iter().find(|text| !text.trim().is_empty());
+                after.is_some_and(|text| text.trim_start().starts_with("\\end{"))
+            };
+            if run == code.as_slice() && opens_minted(&source[..start], &environments) && closes() {
                 let start = start as u32 + 1;
                 found.push(Block { path: path.clone(), start, line: start + offset as u32 });
             }
@@ -170,14 +215,157 @@ fn blocks<P: Clone>(
     found
 }
 
-/// Whether `line` opens a minted environment: `minted`, or one `\newminted`
-/// made (`pythoncode`, `pythoncode*`). A `verbatim` or `lstlisting` holding
-/// the same code is not where it was highlighted from.
-fn opens_minted(line: &str) -> bool {
-    line.split("\\begin{").skip(1).any(|rest| {
-        let name = rest.split('}').next().unwrap_or_default().trim_end_matches('*');
-        name == "minted" || name.ends_with("code")
-    })
+/// The minted environments `sources` can open: `minted`, and each one a
+/// `\newminted` among them declares (`\newminted{python}{…}` makes
+/// `pythoncode`, `\newminted[name]{python}{…}` makes `name`), with its
+/// starred form.
+fn minted_environments<'a>(sources: impl Iterator<Item = &'a str>) -> HashSet<String> {
+    let mut names = HashSet::from(["minted".to_string()]);
+    let mut add = |name: &str| {
+        let name = name.trim();
+        if !name.is_empty() {
+            names.insert(format!("{name}*"));
+            names.insert(name.to_string());
+        }
+    };
+    for source in sources {
+        // A declaration may run over lines, but not into a comment.
+        let source: String = source.lines().map(uncommented).collect::<Vec<_>>().join("\n");
+        for rest in source.split("\\newminted").skip(1) {
+            let rest = rest.trim_start();
+            match rest.strip_prefix('[') {
+                Some(rest) => add(rest.split(']').next().unwrap_or_default()),
+                None => {
+                    let language = rest.strip_prefix('{').and_then(|rest| rest.split('}').next());
+                    if let Some(language) = language {
+                        add(&format!("{}code", language.trim()));
+                    }
+                }
+            }
+        }
+        // An environment of the document's own that opens one around its
+        // body: `\newenvironment{code}{\begin{minted}{python}}{\end{minted}}`.
+        for command in [
+            "\\newenvironment",
+            "\\renewenvironment",
+            "\\NewDocumentEnvironment",
+            "\\RenewDocumentEnvironment",
+        ] {
+            for rest in source.split(command).skip(1) {
+                let rest = rest.strip_prefix('*').unwrap_or(rest);
+                let Some((name, definition)) =
+                    rest.trim_start().strip_prefix('{').and_then(|rest| rest.split_once('}'))
+                else {
+                    continue;
+                };
+                // Only its own begin and end code (and a document command's
+                // argument specification): never what follows it.
+                let parts = if command.contains("Document") { 3 } else { 2 };
+                if groups(definition, parts).iter().any(|group| group.contains("\\begin{minted}")) {
+                    add(name);
+                }
+            }
+        }
+    }
+    names
+}
+
+/// The first `count` brace groups of `text`, past whitespace and the
+/// `[…]` groups before them (an environment's argument count and default).
+fn groups(text: &str, count: usize) -> Vec<&str> {
+    let mut found = Vec::new();
+    let mut rest = text;
+    while found.len() < count {
+        rest = rest.trim_start();
+        let (open, close) = match rest.chars().next() {
+            Some('{') => ('{', '}'),
+            Some('[') => ('[', ']'),
+            _ => break,
+        };
+        let mut depth = 0;
+        let Some(end) = rest.char_indices().find_map(|(index, character)| {
+            depth += i32::from(character == open) - i32::from(character == close);
+            (depth == 0).then_some(index)
+        }) else {
+            break;
+        };
+        if open == '{' {
+            found.push(&rest[1..end]);
+        }
+        rest = &rest[end + 1..];
+    }
+    found
+}
+
+/// Whether the source lines `above` a run of code end by opening one of
+/// `environments` on them: its `\begin{…}` and options, which may run over
+/// several lines (`\begin{minted}[` … `]{python}`). A `verbatim`, an
+/// `lstlisting` or a comment holding the same code is not where it was
+/// highlighted from.
+fn opens_minted(above: &[&str], environments: &HashSet<String>) -> bool {
+    // The options of one environment fit in a few lines.
+    const OPENING_LINES: usize = 12;
+    let opening: Vec<&str> = above
+        .iter()
+        .rev()
+        .take(OPENING_LINES)
+        // A whole line of comment is one inside the options, or a line of
+        // code (`% setup` in MATLAB): never a blank line.
+        .map(|line| match uncommented(line) {
+            text if text.trim().is_empty() && !line.trim().is_empty() => "\u{1}",
+            text => text,
+        })
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
+    let opening = opening.join("\n");
+    let Some((_, rest)) = opening.rsplit_once("\\begin{") else { return false };
+    let Some((name, arguments)) = rest.split_once('}') else { return false };
+    // Nothing but the environment's own options and arguments after it.
+    environments.contains(name.trim()) && only_groups(arguments)
+}
+
+/// Whether `text` is nothing but whitespace and balanced `[…]` and `{…}`
+/// groups: an environment's options and arguments, never a line of code
+/// (`d = {}`) or more of a macro (`\newcommand\x{\begin{minted}{c}}`).
+fn only_groups(text: &str) -> bool {
+    let mut closing = Vec::new();
+    // A new line may go on only inside a group (options over lines): one
+    // that starts after every group closed is code, even all brackets (`[]`).
+    let mut line_ended = false;
+    for character in text.chars() {
+        if line_ended && closing.is_empty() && !character.is_whitespace() {
+            return false;
+        }
+        line_ended |= character == '\n' && closing.is_empty();
+        match character {
+            '[' | '{' if closing.is_empty() => {
+                closing.push(if character == '[' { ']' } else { '}' })
+            }
+            '{' => closing.push('}'),
+            ']' | '}' if closing.last() == Some(&character) => {
+                closing.pop();
+            }
+            ']' | '}' if closing.is_empty() => return false,
+            _ if closing.is_empty() && !character.is_whitespace() => return false,
+            _ => {}
+        }
+    }
+    closing.is_empty()
+}
+
+/// `line` up to its comment: the first `%` that no backslash escapes.
+fn uncommented(line: &str) -> &str {
+    let mut escaped = false;
+    for (index, character) in line.char_indices() {
+        match character {
+            '%' if !escaped => return &line[..index],
+            '\\' => escaped = !escaped,
+            _ => escaped = false,
+        }
+    }
+    line
 }
 
 /// A line of code reduced to what survives highlighting unchanged: its
