@@ -23,7 +23,7 @@ const bridge = {
   openProviderSettings: () => undefined, openProjectPath: () => undefined, openReview: () => undefined,
   clearSelection: () => undefined, flushVisualMarkdown: () => undefined, agentCommentsOptions: () => null,
   annotationTools: () => null, projectDocumentCreator: () => null, onHistorySnapshot: () => undefined,
-  onMinimumWidth: () => undefined,
+  onMinimumWidth: () => undefined, refreshWorkspace: vi.fn().mockResolvedValue(undefined),
 };
 
 const hostRef = { current: null as ReturnType<typeof useSynaraHost> | null };
@@ -57,6 +57,7 @@ const writesPosted = () => posted()
 beforeEach(() => {
   vi.useFakeTimers();
   spies.clear();
+  bridge.refreshWorkspace.mockClear();
 });
 afterEach(() => {
   cleanup();
@@ -74,6 +75,67 @@ async function mountReady(theme: Theme) {
   expect(host.frameReady).toBe(true);
   return view;
 }
+
+it("acknowledges a new turn without refreshing when no scratch workspace exists", async () => {
+  await mountReady("light");
+  posted();
+  await act(async () => {
+    window.dispatchEvent(new MessageEvent("message", {
+      source: frame().contentWindow,
+      origin: ORIGIN,
+      data: {
+        type: "synara:prepare-agent-turn",
+        version: 1,
+        requestId: "mac-turn",
+        workspaceRoot: project.root,
+      },
+    }));
+    await Promise.resolve();
+  });
+  expect(bridge.refreshWorkspace).not.toHaveBeenCalled();
+  expect(posted()).toContainEqual(expect.objectContaining({
+    type: "lattice:prepare-agent-turn-result",
+    requestId: "mac-turn",
+    ok: true,
+  }));
+});
+
+it("waits for the scratch manuscript refresh before acknowledging a new turn", async () => {
+  const view = await mountReady("light");
+  runtime.current = {
+    ...runtime.current,
+    runtime: { ...runtime.current.runtime, executionRoot: "C:/scratch/paper" },
+  };
+  view.rerender(<Harness theme="light" />);
+  posted();
+  let finishRefresh!: () => void;
+  bridge.refreshWorkspace.mockReturnValueOnce(new Promise<void>((resolve) => {
+    finishRefresh = resolve;
+  }));
+  const result = {
+    type: "lattice:prepare-agent-turn-result",
+    requestId: "windows-turn",
+    ok: true,
+  };
+  await act(async () => {
+    window.dispatchEvent(new MessageEvent("message", {
+      source: frame().contentWindow,
+      origin: ORIGIN,
+      data: {
+        type: "synara:prepare-agent-turn",
+        version: 1,
+        requestId: "windows-turn",
+        workspaceRoot: "C:/scratch/paper",
+      },
+    }));
+    await Promise.resolve();
+  });
+  expect(bridge.refreshWorkspace).toHaveBeenCalledOnce();
+  expect(posted()).not.toContainEqual(expect.objectContaining(result));
+
+  await act(async () => finishRefresh());
+  expect(posted()).toContainEqual(expect.objectContaining(result));
+});
 
 // S10 in the implicit-state audit: a reload that keeps the frame's key (here
 // light/dark in its URL, which "match system" flips with no click at all) used

@@ -25,6 +25,7 @@ pub(super) use source::code_lines;
 use super::aux_files::{self, HIDDEN_FOLDER};
 use super::build::{abort, run_tracked, ActiveBuild};
 use super::build_log::{pages_written, parse_diagnostics, trim_log};
+use super::changes::ExportTex;
 use super::{default_root_document, latexmk, BuildSteps};
 use crate::{commands, project};
 use regex::Regex;
@@ -34,6 +35,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
+use std::process::{Command, Output};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{mpsc, LazyLock, Mutex, PoisonError};
 use std::time::{Duration, Instant, SystemTime};
@@ -282,6 +284,13 @@ impl Staged {
 pub fn check(
     root: &Path, options: ArxivOptions, checks: &ArxivChecks, staged: impl Fn(&ArxivCheck),
 ) -> Result<ArxivCheck, String> {
+    check_with_tex(root, options, checks, staged, None)
+}
+
+pub fn check_with_tex(
+    root: &Path, options: ArxivOptions, checks: &ArxivChecks, staged: impl Fn(&ArxivCheck),
+    tex: Option<&ExportTex<'_>>,
+) -> Result<ArxivCheck, String> {
     let check = checks.begin();
     let _turn = checks.turn.lock().unwrap_or_else(PoisonError::into_inner);
     let Some(pack) = stage(root, options)? else {
@@ -292,7 +301,7 @@ pub fn check(
     let mut package = pack.package();
     staged(&ArxivCheck::Package(Box::new(package.clone())));
     package.compile = Some(if checks.current(check) {
-        test_build(&pack, checks, check)?
+        test_build_with_tex(&pack, checks, check, None, tex)?
     } else {
         CompileCheck::cancelled()
     });
@@ -618,17 +627,18 @@ impl Drop for Scratch {
 
 /// Build the pack in a folder of its own, as arXiv will: no shell escape,
 /// no BibTeX (the `.bbl` ships instead), and a time limit.
-fn test_build(pack: &Staged, checks: &ArxivChecks, check: u64) -> Result<CompileCheck, String> {
-    test_build_keeping(pack, checks, check, None)
-}
-
-/// [`test_build`], copying the PDF it made to `keep` when it succeeds.
-pub(super) fn test_build_keeping(
+/// Build the pack alone and copy the PDF to `keep` when the build succeeds.
+fn test_build_with_tex(
     pack: &Staged, checks: &ArxivChecks, check: u64, keep: Option<&Path>,
+    tex: Option<&ExportTex<'_>>,
 ) -> Result<CompileCheck, String> {
     let scratch = Scratch::new()?;
     for (path, bytes) in &pack.files {
-        let target = scratch.0.join(path);
+        let target = if tex.is_some() {
+            project::creation_path(&scratch.0, path)?
+        } else {
+            scratch.0.join(path)
+        };
         if let Some(parent) = target.parent() {
             fs::create_dir_all(parent).map_err(|error| error.to_string())?;
         }
@@ -642,8 +652,39 @@ pub(super) fn test_build_keeping(
         "-no-shell-escape",
         "-bibtex-",
         project::latexmk_engine_arg(&pack.engine),
-        &pack.root_document,
     ]);
+    if tex.is_some() {
+        project::safe_path(&scratch.0, &pack.root_document)?;
+        command.arg("-norc").arg(format!("./{}", pack.root_document.replace('\\', "/")));
+    } else {
+        command.arg(&pack.root_document);
+    }
+    let started = Instant::now();
+    let (output, stopped, timed_out) = if let Some(tex) = tex {
+        let cancelled = || !checks.current(check);
+        if cancelled() {
+            return Ok(CompileCheck::cancelled());
+        }
+        let (output, interrupted) = tex(command, &scratch.0, COMPILE_TIME_LIMIT, &cancelled)?;
+        (output, interrupted || cancelled(), interrupted && !cancelled())
+    } else {
+        run_test_build(command, checks, check)?
+    };
+    let duration_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
+    if stopped {
+        let mut result = CompileCheck::cancelled();
+        result.duration_ms = duration_ms;
+        if timed_out && checks.current(check) {
+            result.outcome = CompileOutcome::TimedOut;
+        }
+        return Ok(result);
+    }
+    compile_result(pack, &scratch.0, output, duration_ms, keep)
+}
+
+fn run_test_build(
+    command: Command, checks: &ArxivChecks, check: u64,
+) -> Result<(Output, bool, bool), String> {
     let started = Instant::now();
     // A watchdog stops a build past the limit, or once a newer check (or the
     // sheet closing) has made this one stale. It keeps looking until the build
@@ -677,17 +718,14 @@ pub(super) fn test_build_keeping(
         ran
     });
     let (output, stopped) = ran?;
-    let duration_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
-    if stopped {
-        let mut result = CompileCheck::cancelled();
-        result.duration_ms = duration_ms;
-        if timed_out.load(Ordering::SeqCst) && checks.current(check) {
-            result.outcome = CompileOutcome::TimedOut;
-        }
-        return Ok(result);
-    }
+    Ok((output, stopped, timed_out.load(Ordering::SeqCst)))
+}
+
+fn compile_result(
+    pack: &Staged, scratch: &Path, output: Output, duration_ms: u64, keep: Option<&Path>,
+) -> Result<CompileCheck, String> {
     let log = commands::combined_output(&output);
-    let built = scratch.0.join(&pack.root_document);
+    let built = scratch.join(&pack.root_document);
     let tex_log = fs::read_to_string(built.with_extension("log")).unwrap_or_default();
     if output.status.success() && built.with_extension("pdf").is_file() {
         if let Some(keep) = keep {

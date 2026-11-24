@@ -33,11 +33,26 @@ use crate::models::{Diagnostic, ProjectManifest};
 use crate::{commands, git, project};
 pub use guard::ChangesExports;
 use guard::{Limits, Ran, Stop, BUILD_LIMITS, LATEXDIFF_LIMITS};
-pub use review::review_changes_pdf;
+pub use review::{review_changes_pdf, review_changes_pdf_with_tex};
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Output};
+use std::time::Duration;
+
+/// Run to completion in a dedicated scratch directory and check its output tree
+/// before returning, including after cancellation.
+pub type ExportTex<'a> =
+    dyn Fn(Command, &Path, Duration, &dyn Fn() -> bool) -> Result<(Output, bool), String> + 'a;
+
+pub(super) fn export_source_path(root: &Path, relative: &str) -> Result<PathBuf, String> {
+    let first = Path::new(relative).components().find(|part| *part != Component::CurDir);
+    if matches!(first, Some(Component::Normal(name)) if project::is_internal_project_component(name))
+    {
+        return Err("Choose a project-relative path outside app-private folders.".into());
+    }
+    project::safe_path(root, relative)
+}
 
 /// How the changes are drawn, chosen in the export sheet.
 #[derive(Debug, Clone, Copy, Deserialize)]
@@ -97,8 +112,18 @@ pub fn export_changes_pdf(
     root: &Path, from: &str, to: Option<&str>, options: ChangesPdfOptions,
     exports: &ChangesExports, export: u64,
 ) -> Result<ChangesPdf, String> {
+    export_changes_pdf_with_tex(root, from, to, options, exports, export, None)
+}
+
+pub fn export_changes_pdf_with_tex(
+    root: &Path, from: &str, to: Option<&str>, options: ChangesPdfOptions,
+    exports: &ChangesExports, export: u64, tex: Option<&ExportTex<'_>>,
+) -> Result<ChangesPdf, String> {
     let manifest = project::read_manifest(root)?;
     let document = default_root_document(&manifest)?.path.replace('\\', "/");
+    if tex.is_some() {
+        export_source_path(root, &document)?;
+    }
     if !document.to_ascii_lowercase().ends_with(".tex") {
         return Err("Only a LaTeX document can be exported with its changes marked.".to_string());
     }
@@ -124,14 +149,22 @@ pub fn export_changes_pdf(
     if !commands::available("latexdiff") {
         return Err(LATEXDIFF_MISSING.to_string());
     }
-    let run = Runner { exports, export, capture: &scratch.0 };
+    let run = Runner { exports, export, capture: &scratch.0, tex };
     let versions = Versions { older: &older, newer: &newer, document: &document };
     let built = mark_and_build(&run, &latexdiff, versions, options, &manifest)?;
     let saved = changes_name(&document, "pdf");
-    let target = project::safe_path(root, &saved)?;
-    fs::copy(&built.pdf, &target).map_err(|error| format!("Could not save {saved}: {error}"))?;
-    // Keep it out of version history, like the paper's own PDF.
-    let _ = project::ensure_ignore_line(&root.join(".gitignore"), &format!("/{saved}"));
+    if tex.is_some() {
+        if !exports.is_current(export) {
+            return Err(CANCELLED.into());
+        }
+        let pdf = fs::read(&built.pdf).map_err(|error| error.to_string())?;
+        crate::project_fs::ProjectDir::open(root)?.atomic_write(&saved, &pdf)?;
+    } else {
+        let target = project::safe_path(root, &saved)?;
+        fs::copy(&built.pdf, &target)
+            .map_err(|error| format!("Could not save {saved}: {error}"))?;
+        let _ = project::ensure_ignore_line(&root.join(".gitignore"), &format!("/{saved}"));
+    }
     Ok(ChangesPdf { path: saved, simplified: built.simplified, unmarked: built.unmarked })
 }
 
@@ -327,8 +360,12 @@ fn build_marked(
     super::search_paths::search_project_folder(&mut command, marked);
     command
         .args(["-interaction=nonstopmode", "-file-line-error", "-halt-on-error"])
-        .args(engine_args(newer, manifest))
-        .arg(marked);
+        .args(engine_args(newer, manifest));
+    if run.tex.is_some() {
+        command.arg(format!("./{marked}"));
+    } else {
+        command.arg(marked);
+    }
     let output = run.output(command, BUILD_LIMITS, "latexmk").map_err(|failed| match failed {
         Failed::Attempt(error) => {
             Failed::Export(format!("Could not start latexmk. Install MacTeX or TeX Live. {error}"))
@@ -348,12 +385,28 @@ struct Runner<'a> {
     exports: &'a ChangesExports,
     export: u64,
     capture: &'a Path,
+    tex: Option<&'a ExportTex<'a>>,
 }
 
 impl Runner<'_> {
     /// The child's output once it exits; a child that could not start is an
     /// `Attempt` with the OS error, one that was stopped ends the export.
     fn output(&self, command: Command, limits: Limits, tool: &str) -> Result<Output, Failed> {
+        if let Some(tex) = self.tex {
+            let cancelled = || !self.exports.is_current(self.export);
+            if cancelled() {
+                return Err(Failed::Export(CANCELLED.into()));
+            }
+            let (output, interrupted) =
+                tex(command, self.capture, limits.time, &cancelled).map_err(Failed::Attempt)?;
+            if cancelled() {
+                return Err(Failed::Export(CANCELLED.into()));
+            }
+            if interrupted {
+                return Err(Failed::Export(stopped(tool, Stop::TimedOut(limits.time))));
+            }
+            return Ok(output);
+        }
         match self.exports.run(self.export, command, limits, self.capture, tool) {
             Ok(Ran::Finished(output)) => Ok(output),
             Ok(Ran::Stopped(stop)) => Err(Failed::Export(stopped(tool, stop))),

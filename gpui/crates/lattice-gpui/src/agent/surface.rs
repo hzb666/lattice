@@ -53,8 +53,6 @@ mod documents;
 mod drops;
 mod events;
 mod invoke;
-#[cfg(windows)]
-mod isolated_history;
 mod notices;
 pub mod permission;
 mod skeleton;
@@ -106,8 +104,6 @@ pub struct SynaraSurface {
     /// The page keeps it in its own storage, which goes with the page when
     /// it hibernates, so a page built again is told it with its project.
     thread: Option<String>,
-    #[cfg(windows)]
-    isolated_history: isolated_history::IsolatedHistory,
     shown: bool,
     /// The page has drawn since it was (re)built.
     drawn: bool,
@@ -226,8 +222,6 @@ impl SynaraSurface {
             unavailable,
             root: None,
             thread: None,
-            #[cfg(windows)]
-            isolated_history: Default::default(),
             shown: false,
             drawn: false,
             opening: None,
@@ -323,8 +317,6 @@ impl SynaraSurface {
         }
         self.root = root;
         self.thread = None;
-        #[cfg(windows)]
-        self.isolated_history.reset();
         // A frame belongs to one project: another project's starts afresh
         // (the page keys its host by the project).
         self.workspace = Value::Null;
@@ -617,15 +609,6 @@ impl SynaraSurface {
     }
 
     fn receive_history(&mut self, snapshot: super::checkpoints::Snapshot, cx: &mut Context<Self>) {
-        #[cfg(windows)]
-        if self.isolated_history.enabled {
-            self.queue_isolated_history(snapshot, cx);
-            return;
-        }
-        self.publish_history(snapshot, cx);
-    }
-
-    fn publish_history(&mut self, snapshot: super::checkpoints::Snapshot, cx: &mut Context<Self>) {
         self.thread = Some(snapshot.active_thread_id.clone());
         cx.emit(SurfaceEvent::History(snapshot));
     }

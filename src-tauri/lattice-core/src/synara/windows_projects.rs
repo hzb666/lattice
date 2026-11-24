@@ -7,7 +7,7 @@ use std::sync::Mutex;
 use sha2::{Digest, Sha256};
 
 use super::windows_sandbox::paths_overlap;
-use super::windows_workspace::Workspace;
+use super::windows_workspace::{ProjectTextEdit, ProjectTextHistory, ProjectTextUndo, Workspace};
 use super::SynaraRuntime;
 
 #[derive(Default)]
@@ -76,8 +76,8 @@ impl SynaraRuntime {
         }
         let original_key = original.to_str().ok_or("The project location is not Unicode.")?;
         let key = format!("{:x}", Sha256::digest(original_key.as_bytes()));
-        let staging = parent.join(key);
-        let workspace = Workspace::reopen(&original, &staging)?;
+        let staging = parent.join(format!("manuscripts-{key}"));
+        let workspace = Workspace::open_host_managed(&original, &staging)?;
         let root = crate::sidecar::node_script_path(&staging);
         state.workspaces.insert(original, Staged { root: root.clone(), workspace });
         Ok(root)
@@ -87,13 +87,37 @@ impl SynaraRuntime {
         self.with_workspace(root, Workspace::refresh)
     }
 
-    pub(super) fn apply_workspace(
-        &self, root: &Path, targets: &BTreeMap<PathBuf, String>,
-    ) -> Result<Vec<PathBuf>, String> {
+    pub fn edit_project_text(&self, root: &Path, edit: &ProjectTextEdit) -> Result<(), String> {
+        let tex = self
+            .lock_project_tex(root, true)
+            .map_err(|error| error.to_string())?
+            .ok_or("Could not lock TeX execution for the project.")?;
+        self.with_workspace(root, |workspace| {
+            workspace
+                .edit_original(&self.control_dir(), edit, || tex.enroll())
+                .map_err(|error| error.to_string())
+        })
+    }
+
+    pub fn undo_project_text(
+        &self, root: &Path, request: &ProjectTextUndo,
+    ) -> Result<Vec<String>, String> {
         let tex = self.lock_project_tex(root, true).map_err(|error| error.to_string())?;
         let tex = tex.ok_or("Could not lock TeX execution for the isolated project.")?;
         self.with_workspace(root, |workspace| {
-            workspace.reconcile_checkpoint(targets, || tex.enroll())
+            workspace
+                .undo_original(&self.control_dir(), request, || tex.enroll())
+                .map_err(|error| error.to_string())
+        })
+    }
+
+    pub fn project_text_history(
+        &self, root: &Path, request: &ProjectTextHistory,
+    ) -> Result<Vec<String>, String> {
+        self.with_workspace(root, |workspace| {
+            workspace
+                .original_edit_paths(&self.control_dir(), request)
+                .map_err(|error| error.to_string())
         })
     }
 

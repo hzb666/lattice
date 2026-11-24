@@ -169,12 +169,16 @@ impl ArxivExportSheet {
     }
 
     fn check(&mut self, cx: &mut Context<Self>) {
+        #[cfg(windows)]
+        self.checks.cancel();
         self.generation += 1;
         let generation = self.generation;
         let saved = (self.save)(cx);
         let root = self.root.clone();
         let options = self.options;
         let checks = self.checks.clone();
+        #[cfg(windows)]
+        let supervisor = crate::agent::runtime::AgentRuntime::get(cx).supervisor_for(&root);
         let (staged_tx, mut staged_rx) = futures::channel::mpsc::unbounded::<ArxivCheck>();
         self._staged = Some(cx.spawn(async move |this, cx| {
             while let Some(staged) = staged_rx.next().await {
@@ -203,9 +207,15 @@ impl ArxivExportSheet {
             let checked = cx
                 .background_executor()
                 .spawn(async move {
-                    latex::check_arxiv(&root, options, &checks, |staged| {
+                    let staged = |staged: &ArxivCheck| {
                         staged_tx.unbounded_send(staged.clone()).ok();
-                    })
+                    };
+                    #[cfg(windows)]
+                    return supervisor?.with_project_export_tex(&root, |tex| {
+                        latex::check_arxiv_with_tex(&root, options, &checks, staged, tex)
+                    });
+                    #[cfg(not(windows))]
+                    latex::check_arxiv(&root, options, &checks, staged)
                 })
                 .await;
             this.update(cx, |this, cx| {

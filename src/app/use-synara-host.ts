@@ -19,7 +19,8 @@ import {
 import { LATTICE_HOST_THEME_REQUEST, readAgentHostTheme, type AgentHostThemeSnapshot } from "../agent/agent-host-theme";
 import { LATTICE_PAPER_LIBRARY_REQUEST, type AgentPaperLibrarySnapshot } from "../agent/agent-paper-library";
 import {
-  executeAgentProjectDocumentToolRequest, parseAgentProjectDocumentToolRequest, type AgentProjectDocumentToolRequest,
+  executeAgentProjectDocumentToolRequest, parseAgentProjectDocumentToolRequest, replaceAgentProjectText,
+  type AgentProjectDocumentToolRequest,
 } from "../agent/agent-project-document-tools";
 import { executeAgentFigureToolRequest, parseAgentFigureToolRequest } from "../agent/agent-figure-tools";
 import { executeAgentPresentationToolRequest, parseAgentPresentationToolRequest } from "../agent/agent-presentation-tools";
@@ -56,6 +57,8 @@ const LATTICE_AGENT_PANEL_OPENED = "lattice:agent-panel-opened";
  */
 const LATTICE_AGENT_PANEL_VISIBILITY = "lattice:agent-panel-visibility";
 const LATTICE_HOST_POINTER = "lattice:host-pointer";
+const SYNARA_PREPARE_AGENT_TURN = "synara:prepare-agent-turn";
+const LATTICE_PREPARE_AGENT_TURN_RESULT = "lattice:prepare-agent-turn-result";
 /**
  * Bounds for the width the agent's composer reports it needs (its controls
  * side by side, the send button inside the box). The ceiling only guards
@@ -358,6 +361,33 @@ export function useSynaraHost({ project, projectRef, agentVisible, bridge, appea
         const turnId = stringField(data.turnId);
         host.bridge.openReview(threadId && turnId ? { threadId, turnId } : null);
       },
+      [SYNARA_PREPARE_AGENT_TURN]: (data, host) => {
+        const requestId = stringField(data.requestId);
+        if (!requestId || requestId.length > 128) return;
+        const root = projectRootRef.current;
+        const reply = (ok: boolean) => post({
+          type: LATTICE_PREPARE_AGENT_TURN_RESULT,
+          version: 1,
+          requestId,
+          ok,
+        });
+        if (data.version !== 1 || data.workspaceRoot !== root || projectRootRef.current !== root) {
+          reply(false);
+          return;
+        }
+        if (!executionRoot) {
+          reply(true);
+          return;
+        }
+        if (!host.bridge.refreshWorkspace) {
+          reply(false);
+          return;
+        }
+        void host.bridge.refreshWorkspace().then(
+          () => reply(projectRootRef.current === root),
+          () => reply(false),
+        );
+      },
       [LATTICE_HOST_CONTEXT_REQUEST]: (data, host) => {
         const context = host.hostContext;
         if (data.refreshComments !== true) {
@@ -373,7 +403,6 @@ export function useSynaraHost({ project, projectRef, agentVisible, bridge, appea
             return host.bridge.agentCommentsOptions();
           },
           readComments: async (options, current) => {
-            if (executionRoot) await host.bridge.refreshWorkspace?.();
             const { readAgentCommentsSnapshot } = await loadAgentEditorComments();
             return readAgentCommentsSnapshot({ ...options, path: current.paper?.path ?? current.editor?.path, limit: 10 });
           },
@@ -463,6 +492,11 @@ export function useSynaraHost({ project, projectRef, agentVisible, bridge, appea
       const handler = typeof data?.type === "string" ? handlers[data.type] : undefined;
       if (data && handler) {
         handler(data, host);
+        return;
+      }
+      const manuscriptEdit = replaceAgentProjectText(data, root, executionRoot);
+      if (manuscriptEdit) {
+        void manuscriptEdit.then(post);
         return;
       }
       for (const route of TOOL_ROUTES) {

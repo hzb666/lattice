@@ -11,7 +11,7 @@
 //! stopping the export (its problems as the detail), each with Show in
 //! Finder on the folder; or an error with lattice-core's message.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use gpui::{AppContext as _, Context, InteractiveElement as _, PathPromptOptions, Window, actions};
 use lattice_core::latex::{JournalExport, JournalOptions};
@@ -147,8 +147,21 @@ impl Shell {
                         cx,
                     )
                 });
+                #[cfg(windows)]
+                let supervisor = cx.update(|cx| {
+                    crate::agent::runtime::AgentRuntime::get(cx).supervisor_for(&root)
+                });
                 let result = cx
-                    .background_spawn(async move { export(&root, &parent) })
+                    .background_spawn(async move {
+                        #[cfg(windows)]
+                        return supervisor?.with_project_export_tex(&root, |tex| {
+                            lattice_core::latex::export_journal_with_tex(
+                                &root, &parent, OPTIONS, tex,
+                            )
+                        });
+                        #[cfg(not(windows))]
+                        lattice_core::latex::export_journal(&root, &parent, OPTIONS)
+                    })
                     .await;
                 cx.update(|cx| notices::show(outcome(result), cx));
             }
@@ -169,10 +182,6 @@ impl Shell {
         })
         .detach();
     }
-}
-
-fn export(root: &Path, parent: &Path) -> Result<JournalExport, String> {
-    lattice_core::latex::export_journal(root, parent, OPTIONS)
 }
 
 fn commands(context: &CommandContext, out: &mut Vec<Command>) {

@@ -109,6 +109,12 @@ impl Roots {
         reject_existing_aliases(&home)?;
         reject_existing_aliases(&workspace)?;
         let git = git::discover(&runtime, &roots, &profile)?;
+        if original.is_some() && git.is_none() {
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "Windows Agent requires a compatible Git installation for checkpoints",
+            ));
+        }
         pins.push(workspace_pin);
         Ok(Self {
             runtime,
@@ -155,12 +161,16 @@ impl Roots {
         let mut readonly: Vec<_> = std::iter::once(&self.runtime)
             .chain(self.git.iter().filter_map(git::Installation::additional_grant))
             .chain(std::iter::once(&self.host_executable))
+            .chain(self.original.iter())
             .collect();
         let mut enumerate = BTreeSet::new();
         for root in readonly.iter().copied().chain([&self.home, &self.workspace]) {
             enumerate.extend(root.ancestors().skip(1));
         }
-        let denied: Vec<_> = std::iter::once(&self.control).chain(self.original.iter()).collect();
+        let mut denied = vec![self.control.clone()];
+        if let Some(original) = &self.original {
+            denied.extend([".chem", ".git"].map(|name| original.join(name)));
+        }
         let request = json!({
             "version": "1.0.0",
             "containment": "processcontainer",
@@ -173,12 +183,15 @@ impl Roots {
                 "readwritePaths": [&self.home, &self.workspace],
                 "deniedPaths": denied,
             },
-            "processContainer": { "filesystem": { "enumeratePaths": enumerate } },
+            "processContainer": {
+                "filesystem": { "enumeratePaths": enumerate },
+                "ui": { "isolation": "container" },
+            },
             "network": {
                 "egress": { "default": "allow" },
                 "ingress": { "default": "deny", "hostLoopback": "allow" },
             },
-            "ui": { "disable": false },
+            "ui": { "disable": false, "clipboard": "none", "injection": false },
         });
         Ok((node, request))
     }
@@ -253,6 +266,16 @@ impl Roots {
         vars.insert("SYNARA_NO_BROWSER".into(), "true".into());
         vars.insert("SYNARA_TELEMETRY_ENABLED".into(), "false".into());
         vars.insert("AGENT_HOST_PROFILE".into(), "lattice".into());
+        if let Some(original) = &self.original {
+            vars.insert(
+                "LATTICE_WINDOWS_PROJECT_ROOT".into(),
+                unicode(original.as_os_str())?.into(),
+            );
+            vars.insert(
+                "LATTICE_WINDOWS_CHECKPOINT_ROOT".into(),
+                unicode(self.workspace.as_os_str())?.into(),
+            );
+        }
         Ok(vars.into_iter().map(|(name, value)| format!("{name}={value}")).collect())
     }
 }

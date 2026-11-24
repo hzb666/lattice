@@ -42,6 +42,15 @@ async function sandboxWorker() {
   const fs = require("node:fs");
   const { join } = require("node:path");
   const [original, mode, ...files] = process.argv.slice(2);
+  if (mode === "readonly-project") {
+    const denied = { code: /^(EACCES|EPERM|ENOENT)$/ };
+    assert.equal(fs.readFileSync(join(original, "paper.tex"), "utf8"), files[0]);
+    assert.throws(() => fs.appendFileSync(join(original, "paper.tex"), " edited"), denied);
+    assert.throws(() => fs.readFileSync(join(original, ".chem/cache.txt")), denied);
+    assert.throws(() => fs.writeFileSync(join(original, "future.bib"), "edited"), denied);
+    fs.writeFileSync("generated.txt", "scratch write", { flag: "wx" });
+    return;
+  }
   if (mode === "parent") await awaitHost(original);
   for (const file of files) {
     const path = join(original, file);
@@ -167,4 +176,16 @@ symlinkSync(staging, join(original, "junction"), "junction");
 assert.throws(() => readWorkspace(original), /Unsupported workspace entry/);
 unlinkSync(join(original, "junction"));
 console.log(`MXC isolation and fixture writeback passed: ${root}`);
+
+const scratch = join(root, "readonly-project-scratch");
+mkdirSync(scratch);
+const readonlyProject = workspacePolicy({ original, staging: scratch, tools, node: process.execPath });
+readonlyProject.filesystem.deniedPaths = [join(readonlyProject.filesystem.readonlyPaths[0], ".chem")];
+const readonlyConfig = join(root, "readonly-project-policy.json");
+writeJson(readonlyConfig, readonlyProject);
+execFileSync(executor, [readonlyConfig, "--", process.execPath, workload, original, "readonly-project",
+  result.get("paper.tex").toString()], options);
+assert.equal(readFileSync(join(scratch, "generated.txt"), "utf8"), "scratch write");
+console.log("MXC read-only project, denied chemistry cache, and writable scratch passed");
+
 if (runtimePath) await checkSynara(executor, resolve(runtimePath), { root, original, staging });

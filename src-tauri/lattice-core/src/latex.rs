@@ -58,12 +58,15 @@ mod submission_review;
 mod synctex;
 mod venue;
 
-pub use arxiv::journal::{export as export_journal, JournalExport, JournalOptions};
+pub use arxiv::journal::{
+    export as export_journal, export_with_tex as export_journal_with_tex, JournalExport,
+    JournalOptions,
+};
 pub(crate) use arxiv::written_by_recorder;
 pub use arxiv::{
-    check as check_arxiv, export as export_arxiv, ArxivCheck, ArxivChecks, ArxivOptions,
-    ArxivPackage, Bibliography, CommentLine, Comments, CompileCheck, CompileOutcome, Miscased,
-    PackageFile,
+    check as check_arxiv, check_with_tex as check_arxiv_with_tex, export as export_arxiv,
+    ArxivCheck, ArxivChecks, ArxivOptions, ArxivPackage, Bibliography, CommentLine, Comments,
+    CompileCheck, CompileOutcome, Miscased, PackageFile,
 };
 pub use aux_files::AuxFiles;
 /// Register an already-running process as a project's build, for tests that
@@ -77,7 +80,8 @@ pub(crate) use build::{isolated_project_build, project_build_target, stop_reques
 pub(crate) use build_log::{is_pass_noise_warning, unwrap_log_lines};
 pub use build_steps::{BuildStep, BuildSteps};
 pub use changes::{
-    export_changes_pdf, review_changes_pdf, ChangesExports, ChangesPdf, ChangesPdfOptions,
+    export_changes_pdf, export_changes_pdf_with_tex, review_changes_pdf,
+    review_changes_pdf_with_tex, ChangesExports, ChangesPdf, ChangesPdfOptions, ExportTex,
 };
 #[cfg(windows)]
 pub(crate) use figure_preview::preview_figure_with;

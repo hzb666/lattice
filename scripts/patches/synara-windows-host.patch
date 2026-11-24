@@ -1,0 +1,1757 @@
+diff --git a/apps/server/src/agentGateway/Layers/LatticeProjectDocumentBroker.test.ts b/apps/server/src/agentGateway/Layers/LatticeProjectDocumentBroker.test.ts
+index fbf2254..1754343 100644
+--- a/apps/server/src/agentGateway/Layers/LatticeProjectDocumentBroker.test.ts
++++ b/apps/server/src/agentGateway/Layers/LatticeProjectDocumentBroker.test.ts
+@@ -1,6 +1,9 @@
+ import { Effect, Fiber } from "effect";
+ import { describe, expect, it } from "vitest";
+ 
++import { LatticeProjectDocumentBroker } from "../Services/LatticeProjectDocumentBroker.ts";
++import { makeLatticeProjectDocumentTools } from "../latticeProjectDocumentTools.ts";
++import type { ToolContext } from "../toolRuntime.ts";
+ import { makeLatticeProjectDocumentBroker } from "./LatticeProjectDocumentBroker.ts";
+ import { makeLatticeHostToolQueue } from "./LatticeHostToolQueue.ts";
+ 
+@@ -61,4 +64,56 @@ describe("LatticeProjectDocumentBroker", () => {
+     });
+     await expect(Effect.runPromise(hostTools.poll("/workspace/a"))).resolves.toBeNull();
+   });
++
++  it.runIf(process.platform === "win32")(
++    "relays a Codex manuscript edit during a turn",
++    async () => {
++      const hostTools = makeLatticeHostToolQueue();
++      const broker = makeLatticeProjectDocumentBroker(hostTools, { randomId: () => "edit-1" });
++      const tools = await Effect.runPromise(
++        makeLatticeProjectDocumentTools({
++          resolveWorkspaceRoot: (context) => Effect.succeed(context.callerThreadId),
++        }).pipe(Effect.provideService(LatticeProjectDocumentBroker, broker)),
++      );
++      const edit = tools.find((tool) => tool.definition.name === "replace_project_text")!;
++      expect(edit.requiresActiveTurn).toBe(true);
++      const context: ToolContext = {
++        principal: {
++          kind: "provider-session",
++          sessionKey: "codex-1",
++          threadId: "project-1",
++          provider: "codex",
++          turnId: "turn-1",
++        },
++        callerThreadId: "project-1",
++        callerThreadLabel: null,
++        callerProvider: "codex",
++        callerSessionKey: "codex-1",
++        callerCapabilities: new Set(["thread:write"]),
++        callerTurnId: "turn-1",
++        assertCallerTurnActive: () => Effect.void,
++        jsonRpcRequestId: 1,
++      };
++      const args = { path: "main.tex", oldText: "draft", newText: "revision" };
++      const rejected = await Effect.runPromise(
++        edit.handler({ ...args, path: "../main.tex" }, context),
++      );
++      expect(rejected.isError).toBe(true);
++
++      const fiber = Effect.runFork(edit.handler(args, context));
++      await expect(Effect.runPromise(hostTools.poll("project-1"))).resolves.toMatchObject({
++        tool: "projectDocument",
++        request: {
++          id: "edit-1",
++          args: { ...args, documentType: "tex", threadId: "project-1", turnId: "turn-1" },
++        },
++      });
++      const result = { path: "main.tex", saved: true };
++      expect(
++        await Effect.runPromise(broker.complete("project-1", "edit-1", { ok: true, result })),
++      ).toBe(true);
++      const response = await Effect.runPromise(Fiber.join(fiber));
++      expect(response.content).toEqual([{ type: "text", text: JSON.stringify(result, null, 2) }]);
++    },
++  );
+ });
+diff --git a/apps/server/src/agentGateway/Layers/LatticeProjectDocumentBroker.ts b/apps/server/src/agentGateway/Layers/LatticeProjectDocumentBroker.ts
+index b76971d..f37da47 100644
+--- a/apps/server/src/agentGateway/Layers/LatticeProjectDocumentBroker.ts
++++ b/apps/server/src/agentGateway/Layers/LatticeProjectDocumentBroker.ts
+@@ -16,6 +16,7 @@ import {
+ import { LatticeHostToolQueueLive } from "./LatticeHostToolQueue.ts";
+ 
+ export const LATTICE_PROJECT_DOCUMENT_TOOL_TIMEOUT_MS = 30_000;
++export const LATTICE_PROJECT_DOCUMENT_UNDO_TIMEOUT_MS = 5 * 60_000;
+ 
+ export function makeLatticeProjectDocumentBroker(
+   hostTools: LatticeHostToolQueueShape,
+@@ -40,10 +41,14 @@ export function makeLatticeProjectDocumentBroker(
+     invoke: (workspaceRoot, args) =>
+       Effect.callback<unknown, LatticeProjectDocumentBrokerError>((resume) => {
+         const id = randomId();
++        const timeoutMs =
++          args.documentType === "texUndo" && options?.toolTimeoutMs === undefined
++            ? LATTICE_PROJECT_DOCUMENT_UNDO_TIMEOUT_MS
++            : toolTimeoutMs;
+         const request = {
+           id,
+           args,
+-          expiresAt: Date.now() + toolTimeoutMs,
++          expiresAt: Date.now() + timeoutMs,
+         } satisfies LatticeProjectDocumentRequest;
+         const timer = setTimeout(() => {
+           pending.delete(id);
+@@ -52,11 +57,11 @@ export function makeLatticeProjectDocumentBroker(
+             Effect.fail(
+               new LatticeProjectDocumentBrokerError(
+                 "project_document_tool_timeout",
+-                "The project document tool timed out after 30 seconds.",
++                `The project document tool timed out after ${Math.ceil(timeoutMs / 1_000)} seconds.`,
+               ),
+             ),
+           );
+-        }, toolTimeoutMs);
++        }, timeoutMs);
+         pending.set(id, {
+           workspaceRoot,
+           resolve: (value) => resume(Effect.succeed(value)),
+diff --git a/apps/server/src/agentGateway/Services/LatticeProjectDocumentBroker.ts b/apps/server/src/agentGateway/Services/LatticeProjectDocumentBroker.ts
+index 60bc885..ebf565f 100644
+--- a/apps/server/src/agentGateway/Services/LatticeProjectDocumentBroker.ts
++++ b/apps/server/src/agentGateway/Services/LatticeProjectDocumentBroker.ts
+@@ -5,10 +5,28 @@ export type LatticeProjectDocumentType = "board" | "spreadsheet";
+ 
+ export interface LatticeProjectDocumentRequest {
+   readonly id: string;
+-  readonly args: {
+-    readonly path: string;
+-    readonly documentType: LatticeProjectDocumentType;
+-  };
++  readonly args:
++    | { readonly path: string; readonly documentType: LatticeProjectDocumentType }
++    | {
++        readonly path: string;
++        readonly documentType: "tex";
++        readonly oldText: string;
++        readonly newText: string;
++        readonly threadId: string;
++        readonly turnId: string;
++      }
++    | {
++        readonly documentType: "texUndo";
++        readonly threadId: string;
++        readonly turnIds: readonly string[];
++        readonly operationId: string;
++        readonly redo: boolean;
++      }
++    | {
++        readonly documentType: "texHistory";
++        readonly threadId: string;
++        readonly turnId: string;
++      };
+   readonly expiresAt: number;
+ }
+ 
+diff --git a/apps/server/src/agentGateway/harnessPolicy.ts b/apps/server/src/agentGateway/harnessPolicy.ts
+index 6a74227..cc3f3f2 100644
+--- a/apps/server/src/agentGateway/harnessPolicy.ts
++++ b/apps/server/src/agentGateway/harnessPolicy.ts
+@@ -39,6 +39,12 @@ export function renderSynaraHarnessPolicy(capabilities: SynaraHarnessCapabilitie
+       "[Lattice host policy v2]",
+       "You are working inside Lattice, a local-first research-writing environment. Lattice is the host and tool authority for this session.",
+       "Work only within the active Lattice project and respect the current permission mode, project boundary, and stop requests.",
++      ...(process.platform === "win32" && process.env.LATTICE_WINDOWS_PROJECT_ROOT
++        ? [
++            `The original Lattice project is mounted read-only at ${JSON.stringify(process.env.LATTICE_WINDOWS_PROJECT_ROOT)}. Read current manuscript text there. Use replace_project_text to save requested changes in the original project.`,
++            "Use the process temporary directory for shell outputs. Files written with native edit tools or shell commands in the checkpoint workspace are scratch work and do not update the manuscript.",
++          ]
++        : []),
+       "Lattice owns the manuscript's preview build and rebuilds after agent checkpoints when automatic building is enabled. Do not run latexmk, TeX engines, bibliography processors, or cleanup commands against the project's live build outputs: a shell build bypasses Lattice's build queue and can corrupt shared .aux, .bbl, PDF, and SyncTeX files. Do not delete these files to repair a suspected race. If compilation is needed during your turn, use an isolated temporary output directory (or a disposable project copy for build setups that cannot isolate all outputs), enable SyncTeX, and never copy generated artifacts back over Lattice's outputs. In manual build mode, tell the user to press Build for the preview; do not claim a successful host build without a corresponding result.",
+       "For Overleaf-linked projects, Lattice may create local Git commits named Auto-saved version or Overleaf sync. These are local recovery history, not proof of an Overleaf sync or a Git push. Preserve these commits; do not reset, amend, or add commits merely to make agent edits look committed. Report remaining uncommitted changes honestly.",
+       "A trailing <lattice_active_context> block on a user message reports the live editor, PDF page, cached paper view, or Open Slide page and inspected element. Treat its paths as relative to the active project and read the file when more context is needed.",
+diff --git a/apps/server/src/agentGateway/hostProfile.ts b/apps/server/src/agentGateway/hostProfile.ts
+index e1fbbe1..505a8a8 100644
+--- a/apps/server/src/agentGateway/hostProfile.ts
++++ b/apps/server/src/agentGateway/hostProfile.ts
+@@ -91,6 +91,7 @@ const LATTICE_NATIVE_TOOL_NAMES = new Set([
+   "spreadsheet_read",
+   "spreadsheet_batch_update",
+   "create_project_document",
++  "replace_project_text",
+   "read_editor_comments",
+   "preview_presentation_page",
+   "preview_latex_figure",
+diff --git a/apps/server/src/agentGateway/latticeProjectDocumentHttpRoute.ts b/apps/server/src/agentGateway/latticeProjectDocumentHttpRoute.ts
+index 49d15d7..34e6e6e 100644
+--- a/apps/server/src/agentGateway/latticeProjectDocumentHttpRoute.ts
++++ b/apps/server/src/agentGateway/latticeProjectDocumentHttpRoute.ts
+@@ -10,7 +10,7 @@ import {
+ } from "./Services/LatticeProjectDocumentBroker.ts";
+ 
+ export const LATTICE_PROJECT_DOCUMENT_RESULT_PATH = "/api/lattice/project-document-tools/result";
+-export const LATTICE_PROJECT_DOCUMENT_MAX_BODY_BYTES = 16 * 1024;
++export const LATTICE_PROJECT_DOCUMENT_MAX_BODY_BYTES = 512 * 1024;
+ 
+ function isRecord(value: unknown): value is Record<string, unknown> {
+   return value !== null && typeof value === "object" && !Array.isArray(value);
+@@ -34,6 +34,17 @@ function isPath(value: unknown): value is string {
+ }
+ 
+ function isSuccessResult(value: unknown): boolean {
++  if (isRecord(value) && hasOnlyKeys(value, ["paths"])) {
++    return Array.isArray(value.paths) && value.paths.every(isPath);
++  }
++  if (isRecord(value) && hasOnlyKeys(value, ["conflictedPaths"])) {
++    return Array.isArray(value.conflictedPaths) && value.conflictedPaths.every(isPath);
++  }
++  if (isRecord(value) && hasOnlyKeys(value, ["path", "saved"])) {
++    return (
++      isPath(value.path) && /\.(?:tex|md|sty|cls|txt)$/i.test(value.path) && value.saved === true
++    );
++  }
+   return (
+     isRecord(value) &&
+     hasOnlyKeys(value, ["path", "documentType", "opened"]) &&
+diff --git a/apps/server/src/agentGateway/latticeProjectDocumentTools.ts b/apps/server/src/agentGateway/latticeProjectDocumentTools.ts
+index 8cc344a..6d139d0 100644
+--- a/apps/server/src/agentGateway/latticeProjectDocumentTools.ts
++++ b/apps/server/src/agentGateway/latticeProjectDocumentTools.ts
+@@ -11,10 +11,24 @@ import { WRITE_TOOL_ANNOTATIONS, type ToolContext, type ToolEntry } from "./tool
+ 
+ class ProjectDocumentInputError extends Error {}
+ 
++const MANUSCRIPT_FRAGMENT_LIMIT = 16_384;
++
+ function isRecord(value: unknown): value is Record<string, unknown> {
+   return value !== null && typeof value === "object" && !Array.isArray(value);
+ }
+ 
++function isProjectPath(value: unknown): value is string {
++  return (
++    typeof value === "string" &&
++    value.length > 0 &&
++    value.length <= 1_024 &&
++    !value.startsWith("/") &&
++    !value.includes("\\") &&
++    !value.includes(":") &&
++    value.split("/").every((part) => part && part !== "." && part !== "..")
++  );
++}
++
+ function parseProjectDocumentArgs(value: unknown): LatticeProjectDocumentRequest["args"] {
+   if (
+     !isRecord(value) ||
+@@ -53,6 +67,34 @@ function parseProjectDocumentArgs(value: unknown): LatticeProjectDocumentRequest
+   return { path, documentType: documentType as LatticeProjectDocumentType };
+ }
+ 
++function parseManuscriptArgs(
++  args: Record<string, unknown>,
++  context: ToolContext,
++): LatticeProjectDocumentRequest["args"] {
++  const { path, oldText, newText } = args;
++  if (
++    Object.keys(args).length !== 3 ||
++    !isProjectPath(path) ||
++    !/\.(?:tex|md|sty|cls|txt)$/i.test(path) ||
++    !context.callerTurnId ||
++    typeof oldText !== "string" ||
++    oldText.length === 0 ||
++    oldText.length > MANUSCRIPT_FRAGMENT_LIMIT ||
++    typeof newText !== "string" ||
++    newText.length > MANUSCRIPT_FRAGMENT_LIMIT
++  ) {
++    throw new ProjectDocumentInputError("Invalid manuscript replacement.");
++  }
++  return {
++    path,
++    documentType: "tex",
++    oldText,
++    newText,
++    threadId: context.callerThreadId,
++    turnId: context.callerTurnId,
++  };
++}
++
+ function errorResult(error: unknown) {
+   const normalized =
+     error instanceof LatticeProjectDocumentBrokerError
+@@ -73,6 +115,36 @@ export const makeLatticeProjectDocumentTools = (options: {
+ }) =>
+   Effect.gen(function* () {
+     const broker = yield* LatticeProjectDocumentBroker;
++    const handle =
++      (
++        parse: (
++          args: Record<string, unknown>,
++          context: ToolContext,
++        ) => LatticeProjectDocumentRequest["args"],
++      ): ToolEntry["handler"] =>
++      (args, context) =>
++        Effect.gen(function* () {
++          const parsed = yield* Effect.try({
++            try: () => parse(args, context),
++            catch: (error) =>
++              error instanceof ProjectDocumentInputError
++                ? error
++                : new ProjectDocumentInputError("Project document arguments are invalid."),
++          });
++          const workspaceRoot = yield* options.resolveWorkspaceRoot(context);
++          if (!workspaceRoot) {
++            return yield* Effect.fail(
++              new LatticeProjectDocumentBrokerError(
++                "project_document_workspace_unavailable",
++                "The caller task has no Lattice workspace.",
++              ),
++            );
++          }
++          return yield* broker.invoke(workspaceRoot, parsed);
++        }).pipe(
++          Effect.map(mcpToolResultJson),
++          Effect.catch((error) => Effect.succeed(errorResult(error))),
++        );
+     const createProjectDocument: ToolEntry = {
+       requiredCapability: "thread:write",
+       requiresActiveTurn: true,
+@@ -104,29 +176,35 @@ export const makeLatticeProjectDocumentTools = (options: {
+           destructiveHint: false,
+         },
+       },
+-      handler: (args, context) =>
+-        Effect.gen(function* () {
+-          const parsed = yield* Effect.try({
+-            try: () => parseProjectDocumentArgs(args),
+-            catch: (error) =>
+-              error instanceof ProjectDocumentInputError
+-                ? error
+-                : new ProjectDocumentInputError("Project document arguments are invalid."),
+-          });
+-          const workspaceRoot = yield* options.resolveWorkspaceRoot(context);
+-          if (!workspaceRoot) {
+-            return yield* Effect.fail(
+-              new LatticeProjectDocumentBrokerError(
+-                "project_document_workspace_unavailable",
+-                "The caller task has no Lattice workspace.",
+-              ),
+-            );
+-          }
+-          return yield* broker.invoke(workspaceRoot, parsed);
+-        }).pipe(
+-          Effect.map(mcpToolResultJson),
+-          Effect.catch((error) => Effect.succeed(errorResult(error))),
+-        ),
++      handler: handle(parseProjectDocumentArgs),
+     };
+-    return [createProjectDocument] satisfies ReadonlyArray<ToolEntry>;
++    const tools = [createProjectDocument];
++    if (process.platform === "win32") {
++      tools.push({
++        requiredCapability: "thread:write",
++        requiresActiveTurn: true,
++        definition: {
++          name: "replace_project_text",
++          description:
++            "Replace one uniquely quoted passage in an existing project manuscript (.tex, .md, .sty, .cls or .txt). Read the original document first and quote the old text exactly. Lattice saves the result in the original project.",
++          inputSchema: {
++            type: "object",
++            properties: {
++              path: {
++                type: "string",
++                maxLength: 1_024,
++                description: "Path relative to the original Lattice project.",
++              },
++              oldText: { type: "string", minLength: 1, maxLength: MANUSCRIPT_FRAGMENT_LIMIT },
++              newText: { type: "string", maxLength: MANUSCRIPT_FRAGMENT_LIMIT },
++            },
++            required: ["path", "oldText", "newText"],
++            additionalProperties: false,
++          },
++          annotations: WRITE_TOOL_ANNOTATIONS,
++        },
++        handler: handle(parseManuscriptArgs),
++      });
++    }
++    return tools;
+   });
+diff --git a/apps/server/src/checkpointing/Layers/CheckpointStore.ts b/apps/server/src/checkpointing/Layers/CheckpointStore.ts
+index fbb481c..1ce49f5 100644
+--- a/apps/server/src/checkpointing/Layers/CheckpointStore.ts
++++ b/apps/server/src/checkpointing/Layers/CheckpointStore.ts
+@@ -10,6 +10,8 @@
+  * @module CheckpointStoreLive
+  */
+ import { randomUUID } from "node:crypto";
++import { lstat, readdir } from "node:fs/promises";
++import { join } from "node:path";
+ 
+ import {
+   Cause,
+@@ -41,6 +43,70 @@ const CHECKPOINT_DIFF_MAX_OUTPUT_BYTES = 10_000_000;
+ // per-command timeouts would allow.
+ const CHECKPOINT_CAPTURE_TIMEOUT_MS = 180_000;
+ 
++const HOST_PRIVATE_FOLDERS = new Set([
++  ".CHEM",
++  ".RESEARCH",
++  ".OMP",
++  ".LATTICE",
++  ".ENVRC",
++  ".OVERLEAF",
++  ".PAPERS",
++  "CHEMDRAW",
++  "MESTRENOVA",
++  "LATEXMKRC",
++  ".LATEXMKRC",
++]);
++const HOST_PROTECTED_SUFFIX = /\.(?:bib|cdx|cdxml|mnova|mnjs|mnl|mnlt)$/i;
++const HOST_MANUSCRIPT_SUFFIX = /\.(?:tex|md|sty|cls|txt)$/i;
++const MAX_WINDOWS_GIT_ARGUMENT_CHARS = 8_000;
++
++function batchHostManuscripts(files: readonly string[]): string[][] {
++  const batches: string[][] = [];
++  let batch: string[] = [];
++  let size = 0;
++  for (const file of files) {
++    const argumentSize = file.length + 80;
++    if (argumentSize > MAX_WINDOWS_GIT_ARGUMENT_CHARS) {
++      throw new Error("A manuscript path exceeds the Windows checkpoint command limit.");
++    }
++    if (batch.length > 0 && size + argumentSize > MAX_WINDOWS_GIT_ARGUMENT_CHARS) {
++      batches.push(batch);
++      batch = [];
++      size = 0;
++    }
++    batch.push(file);
++    size += argumentSize;
++  }
++  if (batch.length > 0) batches.push(batch);
++  return batches;
++}
++
++async function listHostManuscripts(root: string): Promise<string[]> {
++  const files: string[] = [];
++  const folders = [""];
++  for (const relativeFolder of folders) {
++    for (const entry of await readdir(join(root, relativeFolder), { withFileTypes: true })) {
++      const name = entry.name.normalize("NFKC").toUpperCase();
++      if (
++        name.startsWith(".GIT") ||
++        name.startsWith(".LATTICE-MXC-") ||
++        HOST_PRIVATE_FOLDERS.has(name) ||
++        HOST_PROTECTED_SUFFIX.test(name) ||
++        entry.isSymbolicLink()
++      )
++        continue;
++      const relative = relativeFolder ? `${relativeFolder}/${entry.name}` : entry.name;
++      if (entry.isDirectory()) {
++        folders.push(relative);
++      } else if (entry.isFile() && HOST_MANUSCRIPT_SUFFIX.test(entry.name)) {
++        const file = await lstat(join(root, relative));
++        if (file.isFile() && file.nlink === 1) files.push(relative);
++      }
++    }
++  }
++  return files.sort();
++}
++
+ const makeCheckpointStore = Effect.gen(function* () {
+   const fs = yield* FileSystem.FileSystem;
+   const path = yield* Path.Path;
+@@ -48,6 +114,15 @@ const makeCheckpointStore = Effect.gen(function* () {
+   const captureLock = yield* Semaphore.make(1);
+   const hostWritesLock = yield* Semaphore.make(1);
+   const inFlightCaptures = new Map<string, Deferred.Deferred<void, CheckpointStoreError>>();
++  const originalRoot = process.platform === "win32" && process.env.LATTICE_WINDOWS_PROJECT_ROOT;
++  const checkpointRoot =
++    process.platform === "win32" && process.env.LATTICE_WINDOWS_CHECKPOINT_ROOT;
++  const hostProjectFor = (cwd: string) =>
++    typeof originalRoot === "string" &&
++    typeof checkpointRoot === "string" &&
++    path.resolve(cwd).toLowerCase() === path.resolve(checkpointRoot).toLowerCase()
++      ? originalRoot
++      : null;
+ 
+   // Normalize the cwd so captures for the same repo reached via differently
+   // written paths (trailing slash, relative segments) share one in-flight slot.
+@@ -173,8 +248,63 @@ const makeCheckpointStore = Effect.gen(function* () {
+               GIT_COMMITTER_EMAIL: `${ACTIVE_AGENT_HOST_PROFILE.id}@users.noreply.github.com`,
+             };
+ 
+-            const workingIndexInfo = yield* seedCheckpointIndex(input.cwd, tempIndexPath);
+-            if (workingIndexInfo === null && (yield* hasHeadCommit(input.cwd))) {
++            const original = hostProjectFor(input.cwd);
++            if (original) {
++              yield* git.execute({
++                operation,
++                cwd: input.cwd,
++                args: ["read-tree", "--empty"],
++                env: commitEnv,
++              });
++              const files = yield* Effect.tryPromise({
++                try: () => listHostManuscripts(original),
++                catch: (cause) =>
++                  new CheckpointInvariantError({
++                    operation,
++                    detail: "Could not list the original Lattice manuscripts.",
++                    cause,
++                  }),
++              });
++              if (files.length > 0) {
++                const hostEnv = {
++                  ...commitEnv,
++                  GIT_DIR: path.join(input.cwd, ".git"),
++                  GIT_WORK_TREE: original,
++                };
++                for (const batch of batchHostManuscripts(files)) {
++                  const result = yield* git.execute({
++                    operation,
++                    cwd: original,
++                    args: ["hash-object", "-w", "--no-filters", "--", ...batch],
++                    env: hostEnv,
++                  });
++                  const objectIds = result.stdout.trim().split(/\r?\n/u);
++                  if (
++                    objectIds.length !== batch.length ||
++                    objectIds.some((id) => !/^[\da-f]{40}$/iu.test(id))
++                  ) {
++                    return yield* new CheckpointInvariantError({
++                      operation,
++                      detail: "Git returned invalid manuscript object identities.",
++                    });
++                  }
++                  const indexArgs = ["update-index", "--add"];
++                  for (const [index, file] of batch.entries()) {
++                    indexArgs.push("--cacheinfo", `100644,${objectIds[index]},${file}`);
++                  }
++                  yield* git.execute({
++                    operation,
++                    cwd: input.cwd,
++                    args: indexArgs,
++                    env: commitEnv,
++                  });
++                }
++              }
++            }
++            const workingIndexInfo = original
++              ? null
++              : yield* seedCheckpointIndex(input.cwd, tempIndexPath);
++            if (!original && workingIndexInfo === null && (yield* hasHeadCommit(input.cwd))) {
+               yield* git.execute({
+                 operation,
+                 cwd: input.cwd,
+@@ -211,12 +341,14 @@ const makeCheckpointStore = Effect.gen(function* () {
+               }
+             }
+ 
+-            yield* git.execute({
+-              operation,
+-              cwd: input.cwd,
+-              args: ["add", "-A", "--", "."],
+-              env: commitEnv,
+-            });
++            if (!original) {
++              yield* git.execute({
++                operation,
++                cwd: input.cwd,
++                args: ["add", "-A", "--", "."],
++                env: commitEnv,
++              });
++            }
+ 
+             const writeTreeResult = yield* git.execute({
+               operation,
+diff --git a/apps/server/src/orchestration/Layers/CheckpointReactor.ts b/apps/server/src/orchestration/Layers/CheckpointReactor.ts
+index 96d7473..e36863d 100644
+--- a/apps/server/src/orchestration/Layers/CheckpointReactor.ts
++++ b/apps/server/src/orchestration/Layers/CheckpointReactor.ts
+@@ -18,6 +18,7 @@ import {
+   Cause,
+   Deferred,
+   Effect,
++  Exit,
+   Fiber,
+   Layer,
+   Option,
+@@ -85,6 +86,11 @@ import {
+   importPathIdentity,
+ } from "../projectImportPaths.ts";
+ import { resolveProviderSessionThread } from "../providerSessionThread.ts";
++import { LatticeProjectDocumentBrokerLive } from "../../agentGateway/Layers/LatticeProjectDocumentBroker.ts";
++import {
++  LatticeProjectDocumentBroker,
++  LatticeProjectDocumentBrokerError,
++} from "../../agentGateway/Services/LatticeProjectDocumentBroker.ts";
+ 
+ class PinnedCheckpointWorkspace extends ServiceMap.Service<
+   PinnedCheckpointWorkspace,
+@@ -158,6 +164,7 @@ const ASSISTANT_MESSAGE_ID_RETRY_ATTEMPTS = 6;
+ const REVERT_FAILURE_ACTIVITY_MAX_RETRIES = 3;
+ 
+ const REVERT_COMPLETE_MAX_RETRIES = 3;
++const HOST_MANUSCRIPT_UNDO_BATCH_SIZE = 32;
+ 
+ const revertRescueCheckpointRef = (threadId: ThreadId): CheckpointRef =>
+   checkpointRefForThreadRevertRescue(threadId, crypto.randomUUID());
+@@ -181,6 +188,190 @@ const make = Effect.fnUntraced(function* (options?: CheckpointReactorLiveOptions
+   const orchestrationEngine = yield* OrchestrationEngineService;
+   const providerService = yield* ProviderService;
+   const checkpointStore = yield* CheckpointStore;
++  const documentBroker = yield* LatticeProjectDocumentBroker;
++  const windowsHost =
++    process.platform === "win32" && Boolean(process.env.LATTICE_WINDOWS_PROJECT_ROOT);
++  const revertHostManuscriptBatch = (
++    cwd: string,
++    request: {
++      threadId: ThreadId;
++      turnIds: readonly TurnId[];
++      operationId: string;
++      redo?: boolean;
++    },
++  ) =>
++    !windowsHost || request.turnIds.length === 0
++      ? Effect.succeed([] as string[])
++      : documentBroker
++          .invoke(cwd, { documentType: "texUndo", ...request, redo: request.redo === true })
++          .pipe(
++            Effect.flatMap((result) => {
++              const paths = (result as { conflictedPaths?: unknown } | null)?.conflictedPaths;
++              return Array.isArray(paths) && paths.every((entry) => typeof entry === "string")
++                ? Effect.succeed(paths as string[])
++                : Effect.fail(
++                    new LatticeProjectDocumentBrokerError(
++                      "manuscript_undo_invalid_reply",
++                      "Lattice returned an invalid manuscript Undo result.",
++                    ),
++                  );
++            }),
++          );
++
++  const revertHostManuscripts = (
++    cwd: string,
++    request: {
++      threadId: ThreadId;
++      turnIds: readonly TurnId[];
++      operationId: string;
++      redo?: boolean;
++    },
++  ) => {
++    if (!windowsHost || request.turnIds.length === 0) return Effect.succeed([] as string[]);
++    const turnIds = [...new Set(request.turnIds)];
++    const batches = Array.from(
++      { length: Math.ceil(turnIds.length / HOST_MANUSCRIPT_UNDO_BATCH_SIZE) },
++      (_, index) =>
++        turnIds.slice(
++          index * HOST_MANUSCRIPT_UNDO_BATCH_SIZE,
++          (index + 1) * HOST_MANUSCRIPT_UNDO_BATCH_SIZE,
++        ),
++    );
++    return Effect.gen(function* () {
++      const attempted: Array<{
++        threadId: ThreadId;
++        turnIds: readonly TurnId[];
++        operationId: string;
++        redo: boolean;
++      }> = [];
++      const conflictedPaths = new Set<string>();
++      for (const [index, batch] of batches.entries()) {
++        const batchRequest = {
++          threadId: request.threadId,
++          turnIds: batch,
++          operationId:
++            batches.length === 1 ? request.operationId : `${request.operationId}:${index}`,
++          redo: request.redo === true,
++        };
++        attempted.push(batchRequest);
++        const result = yield* revertHostManuscriptBatch(cwd, batchRequest).pipe(Effect.exit);
++        if (Exit.isFailure(result)) {
++          const compensationFailures: string[] = [];
++          for (const attemptedBatch of attempted.toReversed()) {
++            const compensationFailure = yield* revertHostManuscriptBatch(cwd, {
++              ...attemptedBatch,
++              redo: !request.redo,
++            }).pipe(
++              Effect.as(null),
++              Effect.catch((error) => Effect.succeed(error.message)),
++            );
++            if (compensationFailure) compensationFailures.push(compensationFailure);
++          }
++          const detail = [Cause.pretty(result.cause), ...compensationFailures].join("\n");
++          return yield* Effect.fail(
++            new LatticeProjectDocumentBrokerError(
++              compensationFailures.length > 0
++                ? "manuscript_undo_compensation_failed"
++                : "manuscript_undo_batch_failed",
++              detail,
++            ),
++          );
++        }
++        for (const path of result.value) conflictedPaths.add(path);
++      }
++      return [...conflictedPaths];
++    });
++  };
++  const readHostManuscriptHistory = (cwd: string, threadId: ThreadId, turnId: TurnId) =>
++    !windowsHost
++      ? Effect.succeed([] as string[])
++      : documentBroker
++          .invoke(cwd, { documentType: "texHistory", threadId, turnId })
++          .pipe(
++            Effect.flatMap((result) => {
++              const paths = (result as { paths?: unknown } | null)?.paths;
++              return Array.isArray(paths) && paths.every((entry) => typeof entry === "string")
++                ? Effect.succeed(paths as string[])
++                : Effect.fail(
++                    new LatticeProjectDocumentBrokerError(
++                      "manuscript_history_invalid_reply",
++                      "Lattice returned an invalid manuscript history result.",
++                    ),
++                  );
++            }),
++          );
++  const backupCheckpointRefs = (
++    cwd: string,
++    threadId: ThreadId,
++    checkpointRefs: ReadonlyArray<CheckpointRef>,
++  ) =>
++    Effect.gen(function* () {
++      const backups: Array<{ originalRef: CheckpointRef; backupRef: CheckpointRef | null }> = [];
++      for (const [index, originalRef] of [...new Set(checkpointRefs)].entries()) {
++        const exists = yield* checkpointStore.hasCheckpointRef({ cwd, checkpointRef: originalRef });
++        if (!exists) {
++          backups.push({ originalRef, backupRef: null });
++          continue;
++        }
++        const backupRef = checkpointRefForThreadRevertRescue(
++          threadId,
++          `${crypto.randomUUID()}-${index}`,
++        );
++        const copied = yield* checkpointStore
++          .copyCheckpointRef({ cwd, fromCheckpointRef: originalRef, toCheckpointRef: backupRef })
++          .pipe(Effect.exit);
++        if (Exit.isFailure(copied) || !copied.value) {
++          yield* checkpointStore
++            .deleteCheckpointRefs({
++              cwd,
++              checkpointRefs: backups.flatMap((entry) =>
++                entry.backupRef ? [entry.backupRef] : [],
++              ),
++            })
++            .pipe(Effect.catch(() => Effect.void));
++          const detail = Exit.isFailure(copied)
++            ? Cause.pretty(copied.cause)
++            : `Checkpoint ${originalRef} disappeared while it was being backed up.`;
++          return yield* Effect.fail(
++            new LatticeProjectDocumentBrokerError("checkpoint_ref_backup_failed", detail),
++          );
++        }
++        backups.push({ originalRef, backupRef });
++      }
++      return backups;
++    });
++  const restoreCheckpointRefs = (
++    cwd: string,
++    backups: ReadonlyArray<{ originalRef: CheckpointRef; backupRef: CheckpointRef | null }>,
++  ) =>
++    Effect.gen(function* () {
++      const failures: string[] = [];
++      for (const { originalRef, backupRef } of backups) {
++        const restored = backupRef
++          ? checkpointStore
++              .copyCheckpointRef({ cwd, fromCheckpointRef: backupRef, toCheckpointRef: originalRef })
++              .pipe(Effect.catch(() => Effect.succeed(false)))
++          : checkpointStore
++              .deleteCheckpointRefs({ cwd, checkpointRefs: [originalRef] })
++              .pipe(Effect.as(true), Effect.catch(() => Effect.succeed(false)));
++        if (!(yield* restored)) failures.push(originalRef);
++      }
++      return failures;
++    });
++  const discardCheckpointRefBackups = (
++    cwd: string,
++    backups: ReadonlyArray<{ originalRef: CheckpointRef; backupRef: CheckpointRef | null }>,
++  ) =>
++    checkpointStore
++      .deleteCheckpointRefs({
++        cwd,
++        checkpointRefs: backups.flatMap((entry) => (entry.backupRef ? [entry.backupRef] : [])),
++      })
++      .pipe(
++        Effect.catch((error) =>
++          Effect.logWarning("file Undo checkpoint backup cleanup failed", { detail: error.message }),
++        ),
++      );
+   const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
+   const projectionTurnRepository = yield* ProjectionTurnRepository;
+   const projectionThreadMessageRepository = yield* ProjectionThreadMessageRepository;
+@@ -448,7 +639,6 @@ const make = Effect.fnUntraced(function* (options?: CheckpointReactorLiveOptions
+         ),
+       ),
+     );
+-
+   const appendCheckpointIssueActivity = (input: {
+     readonly threadId: ThreadId;
+     readonly turnId: TurnId | null;
+@@ -1619,11 +1809,26 @@ const make = Effect.fnUntraced(function* (options?: CheckpointReactorLiveOptions
+       return;
+     }
+ 
++    const checkpointUndoPaths = (checkpoint: (typeof thread.checkpoints)[number]) =>
++      windowsHost
++        ? readHostManuscriptHistory(checkpointCwd, event.payload.threadId, checkpoint.turnId)
++        : Effect.succeed(checkpoint.files.map((file) => file.path));
++
+     if (event.payload.scope === "files") {
++      const undoableCheckpoints = new Map<number, ReadonlyArray<string>>();
++      for (const checkpoint of thread.checkpoints) {
++        if (
++          checkpoint.status !== "ready" ||
++          !isManagedCheckpointRefForThread(checkpoint.checkpointRef, event.payload.threadId)
++        )
++          continue;
++        const paths = yield* checkpointUndoPaths(checkpoint);
++        if (paths.length > 0) undoableCheckpoints.set(checkpoint.checkpointTurnCount, paths);
++      }
+       const isUndoableCheckpoint = (checkpoint: (typeof thread.checkpoints)[number]) =>
+         checkpoint.status === "ready" &&
+-        checkpoint.files.length > 0 &&
+-        isManagedCheckpointRefForThread(checkpoint.checkpointRef, event.payload.threadId);
++        isManagedCheckpointRefForThread(checkpoint.checkpointRef, event.payload.threadId) &&
++        undoableCheckpoints.has(checkpoint.checkpointTurnCount);
+       const targetCheckpoint = thread.checkpoints.find(
+         (checkpoint) => checkpoint.checkpointTurnCount === event.payload.turnCount,
+       );
+@@ -1636,6 +1841,7 @@ const make = Effect.fnUntraced(function* (options?: CheckpointReactorLiveOptions
+         }).pipe(Effect.catch(() => Effect.void));
+         return;
+       }
++      const targetUndoPaths = undoableCheckpoints.get(targetCheckpoint.checkpointTurnCount) ?? [];
+       const latestUndoableTurnCount = thread.checkpoints.reduce(
+         (latest, checkpoint) =>
+           isUndoableCheckpoint(checkpoint)
+@@ -1718,16 +1924,11 @@ const make = Effect.fnUntraced(function* (options?: CheckpointReactorLiveOptions
+         return;
+       }
+ 
+-      const filesUndoHostWriteBlock = yield* hostWriteUndoBlock(
+-        checkpointCwd,
+-        event.payload.threadId,
+-        [
+-          {
+-            turnId: targetCheckpoint.turnId,
+-            files: targetCheckpoint.files.map((file) => file.path),
+-          },
+-        ],
+-      );
++      const filesUndoHostWriteBlock = windowsHost
++        ? null
++        : yield* hostWriteUndoBlock(checkpointCwd, event.payload.threadId, [
++            { turnId: targetCheckpoint.turnId, files: targetUndoPaths },
++          ]);
+       if (filesUndoHostWriteBlock !== null) {
+         yield* appendRevertFailureActivity({
+           threadId: event.payload.threadId,
+@@ -1738,58 +1939,218 @@ const make = Effect.fnUntraced(function* (options?: CheckpointReactorLiveOptions
+         return;
+       }
+ 
+-      const reversed = yield* checkpointStore.reverseCheckpointDiff({
+-        cwd: checkpointCwd,
+-        fromCheckpointRef,
+-        toCheckpointRef: targetCheckpoint.checkpointRef,
+-      });
+-      if (!reversed) {
+-        yield* appendRevertFailureActivity({
++      if (!windowsHost) {
++        const reversed = yield* checkpointStore.reverseCheckpointDiff({
++          cwd: checkpointCwd,
++          fromCheckpointRef,
++          toCheckpointRef: targetCheckpoint.checkpointRef,
++        });
++        if (!reversed) {
++          yield* appendRevertFailureActivity({
++            threadId: event.payload.threadId,
++            turnCount: event.payload.turnCount,
++            detail: `Filesystem checkpoints for turn ${event.payload.turnCount} are unavailable.`,
++            createdAt: now,
++          }).pipe(Effect.catch(() => Effect.void));
++          return;
++        }
++        yield* checkpointStore.captureCheckpoint({
++          cwd: checkpointCwd,
++          checkpointRef: targetCheckpoint.checkpointRef,
++        });
++        yield* Effect.forEach(
++          thread.checkpoints.filter(
++            (checkpoint) =>
++              checkpoint.checkpointTurnCount > targetCheckpoint.checkpointTurnCount &&
++              isManagedCheckpointRefForThread(checkpoint.checkpointRef, event.payload.threadId),
++          ),
++          (checkpoint) => {
++            const laterTurnStartCheckpointRef =
++              checkpointRefForThreadTurnStartInManagedFamily(
++                checkpoint.checkpointRef,
++                event.payload.threadId,
++                checkpoint.turnId,
++              ) ?? checkpointRefForThreadTurnStart(event.payload.threadId, checkpoint.turnId);
++            return Effect.all([
++              checkpointStore.copyCheckpointRef({
++                cwd: checkpointCwd,
++                fromCheckpointRef: targetCheckpoint.checkpointRef,
++                toCheckpointRef: checkpoint.checkpointRef,
++              }),
++              checkpointStore.copyCheckpointRef({
++                cwd: checkpointCwd,
++                fromCheckpointRef: targetCheckpoint.checkpointRef,
++                toCheckpointRef: laterTurnStartCheckpointRef,
++              }),
++            ]).pipe(Effect.asVoid);
++          },
++          { discard: true },
++        );
++        clearWorkspaceIndexCache(checkpointCwd);
++        yield* orchestrationEngine.dispatch({
++          type: "thread.turn.diff.complete",
++          commandId: serverCommandId("checkpoint-files-undone"),
+           threadId: event.payload.threadId,
+-          turnCount: event.payload.turnCount,
+-          detail: `Filesystem checkpoints for turn ${event.payload.turnCount} are unavailable.`,
++          turnId: targetCheckpoint.turnId,
++          completedAt: targetCheckpoint.completedAt,
++          checkpointRef: targetCheckpoint.checkpointRef,
++          status: targetCheckpoint.status,
++          files: [],
++          ...(targetCheckpoint.assistantMessageId
++            ? { assistantMessageId: targetCheckpoint.assistantMessageId }
++            : {}),
++          checkpointTurnCount: targetCheckpoint.checkpointTurnCount,
++          preserveLatestTurn: true,
++          checkpointRevertTurnCount: event.payload.turnCount,
+           createdAt: now,
+-        }).pipe(Effect.catch(() => Effect.void));
++        });
++        if (reversed.conflictedPaths.length > 0) {
++          yield* appendRevertConflictActivity({
++            threadId: event.payload.threadId,
++            turnCount: event.payload.turnCount,
++            turnId: targetCheckpoint.turnId,
++            conflictedPaths: reversed.conflictedPaths,
++            createdAt: now,
++          });
++        }
+         return;
+       }
+ 
+-      yield* checkpointStore.captureCheckpoint({
+-        cwd: checkpointCwd,
+-        checkpointRef: targetCheckpoint.checkpointRef,
+-      });
+-      yield* Effect.forEach(
+-        thread.checkpoints.filter(
++      const laterCheckpointRefs = thread.checkpoints
++        .filter(
+           (checkpoint) =>
+             checkpoint.checkpointTurnCount > targetCheckpoint.checkpointTurnCount &&
+             isManagedCheckpointRefForThread(checkpoint.checkpointRef, event.payload.threadId),
+-        ),
+-        (checkpoint) => {
++        )
++        .flatMap((checkpoint) => {
+           const laterTurnStartCheckpointRef =
+             checkpointRefForThreadTurnStartInManagedFamily(
+               checkpoint.checkpointRef,
+               event.payload.threadId,
+               checkpoint.turnId,
+             ) ?? checkpointRefForThreadTurnStart(event.payload.threadId, checkpoint.turnId);
+-          return Effect.all([
+-            checkpointStore.copyCheckpointRef({
+-              cwd: checkpointCwd,
+-              fromCheckpointRef: targetCheckpoint.checkpointRef,
+-              toCheckpointRef: checkpoint.checkpointRef,
+-            }),
+-            checkpointStore.copyCheckpointRef({
++          return [checkpoint.checkpointRef, laterTurnStartCheckpointRef];
++        });
++      const fileUndoRefs = [targetCheckpoint.checkpointRef, ...laterCheckpointRefs];
++      const checkpointBackups = yield* backupCheckpointRefs(
++        checkpointCwd,
++        event.payload.threadId,
++        fileUndoRefs,
++      ).pipe(Effect.exit);
++      if (Exit.isFailure(checkpointBackups)) {
++        yield* appendRevertFailureActivity({
++          threadId: event.payload.threadId,
++          turnCount: event.payload.turnCount,
++          detail: `File Undo was refused before changing the manuscript: ${Cause.pretty(checkpointBackups.cause)}`,
++          createdAt: now,
++        }).pipe(Effect.catch(() => Effect.void));
++        return;
++      }
++      const refBackups = checkpointBackups.value;
++      const recoveryBackupRefs = refBackups.flatMap((entry) =>
++        entry.backupRef ? [entry.backupRef] : [],
++      );
++      const recoveryBackupDetail = recoveryBackupRefs.length
++        ? `Recovery checkpoint refs: ${recoveryBackupRefs.join(", ")}.`
++        : "No checkpoint recovery refs were available.";
++      const compensateFileUndo = (detail: string) =>
++        Effect.gen(function* () {
++          const restoreHostFailure = yield* revertHostManuscripts(checkpointCwd, {
++            threadId: event.payload.threadId,
++            turnIds: [targetCheckpoint.turnId],
++            operationId: event.eventId,
++            redo: true,
++          }).pipe(
++            Effect.as(null),
++            Effect.catch((error) => Effect.succeed(error.message)),
++          );
++          const failedRefs = yield* restoreCheckpointRefs(checkpointCwd, refBackups);
++          if (restoreHostFailure === null && failedRefs.length === 0) {
++            yield* discardCheckpointRefBackups(checkpointCwd, refBackups);
++          }
++          return [
++            detail,
++            restoreHostFailure === null ? null : `Manuscript restore failed: ${restoreHostFailure}`,
++            failedRefs.length === 0 ? null : `Checkpoint restore failed: ${failedRefs.join(", ")}`,
++            restoreHostFailure !== null || failedRefs.length > 0
++              ? recoveryBackupDetail
++              : null,
++          ]
++            .filter((entry): entry is string => entry !== null)
++            .join("\n");
++        });
++
++      const undoRequest = {
++        threadId: event.payload.threadId,
++        turnIds: [targetCheckpoint.turnId],
++        operationId: event.eventId,
++      };
++      const hostUndo = yield* revertHostManuscripts(checkpointCwd, undoRequest).pipe(Effect.exit);
++      if (Exit.isFailure(hostUndo)) {
++        const detail = yield* compensateFileUndo(
++          [Cause.pretty(hostUndo.cause), "The manuscript Undo did not complete."].join("\n"),
++        );
++        yield* appendRevertFailureActivity({
++          threadId: event.payload.threadId,
++          turnCount: event.payload.turnCount,
++          detail,
++          createdAt: now,
++        }).pipe(Effect.catch(() => Effect.void));
++        return;
++      }
++
++      const checkpointUpdate = yield* Effect.gen(function* () {
++        yield* checkpointStore.captureCheckpoint({
++          cwd: checkpointCwd,
++          checkpointRef: targetCheckpoint.checkpointRef,
++        });
++        for (const checkpoint of thread.checkpoints.filter(
++          (candidate) =>
++            candidate.checkpointTurnCount > targetCheckpoint.checkpointTurnCount &&
++            isManagedCheckpointRefForThread(candidate.checkpointRef, event.payload.threadId),
++        )) {
++          const laterTurnStartCheckpointRef =
++            checkpointRefForThreadTurnStartInManagedFamily(
++              checkpoint.checkpointRef,
++              event.payload.threadId,
++              checkpoint.turnId,
++            ) ?? checkpointRefForThreadTurnStart(event.payload.threadId, checkpoint.turnId);
++          for (const toCheckpointRef of [checkpoint.checkpointRef, laterTurnStartCheckpointRef]) {
++            const copied = yield* checkpointStore.copyCheckpointRef({
+               cwd: checkpointCwd,
+               fromCheckpointRef: targetCheckpoint.checkpointRef,
+-              toCheckpointRef: laterTurnStartCheckpointRef,
+-            }),
+-          ]).pipe(Effect.asVoid);
+-        },
+-        { discard: true },
+-      );
++              toCheckpointRef,
++            });
++            if (!copied) {
++              return yield* Effect.fail(
++                new LatticeProjectDocumentBrokerError(
++                  "checkpoint_ref_copy_failed",
++                  `Checkpoint ${toCheckpointRef} could not be updated.`,
++                ),
++              );
++            }
++          }
++        }
++      }).pipe(Effect.exit);
++      if (Exit.isFailure(checkpointUpdate)) {
++        const detail = yield* compensateFileUndo(Cause.pretty(checkpointUpdate.cause));
++        yield* appendRevertFailureActivity({
++          threadId: event.payload.threadId,
++          turnCount: event.payload.turnCount,
++          detail,
++          createdAt: now,
++        }).pipe(Effect.catch(() => Effect.void));
++        return;
++      }
+ 
+       clearWorkspaceIndexCache(checkpointCwd);
+-      yield* orchestrationEngine.dispatch({
++      const filesUndoCommandId = CommandId.makeUnsafe(
++        `server:checkpoint-files-undone:${event.eventId}`,
++      );
++      const filesUndoDispatch = yield* orchestrationEngine
++        .dispatch({
+         type: "thread.turn.diff.complete",
+-        commandId: serverCommandId("checkpoint-files-undone"),
++        commandId: filesUndoCommandId,
+         threadId: event.payload.threadId,
+         turnId: targetCheckpoint.turnId,
+         completedAt: targetCheckpoint.completedAt,
+@@ -1803,13 +2164,44 @@ const make = Effect.fnUntraced(function* (options?: CheckpointReactorLiveOptions
+         preserveLatestTurn: true,
+         checkpointRevertTurnCount: event.payload.turnCount,
+         createdAt: now,
+-      });
+-      if (reversed.conflictedPaths.length > 0) {
++        })
++        .pipe(Effect.exit);
++      if (Exit.isFailure(filesUndoDispatch)) {
++        const receipt = yield* sql`SELECT 1 FROM orchestration_command_receipts AS receipt
++          WHERE receipt.command_id = ${filesUndoCommandId}
++            AND receipt.aggregate_kind = 'thread' AND receipt.aggregate_id = ${event.payload.threadId}
++            AND receipt.status = 'accepted'
++            AND EXISTS (SELECT 1 FROM orchestration_events AS outcome
++              WHERE outcome.command_id = receipt.command_id
++                AND outcome.event_type = 'thread.turn-diff-completed')`.pipe(Effect.exit);
++        if (Exit.isFailure(receipt)) {
++          yield* appendRevertFailureActivity({
++            threadId: event.payload.threadId,
++            turnCount: event.payload.turnCount,
++            detail: `${Cause.pretty(filesUndoDispatch.cause)} Completion status is uncertain. ${recoveryBackupDetail}`,
++            createdAt: now,
++          }).pipe(Effect.catch(() => Effect.void));
++          return;
++        }
++        if (receipt.value.length === 0) {
++          const detail = yield* compensateFileUndo(Cause.pretty(filesUndoDispatch.cause));
++          yield* appendRevertFailureActivity({
++            threadId: event.payload.threadId,
++            turnCount: event.payload.turnCount,
++            detail,
++            createdAt: now,
++          }).pipe(Effect.catch(() => Effect.void));
++          return;
++        }
++      }
++      yield* discardCheckpointRefBackups(checkpointCwd, refBackups);
++      const conflictedPaths = hostUndo.value;
++      if (conflictedPaths.length > 0) {
+         yield* appendRevertConflictActivity({
+           threadId: event.payload.threadId,
+           turnCount: event.payload.turnCount,
+           turnId: targetCheckpoint.turnId,
+-          conflictedPaths: reversed.conflictedPaths,
++          conflictedPaths,
+           createdAt: now,
+         });
+       }
+@@ -1895,13 +2287,16 @@ const make = Effect.fnUntraced(function* (options?: CheckpointReactorLiveOptions
+       thread.checkpoints.map((checkpoint) => [checkpoint.checkpointTurnCount, checkpoint]),
+     );
+     let missingSegmentDetail: string | null = null;
+-    for (const checkpoint of thread.checkpoints
++    const turnsToRevert = thread.checkpoints
+       .filter(
+         (candidate) =>
+           candidate.checkpointTurnCount > event.payload.turnCount &&
+-          (candidate.files.length > 0 || candidate.status !== "ready"),
++          (windowsHost
++            ? isManagedCheckpointRefForThread(candidate.checkpointRef, event.payload.threadId)
++            : candidate.files.length > 0 || candidate.status !== "ready"),
+       )
+-      .toSorted((left, right) => right.checkpointTurnCount - left.checkpointTurnCount)) {
++      .toSorted((left, right) => right.checkpointTurnCount - left.checkpointTurnCount);
++    for (const checkpoint of turnsToRevert) {
+       const turnStartRef =
+         checkpointRefForThreadTurnStartInManagedFamily(
+           checkpoint.checkpointRef,
+@@ -1933,16 +2328,19 @@ const make = Effect.fnUntraced(function* (options?: CheckpointReactorLiveOptions
+         .hasCheckpointRef({ cwd: checkpointCwd, checkpointRef: checkpoint.checkpointRef })
+         .pipe(Effect.catch(() => Effect.succeed(false)));
+       if (!fromCheckpointRef || !toExists) {
++        if (windowsHost) continue;
+         // A failed capture recorded no snapshot to reverse; leaving its edits
+         // in place loses nothing. A ready turn's missing snapshot is a fault.
+         if (checkpoint.status !== "ready") continue;
+         missingSegmentDetail = `Filesystem checkpoints for turn ${checkpoint.checkpointTurnCount} are unavailable, so its changes cannot be reversed.`;
+         break;
+       }
++      const files = yield* checkpointUndoPaths(checkpoint);
++      if (windowsHost && files.length === 0) continue;
+       revertSegments.push({
+         turnCount: checkpoint.checkpointTurnCount,
+         turnId: checkpoint.turnId,
+-        files: checkpoint.files.map((file) => file.path),
++        files,
+         fromCheckpointRef,
+         toCheckpointRef: checkpoint.checkpointRef,
+       });
+@@ -1959,11 +2357,13 @@ const make = Effect.fnUntraced(function* (options?: CheckpointReactorLiveOptions
+ 
+     // Fail closed on edits the host wrote while one of these turns ran: they
+     // are inside that turn's diff and reversing it would delete them.
+-    const hostWriteBlock = yield* hostWriteUndoBlock(
+-      checkpointCwd,
+-      event.payload.threadId,
+-      revertSegments.map((segment) => ({ turnId: segment.turnId, files: segment.files })),
+-    );
++    const hostWriteBlock = windowsHost
++      ? null
++      : yield* hostWriteUndoBlock(
++          checkpointCwd,
++          event.payload.threadId,
++          revertSegments.map((segment) => ({ turnId: segment.turnId, files: segment.files })),
++        );
+     if (hostWriteBlock !== null) {
+       yield* appendRevertFailureActivity({
+         threadId: event.payload.threadId,
+@@ -2017,10 +2417,22 @@ const make = Effect.fnUntraced(function* (options?: CheckpointReactorLiveOptions
+     // which point the rescue ref is the only remaining copy of it and must
+     // survive.
+     const restoreRescueCheckpoint = (rescueRef: CheckpointRef) =>
+-      checkpointStore.restoreCheckpoint({ cwd: checkpointCwd, checkpointRef: rescueRef }).pipe(
+-        Effect.map((restored) => (restored ? null : "the rescue snapshot was no longer available")),
+-        Effect.catch((error) => Effect.succeed(error.message)),
+-      );
++      windowsHost
++        ? revertHostManuscripts(checkpointCwd, {
++            threadId: event.payload.threadId,
++            turnIds: turnsToRevert.map((entry) => entry.turnId),
++            operationId: event.eventId,
++            redo: true,
++          }).pipe(
++            Effect.as(null),
++            Effect.catch((error) => Effect.succeed(error.message)),
++          )
++        : checkpointStore.restoreCheckpoint({ cwd: checkpointCwd, checkpointRef: rescueRef }).pipe(
++            Effect.map((restored) =>
++              restored ? null : "the rescue snapshot was no longer available",
++            ),
++            Effect.catch((error) => Effect.succeed(error.message)),
++          );
+ 
+     // Three outcomes, not two: `reverseCheckpointDiff` resolves both commits
+     // with read-only lookups before it issues a single writing command, so
+@@ -2030,6 +2442,14 @@ const make = Effect.fnUntraced(function* (options?: CheckpointReactorLiveOptions
+     // one string made the caller discard the rescue snapshot in both cases,
+     // destroying the only copy of a workspace it had just half-rewritten.
+     const restoreOutcome = yield* Effect.gen(function* () {
++      if (windowsHost) {
++        const conflictedPaths = yield* revertHostManuscripts(checkpointCwd, {
++          threadId: event.payload.threadId,
++          turnIds: turnsToRevert.map((entry) => entry.turnId),
++          operationId: event.eventId,
++        });
++        return { kind: "restored", conflictedPaths } as const;
++      }
+       const conflictedPaths = new Set<string>();
+       for (const [index, segment] of revertSegments.entries()) {
+         const reversed = yield* checkpointStore.reverseCheckpointDiff({
+@@ -2618,6 +3038,16 @@ const make = Effect.fnUntraced(function* (options?: CheckpointReactorLiveOptions
+           new Error("Checkpoint receipt settlement lost delivery ownership"),
+         );
+     });
++  const hasFilesUndoReceipt = (
++    event: Extract<OrchestrationEvent, { type: "thread.checkpoint-revert-requested" }>,
++  ) =>
++    sql`SELECT 1 FROM orchestration_command_receipts AS receipt
++      WHERE receipt.command_id = ${`server:checkpoint-files-undone:${event.eventId}`}
++        AND receipt.aggregate_kind = 'thread' AND receipt.aggregate_id = ${event.payload.threadId}
++        AND receipt.status = 'accepted'
++        AND EXISTS (SELECT 1 FROM orchestration_events AS outcome
++          WHERE outcome.command_id = receipt.command_id
++            AND outcome.event_type = 'thread.turn-diff-completed')`.pipe(Effect.orDie);
+   const processDurableDomain = Effect.fnUntraced(function* (event: OrchestrationEvent) {
+     if (event.type !== "thread.checkpoint-revert-requested") {
+       // An unavailable range can be rediscovered by a peer lane after its
+@@ -2643,6 +3073,11 @@ const make = Effect.fnUntraced(function* (options?: CheckpointReactorLiveOptions
+     );
+     if (receipt.length)
+       return yield* settleProvenDelivery(domainConsumer, event.sequence, event.payload.threadId);
++    if (event.payload.scope === "files") {
++      const filesUndoReceipt = yield* hasFilesUndoReceipt(event);
++      if (filesUndoReceipt.length)
++        return yield* settleProvenDelivery(domainConsumer, event.sequence, event.payload.threadId);
++    }
+     if (event.sequence <= adoptionFence) {
+       const failure = yield* sql`SELECT 1 FROM orchestration_events AS outcome
+         WHERE outcome.aggregate_kind = 'thread' AND outcome.stream_id = ${event.payload.threadId} AND outcome.event_type = 'thread.activity-appended'
+@@ -2991,6 +3426,11 @@ const make = Effect.fnUntraced(function* (options?: CheckpointReactorLiveOptions
+           Effect.orDie,
+         );
+         if (receipt.length) return yield* settleProvenDelivery(domainConsumer, sequence, threadId);
++        if (revert.payload.scope === "files") {
++          const filesUndoReceipt = yield* hasFilesUndoReceipt(revert);
++          if (filesUndoReceipt.length)
++            return yield* settleProvenDelivery(domainConsumer, sequence, threadId);
++        }
+       }
+       const input = {
+         consumerName: source === "runtime" ? nativeConsumer : domainConsumer,
+@@ -3750,6 +4190,7 @@ const make = Effect.fnUntraced(function* (options?: CheckpointReactorLiveOptions
+ 
+ export const makeCheckpointReactorLive = (options?: CheckpointReactorLiveOptions) =>
+   Layer.effect(CheckpointReactor, make(options)).pipe(
++    Layer.provide(LatticeProjectDocumentBrokerLive),
+     Layer.provide(OrchestrationEventStoreLive),
+     Layer.provide(ProjectionTurnRepositoryLive),
+     Layer.provide(ProjectionThreadMessageRepositoryLive),
+diff --git a/apps/web/src/latticeProjectDocumentRelay.test.ts b/apps/web/src/latticeProjectDocumentRelay.test.ts
+index b001ed8..889a04e 100644
+--- a/apps/web/src/latticeProjectDocumentRelay.test.ts
++++ b/apps/web/src/latticeProjectDocumentRelay.test.ts
+@@ -103,4 +103,42 @@ describe("Lattice project document relay protocol", () => {
+     expect(parseProjectDocumentRequest({ ...request, unexpected: true })).toBeNull();
+     expect(parseProjectDocumentRequest({ ...request, id: "" })).toBeNull();
+   });
++
++  it("relays an edit as a saved revision and refuses a mismatched result", async () => {
++    const { listeners, parent } = installWindow();
++    const request = {
++      id: "edit-1",
++      args: {
++        path: "main.tex",
++        documentType: "tex" as const,
++        oldText: "draft",
++        newText: "revised",
++        threadId: "thread-1",
++        turnId: "turn-1",
++      },
++      expiresAt: Date.now() + 1_000,
++    };
++    expect(parseProjectDocumentRequest(request)).toEqual(request);
++    expect(
++      parseProjectDocumentRequest({
++        ...request,
++        args: { ...request.args, path: "references.bib" },
++      }),
++    ).toBeNull();
++    for (const path of ["other.tex", "main.tex"]) {
++      const promise = awaitProjectDocumentHostResult(request, "https://lattice.test", 1_000);
++      dispatch(listeners, {
++        source: parent,
++        origin: "https://lattice.test",
++        data: {
++          type: LATTICE_PROJECT_DOCUMENT_TOOL_RESULT,
++          version: 1,
++          id: request.id,
++          ok: true,
++          result: { path, saved: true },
++        },
++      });
++      await expect(promise).resolves.toMatchObject({ ok: path === request.args.path });
++    }
++  });
+ });
+diff --git a/apps/web/src/latticeProjectDocumentRelay.ts b/apps/web/src/latticeProjectDocumentRelay.ts
+index c96f181..f123e3d 100644
+--- a/apps/web/src/latticeProjectDocumentRelay.ts
++++ b/apps/web/src/latticeProjectDocumentRelay.ts
+@@ -4,12 +4,35 @@ export const SYNARA_PROJECT_DOCUMENT_TOOL_REQUEST = "synara:project-document-too
+ export const LATTICE_PROJECT_DOCUMENT_TOOL_RESULT = "lattice:project-document-tool-result";
+ const RESULT_PATH = "/api/lattice/project-document-tools/result";
+ const HOST_TIMEOUT_MS = 30_000;
++const HOST_UNDO_TIMEOUT_MS = 5 * 60_000;
+ 
+ type ProjectDocumentType = "board" | "spreadsheet";
++type ProjectDocumentArgs =
++  | { readonly path: string; readonly documentType: ProjectDocumentType }
++  | {
++      readonly path: string;
++      readonly documentType: "tex";
++      readonly oldText: string;
++      readonly newText: string;
++      readonly threadId: string;
++      readonly turnId: string;
++    }
++  | {
++      readonly documentType: "texUndo";
++      readonly threadId: string;
++      readonly turnIds: readonly string[];
++      readonly operationId: string;
++      readonly redo: boolean;
++    }
++  | {
++      readonly documentType: "texHistory";
++      readonly threadId: string;
++      readonly turnId: string;
++    };
+ 
+ export interface ProjectDocumentRequest {
+   readonly id: string;
+-  readonly args: { readonly path: string; readonly documentType: ProjectDocumentType };
++  readonly args: ProjectDocumentArgs;
+   readonly expiresAt: number;
+ }
+ 
+@@ -18,11 +41,11 @@ export interface ProjectDocumentResult {
+   readonly version: 1;
+   readonly id: string;
+   readonly ok: boolean;
+-  readonly result?: {
+-    readonly path: string;
+-    readonly documentType: ProjectDocumentType;
+-    readonly opened: true;
+-  };
++  readonly result?:
++    | { readonly path: string; readonly documentType: ProjectDocumentType; readonly opened: true }
++    | { readonly path: string; readonly saved: true }
++    | { readonly conflictedPaths: readonly string[] }
++    | { readonly paths: readonly string[] };
+   readonly error?: { readonly code: string; readonly message: string };
+ }
+ 
+@@ -53,6 +76,12 @@ function hasExpectedExtension(path: string, documentType: ProjectDocumentType):
+     .endsWith(documentType === "board" ? ".tldr" : ".lattice-sheet");
+ }
+ 
++function isTurnId(value: unknown): value is string {
++  return (
++    typeof value === "string" && value.length > 0 && value.length <= 256 && !value.includes("\0")
++  );
++}
++
+ export function parseProjectDocumentRequest(value: unknown): ProjectDocumentRequest | null {
+   if (!isRecord(value) || !hasOnlyKeys(value, ["id", "args", "expiresAt"])) return null;
+   if (
+@@ -61,17 +90,77 @@ export function parseProjectDocumentRequest(value: unknown): ProjectDocumentRequ
+     value.id.length > 128 ||
+     typeof value.expiresAt !== "number" ||
+     !Number.isFinite(value.expiresAt) ||
+-    !isRecord(value.args) ||
+-    !hasOnlyKeys(value.args, ["path", "documentType"]) ||
+-    !isPath(value.args.path) ||
+-    (value.args.documentType !== "board" && value.args.documentType !== "spreadsheet") ||
+-    !hasExpectedExtension(value.args.path, value.args.documentType)
++    !isRecord(value.args)
+   ) {
+     return null;
+   }
++  const { args } = value;
++  if (args.documentType === "texHistory") {
++    return hasOnlyKeys(args, ["documentType", "threadId", "turnId"]) &&
++      isTurnId(args.threadId) && isTurnId(args.turnId)
++      ? value as unknown as ProjectDocumentRequest
++      : null;
++  }
++  if (args.documentType === "texUndo") {
++    return hasOnlyKeys(args, ["documentType", "threadId", "turnIds", "operationId", "redo"]) &&
++      isTurnId(args.threadId) &&
++      isTurnId(args.operationId) &&
++      Array.isArray(args.turnIds) &&
++      args.turnIds.length > 0 &&
++      args.turnIds.length <= 128 &&
++      args.turnIds.every(isTurnId) &&
++      typeof args.redo === "boolean"
++      ? (value as unknown as ProjectDocumentRequest)
++      : null;
++  }
++  if (!isPath(args.path)) return null;
++  if (args.documentType === "tex") {
++    if (
++      !hasOnlyKeys(args, ["path", "documentType", "oldText", "newText", "threadId", "turnId"]) ||
++      !/\.(?:tex|md|sty|cls|txt)$/i.test(args.path) ||
++      !isTurnId(args.threadId) ||
++      !isTurnId(args.turnId) ||
++      typeof args.oldText !== "string" ||
++      args.oldText.length === 0 ||
++      args.oldText.length > 16_384 ||
++      typeof args.newText !== "string" ||
++      args.newText.length > 16_384
++    )
++      return null;
++  } else if (
++    !hasOnlyKeys(args, ["path", "documentType"]) ||
++    (args.documentType !== "board" && args.documentType !== "spreadsheet") ||
++    !hasExpectedExtension(args.path, args.documentType)
++  )
++    return null;
+   return value as unknown as ProjectDocumentRequest;
+ }
+ 
++function validSuccessResult(value: unknown, args: ProjectDocumentArgs): boolean {
++  if (!isRecord(value)) return false;
++  if (args.documentType === "texHistory") {
++    return hasOnlyKeys(value, ["paths"]) && Array.isArray(value.paths) && value.paths.every(isPath);
++  }
++  if (args.documentType === "texUndo") {
++    return (
++      hasOnlyKeys(value, ["conflictedPaths"]) &&
++      Array.isArray(value.conflictedPaths) &&
++      value.conflictedPaths.every(isPath)
++    );
++  }
++  if (args.documentType === "tex") {
++    return (
++      hasOnlyKeys(value, ["path", "saved"]) && value.path === args.path && value.saved === true
++    );
++  }
++  return (
++    hasOnlyKeys(value, ["path", "documentType", "opened"]) &&
++    value.path === args.path &&
++    value.documentType === args.documentType &&
++    value.opened === true
++  );
++}
++
+ function invalidHostResult(id: string, code: string, message: string): ProjectDocumentResult {
+   return {
+     type: LATTICE_PROJECT_DOCUMENT_TOOL_RESULT,
+@@ -98,16 +187,7 @@ function parseHostResult(
+     );
+   }
+   if (value.ok) {
+-    if (
+-      value.error !== undefined ||
+-      !isRecord(value.result) ||
+-      !hasOnlyKeys(value.result, ["path", "documentType", "opened"]) ||
+-      !isPath(value.result.path) ||
+-      (value.result.documentType !== "board" && value.result.documentType !== "spreadsheet") ||
+-      value.result.path !== request.args.path ||
+-      value.result.documentType !== request.args.documentType ||
+-      value.result.opened !== true
+-    ) {
++    if (value.error !== undefined || !validSuccessResult(value.result, request.args)) {
+       return invalidHostResult(
+         id,
+         "project_document_host_invalid_result",
+@@ -194,6 +274,10 @@ export function awaitProjectDocumentHostResult(
+   });
+ }
+ 
++function requestTimeoutMs(args: ProjectDocumentArgs): number {
++  return args.documentType === "texUndo" ? HOST_UNDO_TIMEOUT_MS : HOST_TIMEOUT_MS;
++}
++
+ async function submitResult(
+   id: string,
+   result: ProjectDocumentResult,
+@@ -240,7 +324,7 @@ export async function answerLatticeProjectDocumentRequest(
+       : await awaitProjectDocumentHostResult(
+           request,
+           hostOrigin,
+-          Math.min(HOST_TIMEOUT_MS, request.expiresAt - Date.now()),
++          Math.min(requestTimeoutMs(request.args), request.expiresAt - Date.now()),
+         );
+   await submitResult(request.id, result, token, workspaceRoot, signal);
+ }
+
+diff --git a/apps/web/src/components/chat/useChatTurnSubmission.ts b/apps/web/src/components/chat/useChatTurnSubmission.ts
+--- a/apps/web/src/components/chat/useChatTurnSubmission.ts
++++ b/apps/web/src/components/chat/useChatTurnSubmission.ts
+@@ -9,6 +9,7 @@ import {
+ import { useCallback, useLayoutEffect, useRef } from "react";
+ import { hasActiveComposerSend } from "~/lib/composerSendOwnership";
+ import { hasActiveDraftThreadDispatch } from "~/lib/draftThreadDispatch";
++import { t } from "~/i18n";
+ import { COMPOSER_TURN_UNCERTAIN, settlePendingComposerTurn } from "~/lib/composerTurnSettlement";
+ import {
+   appendLatticeHostContextToPrompt,
+@@ -37,6 +38,7 @@ import {
+ import { appendFileCommentsToPrompt } from "../../lib/fileComments";
+ import { appendPullRequestContextsToPrompt } from "../../lib/pullRequestContext";
+ import { prepareQueuedComposerResumeAfterSend } from "../../lib/queuedComposerDrain";
++import { prepareLatticeWorkspaceForTurn } from "~/lib/latticeWorkspaceRefresh";
+ import {
+   IMAGE_ONLY_BOOTSTRAP_PROMPT,
+   appendTerminalContextsToPrompt,
+@@ -310,6 +312,19 @@ export function useChatTurnSubmission({
+         }
+         return false;
+       }
++      const prepareWorkspaceBeforeNewTurn = async () => {
++        if (hasLiveTurnRef.current) return true;
++        sendPreflightInFlightRef.current = true;
++        try {
++          await prepareLatticeWorkspaceForTurn();
++          return true;
++        } catch {
++          setThreadError(activeThread.id, t("chat:couldNotStartTheChatTryAgain"));
++          return false;
++        } finally {
++          sendPreflightInFlightRef.current = false;
++        }
++      };
+       sendPreflightInFlightRef.current = true;
+       const previous = await settlePendingComposerTurn(
+         api,
+@@ -542,6 +557,7 @@ export function useChatTurnSubmission({
+             });
+             return true;
+           }
++          if (!(await prepareWorkspaceBeforeNewTurn())) return false;
+           clearComposerInput(activeThread.id);
+           scheduleComposerFocus();
+           return lateSendHandlers.submitPlanFollowUp({
+@@ -756,6 +772,7 @@ export function useChatTurnSubmission({
+         });
+         return true;
+       }
++      if (!(await prepareWorkspaceBeforeNewTurn())) return false;
+       const workspace = await prepareChatSendWorkspace({
+         activeThread,
+         isServerThread,
+
+diff --git a/apps/web/src/lib/latticeWorkspaceRefresh.ts b/apps/web/src/lib/latticeWorkspaceRefresh.ts
+new file mode 100644
+--- /dev/null
++++ b/apps/web/src/lib/latticeWorkspaceRefresh.ts
+@@ -0,0 +1,48 @@
++import { readEmbedMode } from "../embedMode";
++import { randomUUID } from "./utils";
++
++const REQUEST = "synara:prepare-agent-turn";
++const RESULT = "lattice:prepare-agent-turn-result";
++const TIMEOUT_MS = 30_000;
++
++/** The Windows host must refresh its read-only manuscript mirror before a new turn. */
++export async function prepareLatticeWorkspaceForTurn(): Promise<void> {
++  if (window.parent === window) return;
++  const config = readEmbedMode();
++  if (!config) return;
++  if (!config.hostOrigin) throw new Error("The Lattice project host is unavailable.");
++
++  const requestId = randomUUID();
++  await new Promise<void>((resolve, reject) => {
++    const finish = (ok: boolean) => {
++      window.clearTimeout(timer);
++      window.removeEventListener("message", onMessage);
++      if (ok) resolve();
++      else reject(new Error("The Lattice project could not be refreshed before sending."));
++    };
++    const onMessage = (event: MessageEvent) => {
++      if (
++        event.source !== window.parent ||
++        event.origin !== config.hostOrigin ||
++        !event.data ||
++        typeof event.data !== "object"
++      ) return;
++      const response = event.data as Record<string, unknown>;
++      if (
++        response.type === RESULT &&
++        response.version === 1 &&
++        response.requestId === requestId &&
++        typeof response.ok === "boolean"
++      ) finish(response.ok);
++    };
++    const timer = window.setTimeout(() => finish(false), TIMEOUT_MS);
++    window.addEventListener("message", onMessage);
++    try {
++      window.parent.postMessage(
++        {
++          type: REQUEST,
++          version: 1,
++          requestId,
++          workspaceRoot: config.workspaceRoot,
++        },
++        config.hostOrigin,
++      );
++    } catch {
++      finish(false);
++    }
++  });
++}
+
+diff --git a/apps/web/src/lib/latticeWorkspaceRefresh.test.ts b/apps/web/src/lib/latticeWorkspaceRefresh.test.ts
+new file mode 100644
+--- /dev/null
++++ b/apps/web/src/lib/latticeWorkspaceRefresh.test.ts
+@@ -0,0 +1,85 @@
++import { afterEach, describe, expect, it, vi } from "vitest";
++import { prepareLatticeWorkspaceForTurn } from "./latticeWorkspaceRefresh";
++
++const mocks = vi.hoisted(() => ({ readEmbedMode: vi.fn() }));
++vi.mock("../embedMode", async (importOriginal) => ({
++  ...(await importOriginal<typeof import("../embedMode")>()),
++  readEmbedMode: mocks.readEmbedMode,
++}));
++
++const config = {
++  workspaceRoot: "C:/projects/paper",
++  theme: "dark" as const,
++  surface: "chrome" as const,
++  hostOrigin: "http://localhost:1420",
++  locale: "en" as const,
++};
++
++afterEach(() => {
++  vi.unstubAllGlobals();
++  vi.resetAllMocks();
++});
++
++function installFrame() {
++  const frame = new EventTarget() as EventTarget & { parent: object };
++  const postMessage = vi.fn<(message: unknown, targetOrigin: string) => void>();
++  const parent = { postMessage };
++  Object.assign(frame, {
++    parent,
++    setTimeout: globalThis.setTimeout.bind(globalThis),
++    clearTimeout: globalThis.clearTimeout.bind(globalThis),
++  });
++  vi.stubGlobal("window", frame);
++  mocks.readEmbedMode.mockReturnValue(config);
++  return { frame, parent, postMessage };
++}
++
++function deliver(frame: EventTarget, parent: object, origin: string, data: unknown) {
++  frame.dispatchEvent(Object.assign(new Event("message"), { source: parent, origin, data }));
++}
++
++describe("Lattice workspace turn barrier", () => {
++  it("does not wait for a Lattice host outside embed mode", async () => {
++    const { postMessage } = installFrame();
++    mocks.readEmbedMode.mockReturnValue(null);
++    await expect(prepareLatticeWorkspaceForTurn()).resolves.toBeUndefined();
++    expect(postMessage).not.toHaveBeenCalled();
++  });
++
++  it("waits for the correlated host refresh result", async () => {
++    const { frame, parent, postMessage } = installFrame();
++    const pending = prepareLatticeWorkspaceForTurn();
++    const [rawRequest, targetOrigin] = postMessage.mock.calls[0]!;
++    const request = rawRequest as Record<string, unknown>;
++    expect(request).toMatchObject({
++      type: "synara:prepare-agent-turn",
++      version: 1,
++      requestId: expect.any(String),
++      workspaceRoot: config.workspaceRoot,
++    });
++    expect(targetOrigin).toBe(config.hostOrigin);
++
++    deliver(frame, parent, config.hostOrigin, {
++      type: "lattice:prepare-agent-turn-result",
++      version: 1,
++      requestId: "another-turn",
++      ok: true,
++    });
++    deliver(frame, parent, "http://untrusted.test", {
++      type: "lattice:prepare-agent-turn-result",
++      version: 1,
++      requestId: request.requestId,
++      ok: true,
++    });
++    deliver(frame, parent, config.hostOrigin, {
++      type: "lattice:prepare-agent-turn-result",
++      version: 1,
++      requestId: request.requestId,
++      ok: true,
++    });
++
++    await expect(pending).resolves.toBeUndefined();
++  });
++
++  it("fails closed when the host rejects the refresh", async () => {
++    const { frame, parent, postMessage } = installFrame();
++    const pending = prepareLatticeWorkspaceForTurn();
++    const [rawRequest] = postMessage.mock.calls[0]!;
++    const request = rawRequest as Record<string, unknown>;
++    deliver(frame, parent, config.hostOrigin, {
++      type: "lattice:prepare-agent-turn-result",
++      version: 1,
++      requestId: request.requestId,
++      ok: false,
++    });
++    await expect(pending).rejects.toThrow("could not be refreshed");
++  });
++});

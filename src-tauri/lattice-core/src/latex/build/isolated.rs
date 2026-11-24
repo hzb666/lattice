@@ -13,13 +13,13 @@ use crate::latex::aux_files::{self, AuxFiles};
 use crate::latex::chemex::{self, Preparation};
 
 pub(crate) fn isolated_project_build(
-    request: &ProjectBuild<'_>, run: impl FnOnce(Command, &Path) -> Result<(Output, bool), String>,
-    publish: impl FnOnce(&Path, &str) -> Result<Vec<String>, String>,
+    request: &ProjectBuild<'_>, run: impl Fn(Command, &Path) -> Result<(Output, bool), String>,
+    publish: impl FnOnce(&Path, &str, AuxFiles) -> Result<Vec<String>, String>,
 ) -> Result<BuildResult, String> {
     let _session = BuildSession::open(request.active);
     let root = request.root;
-    let layout = AuxFiles::Hidden;
     choose_compile_root(root, request.open_document)?;
+    let layout = super::beside::layout_for(root, request.layout);
     let manifest = project::read_manifest(root)?;
     let document = compiled_document(root, &manifest)?;
     if !project::safe_path(root, &document)?.is_file() {
@@ -34,14 +34,14 @@ pub(crate) fn isolated_project_build(
                 active: request.active,
                 steps: request.steps,
             }
-            .run()?,
+            .run_isolated(&run)?,
         )
     } else {
         None
     };
     let output_dir = tempfile::tempdir().map_err(|error| error.to_string())?;
-    let mut command = latexmk_into(root, layout, &document);
-    command.args(["-interaction=nonstopmode", "-synctex=1", "-file-line-error"]);
+    let mut command = latexmk_into(root, AuxFiles::Beside, &document);
+    command.args(["-interaction=nonstopmode", "-synctex=1", "-file-line-error", "-recorder"]);
     command.arg(error_mode(&manifest)).args(engine_args(root, &manifest));
     if request.force {
         command.arg("-g");
@@ -60,7 +60,7 @@ pub(crate) fn isolated_project_build(
         super::super::build_stall::stalled_build(request.steps.started(), &log, &document)
     } else {
         complete(request, &document, &log, output.status.success(), || {
-            publish(output_dir.path(), &document)
+            publish(output_dir.path(), &document, layout)
         })?
     };
     result.one_off = is_one_off_root(root);
@@ -136,9 +136,10 @@ mod tests {
                     true,
                 ))
             },
-            |_, _| panic!("stopped build reached artifact publication"),
+            |_, _, _| panic!("stopped build reached artifact publication"),
         )
         .unwrap();
         assert_eq!(Some("build-cancelled"), result.diagnostics[0].code);
+        assert_eq!("", result.aux_folder);
     }
 }

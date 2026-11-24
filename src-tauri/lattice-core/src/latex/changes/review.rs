@@ -20,12 +20,13 @@
 //! new build stopping the one before it.
 
 use super::{
-    changes_name, input_loop, mark_and_build, ChangesExports, ChangesPdfOptions, Runner, Versions,
+    changes_name, export_source_path, input_loop, mark_and_build, ChangesExports,
+    ChangesPdfOptions, ExportTex, Runner, Scratch, Versions,
 };
 use crate::latex::default_root_document;
 use crate::{commands, project};
 use std::fs;
-use std::path::Path;
+use std::path::{Component, Path};
 use walkdir::WalkDir;
 
 /// Insertions in blue and deletions struck through in red, on every page: Word's look.
@@ -41,8 +42,17 @@ const OPTIONS: ChangesPdfOptions = ChangesPdfOptions {
 pub fn review_changes_pdf(
     root: &Path, exports: &ChangesExports, export: u64,
 ) -> Result<Vec<u8>, String> {
+    review_changes_pdf_with_tex(root, exports, export, None)
+}
+
+pub fn review_changes_pdf_with_tex(
+    root: &Path, exports: &ChangesExports, export: u64, tex: Option<&ExportTex<'_>>,
+) -> Result<Vec<u8>, String> {
     let manifest = project::read_manifest(root)?;
     let document = default_root_document(&manifest)?.path.replace('\\', "/");
+    if tex.is_some() {
+        export_source_path(root, &document)?;
+    }
     if !document.to_ascii_lowercase().ends_with(".tex") {
         return Err("Only a LaTeX document can show its changes marked.".to_string());
     }
@@ -50,17 +60,34 @@ pub fn review_changes_pdf(
     if !bases.is_dir() {
         return Err("Review mode is off in this project.".to_string());
     }
-    let build = root.join(project::REVIEW_DIRECTORY).join("build");
+    if tex.is_some() {
+        let relative = project::review_base_directory(Path::new(""));
+        project::safe_path(root, &relative.to_string_lossy())?;
+    }
+    let scratch = tex.map(|_| Scratch::new()).transpose()?;
+    let build = scratch.as_ref().map_or_else(
+        || root.join(project::REVIEW_DIRECTORY).join("build"),
+        |scratch| scratch.0.clone(),
+    );
     let (older, newer) = (build.join("older"), build.join("newer"));
     let outputs = changes_name(document.rsplit('/').next().unwrap_or(&document), "");
     let _ = fs::remove_dir_all(&older);
     mirror(&bases, &older, None)?;
     for path in project::review_excluded(root)? {
+        if tex.is_some()
+            && Path::new(&path).components().any(|part| {
+                matches!(part, Component::Normal(name) if project::is_internal_project_component(name))
+            })
+        {
+            continue;
+        }
+        let source =
+            if tex.is_some() { project::safe_path(root, &path)? } else { root.join(&path) };
         let destination = older.join(&path);
         if let Some(parent) = destination.parent() {
             fs::create_dir_all(parent).map_err(|error| error.to_string())?;
         }
-        let _ = fs::copy(root.join(&path), destination);
+        let _ = fs::copy(source, destination);
     }
     mirror(root, &newer, Some(&outputs))?;
     if !older.join(&document).is_file() {
@@ -75,7 +102,7 @@ pub fn review_changes_pdf(
         return Err(super::LATEXDIFF_MISSING.to_string());
     }
     let latexdiff = commands::resolve("latexdiff");
-    let run = Runner { exports, export, capture: &build };
+    let run = Runner { exports, export, capture: &build, tex };
     let versions = Versions { older: &older, newer: &newer, document: &document };
     let built = mark_and_build(&run, &latexdiff, versions, OPTIONS, &manifest)?;
     fs::read(&built.pdf).map_err(|error| error.to_string())

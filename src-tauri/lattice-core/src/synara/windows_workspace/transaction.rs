@@ -27,7 +27,7 @@ pub(super) fn run(
         .write_journal(&steps)
         .and_then(|()| batch.prepare(source, &steps))
         .and_then(|()| {
-            if Snapshot::read(source.root)?.entries != source.entries {
+            if source.rescan()?.entries != source.entries {
                 return Err(invalid(
                     "Source workspace changed before publication",
                     &source.root.path,

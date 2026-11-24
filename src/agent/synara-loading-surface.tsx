@@ -1,4 +1,3 @@
-import { isWindowsHost } from "../platform/host-platform";
 import { useEffect, useState } from "react";
 import { ChevronRight, CircleAlert, FolderOpen, ShieldOff } from "lucide-react";
 import { useLingui } from "@lingui/react/macro";
@@ -72,10 +71,8 @@ export function SynaraLoadingSurface(props: {
 }
 
 /**
- * The Agent where Lattice cannot yet stop it from editing protected project
- * assets itself:
- * it stays off and says why. There is nothing to retry or diagnose, so no
- * Retry, logs or Details; the runtime's English message says the same.
+ * A runtime that cannot provide its platform boundary stays off and says why.
+ * There is nothing to retry or diagnose, so no Retry, logs or Details.
  * scripts/linux-e2e.mjs finds it by its `synara-unsupported-notice` class.
  */
 function SynaraUnsupportedNotice() {
@@ -86,8 +83,8 @@ function SynaraUnsupportedNotice() {
         <ShieldOff size={17} />
       </span>
       <div className="synara-loading-copy">
-        <strong>{isWindowsHost() ? t`Agent isn’t available on Windows yet` : t`Agent isn’t available on Linux yet`}</strong>
-      <p>{isWindowsHost() ? t`Windows can isolate each project copy, but MXC cannot yet deny protected files below a writable project root while preserving ordinary Agent writes. Host writeback refuses protected changes, but this is not the macOS-equivalent boundary, so the built-in Agent stays off.` : t`On macOS, Lattice stops the Agent from editing .bib, .chem, ChemDraw, and MestReNova files directly, so every reference it adds is checked first. Linux doesn’t have that protection yet, so the Agent stays off here instead of running without it. Agent support for Linux is coming.`}</p>
+        <strong>{t`Built-in Agent unavailable`}</strong>
+        <p>{t`This platform does not provide the protected project boundary required by the built-in Agent.`}</p>
       </div>
     </div>
   );

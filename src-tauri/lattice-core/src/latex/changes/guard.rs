@@ -84,6 +84,10 @@ impl ChangesExports {
         Self::supersede(&mut self.lock())
     }
 
+    pub(super) fn is_current(&self, export: u64) -> bool {
+        self.lock().latest == export
+    }
+
     fn supersede(state: &mut Exports) -> u64 {
         state.latest += 1;
         if let Some((_, group)) = state.child.take() {
@@ -180,10 +184,6 @@ impl ChangesExports {
 
 #[cfg(all(test, unix))]
 impl ChangesExports {
-    fn is_current(&self, export: u64) -> bool {
-        self.lock().latest == export
-    }
-
     /// A stand-in latexdiff for this export set: a shell that writes its pid
     /// to `pid_file` and sleeps. The thread answers whether it was cancelled.
     pub(crate) fn sleep_for_test(

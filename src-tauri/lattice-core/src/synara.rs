@@ -29,6 +29,8 @@ mod windows_sandbox;
 mod windows_workspace;
 #[cfg(windows)]
 pub use windows_builds::ProjectBuild;
+#[cfg(windows)]
+pub use windows_workspace::{ProjectTextEdit, ProjectTextHistory, ProjectTextUndo};
 
 use crate::host::{EventSink, Resources};
 #[cfg(any(not(windows), test))]
@@ -40,7 +42,6 @@ pub(crate) use bibliography_guard::AGENT_PROTECTION_SANDBOX_PROFILE;
 pub use environment::EnvironmentReport;
 use reqwest::blocking::Client;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use std::collections::BTreeMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom};
 use std::net::{Ipv4Addr, TcpListener};
@@ -87,6 +88,8 @@ pub struct SynaraRuntimeInfo {
 struct BundledRuntimeManifest {
     synara_version: Option<String>,
     synara_revision: Option<String>,
+    #[cfg(windows)]
+    windows_host_manuscript: Option<u32>,
 }
 
 #[derive(Deserialize)]
@@ -176,6 +179,8 @@ pub struct SynaraRuntime {
     projects: windows_projects::Projects,
     #[cfg(windows)]
     project_root: Option<PathBuf>,
+    #[cfg(windows)]
+    host_manuscript: bool,
 }
 
 impl SynaraRuntime {
@@ -188,6 +193,9 @@ impl SynaraRuntime {
         let runtime_root = resources.bundle_dir.join("synara-runtime");
         let manifest: Option<BundledRuntimeManifest> =
             read_json(&runtime_root.join("manifest.json"));
+        #[cfg(windows)]
+        let host_manuscript =
+            manifest.as_ref().is_some_and(|manifest| manifest.windows_host_manuscript == Some(1));
         let home_dir = resources.app_data_dir.join("synara");
         let preferred_port =
             read_json::<PersistedServerRuntimeState>(&home_dir.join(RUNTIME_STATE_RELATIVE_PATH))
@@ -216,6 +224,8 @@ impl SynaraRuntime {
             projects: windows_projects::Projects::default(),
             #[cfg(windows)]
             project_root: None,
+            #[cfg(windows)]
+            host_manuscript,
         }
     }
 
@@ -277,7 +287,12 @@ impl SynaraRuntime {
         if let Some(origin) = &self.external_origin {
             return Ok(self.ready_info(origin, None, 0));
         }
-        if !bibliography_guard::AVAILABLE || cfg!(windows) && self.project_root.is_none() {
+        #[cfg(not(windows))]
+        let unavailable = !bibliography_guard::AVAILABLE;
+        #[cfg(windows)]
+        let unavailable =
+            !cfg!(target_arch = "x86_64") || !self.host_manuscript || self.project_root.is_none();
+        if unavailable {
             return Ok(SynaraRuntimeInfo {
                 state: "unsupported".to_string(),
                 origin: None,
@@ -361,17 +376,6 @@ impl SynaraRuntime {
         }
         let _ = root;
         Ok(())
-    }
-
-    pub fn reconcile_project_workspace(
-        &self, root: &Path, targets: &BTreeMap<PathBuf, String>,
-    ) -> Result<Vec<PathBuf>, String> {
-        #[cfg(windows)]
-        if self.external_origin.is_none() {
-            return self.apply_workspace(root, targets);
-        }
-        let _ = (root, targets);
-        Ok(Vec::new())
     }
 
     pub fn preview_figure(
@@ -970,7 +974,7 @@ mod tests {
 
     #[test]
     #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
-    fn windows_x64_stays_off_without_protected_asset_write_denial() {
+    fn windows_x64_stays_off_without_a_host_manuscript_bundle() {
         assert!(!bibliography_guard::AVAILABLE);
         let runtime = SynaraRuntime::default();
         assert_eq!(runtime.ensure_ready().unwrap().state, "unsupported");

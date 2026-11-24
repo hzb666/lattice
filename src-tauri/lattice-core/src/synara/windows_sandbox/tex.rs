@@ -11,6 +11,7 @@ use super::{check_capability, paths_overlap, policy, process, write_policy};
 use crate::latex::BuildSteps;
 
 const MAX_LOG_BYTES: usize = 4 * 1024 * 1024;
+const MAX_EXPORT_STDOUT: usize = 64 * 1024 * 1024;
 
 pub(in crate::synara) struct Preview<'a> {
     pub runtime: &'a Path,
@@ -18,24 +19,43 @@ pub(in crate::synara) struct Preview<'a> {
     pub project: &'a Path,
 }
 
+#[derive(Clone, Copy)]
+enum WorkingTree<'a> {
+    TemporaryDirectory,
+    ProjectBuild(&'a Path),
+    Export(&'a Path),
+}
+
 impl Preview<'_> {
     pub(in crate::synara) fn run(
         &self, command: Command, timeout: Duration,
     ) -> io::Result<(Output, bool)> {
-        self.run_in(command, None, timeout, || false, None)
+        self.run_in(command, WorkingTree::TemporaryDirectory, timeout, || false, None)
     }
 
     pub(in crate::synara) fn run_build(
         &self, command: Command, scratch: &Path, timeout: Duration, cancelled: impl Fn() -> bool,
         steps: &BuildSteps,
     ) -> io::Result<(Output, bool)> {
-        let result = self.run_in(command, Some(scratch), timeout, cancelled, Some(steps));
+        let result = self.run_in(
+            command,
+            WorkingTree::ProjectBuild(scratch),
+            timeout,
+            cancelled,
+            Some(steps),
+        );
         steps.finish();
         result
     }
 
+    pub(in crate::synara) fn run_export(
+        &self, command: Command, scratch: &Path, timeout: Duration, cancelled: &dyn Fn() -> bool,
+    ) -> io::Result<(Output, bool)> {
+        self.run_in(command, WorkingTree::Export(scratch), timeout, cancelled, None)
+    }
+
     fn run_in(
-        &self, mut command: Command, scratch: Option<&Path>, timeout: Duration,
+        &self, mut command: Command, working_tree: WorkingTree<'_>, timeout: Duration,
         cancelled: impl Fn() -> bool, steps: Option<&BuildSteps>,
     ) -> io::Result<(Output, bool)> {
         let executable = Path::new(command.get_program());
@@ -48,7 +68,12 @@ impl Preview<'_> {
         let (cwd, _cwd_pin) = policy::open_directory(cwd)?;
         let (runtime, _runtime_pin) = policy::open_directory(self.runtime)?;
         let (control, _control_pin) = policy::open_directory(self.control)?;
-        let scratch = scratch.map(policy::open_directory).transpose()?;
+        let scratch = match working_tree {
+            WorkingTree::TemporaryDirectory => None,
+            WorkingTree::ProjectBuild(path) | WorkingTree::Export(path) => {
+                Some(policy::open_directory(path)?)
+            }
+        };
         let writable = scratch.as_ref().map_or(cwd.as_path(), |(path, _)| path.as_path());
         check_disjoint([&tex_root, &project, writable, &runtime, &control])?;
 
@@ -56,7 +81,15 @@ impl Preview<'_> {
         if !policy::contains(&tex_root, &exe) || !exe.is_file() {
             return Err(policy::invalid("The TeX executable resolves outside its installation"));
         }
-        if scratch.is_some() {
+        if matches!(working_tree, WorkingTree::Export(_)) {
+            if !policy::contains(writable, &cwd) && !policy::contains(&project, &cwd) {
+                return Err(policy::invalid(
+                    "MXC TeX export needs a project or scratch working directory",
+                ));
+            }
+            policy::reject_existing_aliases(writable)?;
+        }
+        if matches!(working_tree, WorkingTree::ProjectBuild(_)) {
             if !policy::contains(&project, &cwd) {
                 return Err(policy::invalid(
                     "MXC TeX build working directory must be in the project",
@@ -92,7 +125,14 @@ impl Preview<'_> {
 
         let mut launch = launcher();
         launch.arg(request_path);
-        let output = run_to_completion(launch, &control, timeout, cancelled, steps)?;
+        let output = run_to_completion(
+            launch,
+            &control,
+            timeout,
+            cancelled,
+            steps,
+            matches!(working_tree, WorkingTree::Export(_)),
+        )?;
         policy::reject_existing_aliases(writable)?;
         Ok(output)
     }
@@ -204,7 +244,13 @@ fn environment(command: &Command, exe: &Path, paths: &Paths<'_>) -> io::Result<V
         env.push(format!("{name}={writable}\\{directory}"));
     }
     for (name, value) in command.get_envs() {
-        if let (Some(value), Some(name @ ("TEXINPUTS" | "openout_any"))) = (value, name.to_str()) {
+        if let (
+            Some(value),
+            Some(
+                name @ ("TEXINPUTS" | "BIBINPUTS" | "BSTINPUTS" | "max_print_line" | "openout_any"),
+            ),
+        ) = (value, name.to_str())
+        {
             env.push(format!("{name}={}", policy::unicode(value)?));
         }
     }
@@ -213,12 +259,15 @@ fn environment(command: &Command, exe: &Path, paths: &Paths<'_>) -> io::Result<V
 
 fn run_to_completion(
     mut launch: Command, control: &Path, timeout: Duration, cancelled: impl Fn() -> bool,
-    steps: Option<&BuildSteps>,
+    steps: Option<&BuildSteps>, capture_export: bool,
 ) -> io::Result<(Output, bool)> {
     let stdout_file = tempfile::NamedTempFile::new_in(control)?;
     let stderr_file = tempfile::NamedTempFile::new_in(control)?;
     let mut stdout = BuildLog::new(stdout_file.reopen()?);
     let mut stderr = BuildLog::new(stderr_file.reopen()?);
+    if capture_export {
+        stdout.limit = MAX_EXPORT_STDOUT;
+    }
     launch
         .stdout(Stdio::from(stdout_file.as_file().try_clone()?))
         .stderr(Stdio::from(stderr_file.as_file().try_clone()?));
@@ -240,6 +289,12 @@ fn run_to_completion(
     job.terminate()?;
     let status = child.wait()?;
     let interrupted = interrupted?;
+    if capture_export
+        && !interrupted
+        && stdout_file.as_file().metadata()?.len() > MAX_EXPORT_STDOUT as u64
+    {
+        return Err(policy::invalid("TeX export output exceeded its size limit"));
+    }
     stdout.read_new(steps, true)?;
     stderr.read_new(steps, true)?;
     Ok((Output { status, stdout: stdout.bytes, stderr: stderr.bytes }, interrupted))
@@ -249,16 +304,17 @@ struct BuildLog {
     reader: File,
     bytes: Vec<u8>,
     line_start: usize,
+    limit: usize,
 }
 
 impl BuildLog {
     fn new(reader: File) -> Self {
-        Self { reader, bytes: Vec::new(), line_start: 0 }
+        Self { reader, bytes: Vec::new(), line_start: 0, limit: MAX_LOG_BYTES }
     }
 
     fn read_new(&mut self, steps: Option<&BuildSteps>, finished: bool) -> io::Result<()> {
         let start = self.bytes.len();
-        (&mut self.reader).take((MAX_LOG_BYTES - start) as u64).read_to_end(&mut self.bytes)?;
+        (&mut self.reader).take((self.limit - start) as u64).read_to_end(&mut self.bytes)?;
         if let Some(steps) = steps {
             for (offset, byte) in self.bytes[start..].iter().enumerate() {
                 if *byte == b'\n' {

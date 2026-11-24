@@ -47,6 +47,14 @@ use super::runtime::AgentRuntime;
 /// The commands answered here; the surface answers the ones that need a
 /// window (the save panel) or the app (the browser, the clipboard).
 pub fn handles(command: &str) -> bool {
+    if cfg!(windows)
+        && matches!(
+            command,
+            "agent_replace_project_text" | "agent_undo_project_text" | "agent_project_text_history"
+        )
+    {
+        return true;
+    }
     matches!(
         command,
         "synara_ensure_ready"
@@ -123,6 +131,55 @@ pub fn invoke(
             cx.background_spawn(async move {
                 supervisor.refresh_project_workspace(&root)?;
                 Ok(Value::Null)
+            })
+        }
+        #[cfg(windows)]
+        "agent_replace_project_text" => {
+            let request = (|| {
+                let root = pinned(root, &args, "editing the manuscript")?;
+                let supervisor = runtime.supervisor_for(&root)?;
+                let edit = serde_json::from_value::<lattice_core::synara::ProjectTextEdit>(
+                    args.get("edit").cloned().unwrap_or(Value::Null),
+                )
+                .map_err(|error| error.to_string())?;
+                Ok::<_, String>((root, supervisor, edit))
+            })();
+            cx.background_spawn(async move {
+                let (root, supervisor, edit) = request?;
+                supervisor.edit_project_text(&root, &edit)?;
+                Ok(Value::Null)
+            })
+        }
+        #[cfg(windows)]
+        "agent_undo_project_text" => {
+            let request = (|| {
+                let root = pinned(root, &args, "undoing manuscript edits")?;
+                let supervisor = runtime.supervisor_for(&root)?;
+                let edit = serde_json::from_value::<lattice_core::synara::ProjectTextUndo>(
+                    args.get("edit").cloned().unwrap_or(Value::Null),
+                )
+                .map_err(|error| error.to_string())?;
+                Ok::<_, String>((root, supervisor, edit))
+            })();
+            cx.background_spawn(async move {
+                let (root, supervisor, edit) = request?;
+                json(supervisor.undo_project_text(&root, &edit)?)
+            })
+        }
+        #[cfg(windows)]
+        "agent_project_text_history" => {
+            let request = (|| {
+                let root = pinned(root, &args, "reading manuscript history")?;
+                let supervisor = runtime.supervisor_for(&root)?;
+                let edit = serde_json::from_value::<lattice_core::synara::ProjectTextHistory>(
+                    args.get("edit").cloned().unwrap_or(Value::Null),
+                )
+                .map_err(|error| error.to_string())?;
+                Ok::<_, String>((root, supervisor, edit))
+            })();
+            cx.background_spawn(async move {
+                let (root, supervisor, edit) = request?;
+                json(supervisor.project_text_history(&root, &edit)?)
             })
         }
         "synara_restart" => {

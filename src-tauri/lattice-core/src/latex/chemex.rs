@@ -11,7 +11,7 @@ use std::ffi::{OsStr, OsString};
 use std::fs::{self, File};
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Output};
 use walkdir::WalkDir;
 
 const REQUESTS: &str = "chemex-figures.dat";
@@ -21,11 +21,17 @@ const REGISTER: &str = "chemex-register.tex";
 pub(super) struct Inputs {
     folder: PathBuf,
     assets: PathBuf,
+    spectra: Option<PathBuf>,
 }
 
 impl Inputs {
     pub(super) fn configure(&self, command: &mut Command) -> Result<(), String> {
-        prepend_inputs(command, &[&self.folder, &self.assets])
+        prepend_inputs(
+            command,
+            [self.folder.as_path(), self.assets.as_path()]
+                .into_iter()
+                .chain(self.spectra.as_deref()),
+        )
     }
 }
 
@@ -106,26 +112,45 @@ pub(super) struct Preparation<'a> {
     pub steps: &'a BuildSteps,
 }
 
+struct TexPasses<'a> {
+    scratch: Option<&'a Path>,
+    run: &'a dyn Fn(Command, &Path) -> Result<(Output, bool), String>,
+}
+
 impl Preparation<'_> {
     pub(super) fn run(&self) -> Result<Inputs, String> {
+        self.prepare(&TexPasses { scratch: None, run: &|command, _| self.track_tool(command) })
+    }
+
+    #[cfg(windows)]
+    pub(super) fn run_isolated(
+        &self, run: &impl Fn(Command, &Path) -> Result<(Output, bool), String>,
+    ) -> Result<Inputs, String> {
+        let scratch = tempfile::tempdir().map_err(err)?;
+        self.prepare(&TexPasses { scratch: Some(scratch.path()), run })
+    }
+
+    fn prepare(&self, passes: &TexPasses<'_>) -> Result<Inputs, String> {
         let manifest = project::read_manifest(self.root)?;
         let key = self.fingerprint(&manifest)?;
         let namespace = sha256_hex(self.document);
         if let Some(inputs) = cached_inputs(self.root, &namespace, &key)? {
             return Ok(inputs);
         }
-        let discovery = self.pass_folder(&namespace, "discover", b"\\ChemexDiscoveryMode\n")?;
-        let figures = self.discover(&discovery)?;
+        let discovery =
+            self.pass_folder(&namespace, "discover", b"\\ChemexDiscoveryMode\n", passes.scratch)?;
+        let figures = self.discover(&discovery, passes)?;
         if figures.items.is_empty() {
             return Err("The LaTeX project contains no Chemex figure references".into());
         }
         let mut registrations = figures.registrations()?;
-        let (values, numbers) = self.number(&namespace, &figures, &registrations)?;
+        let (values, numbers) = self.number(&namespace, &figures, &registrations, passes)?;
         let requests: Vec<_> = figures.items.iter().map(|figure| figure.request.clone()).collect();
         let sources: Vec<_> =
             figures.documents.values().map(|document| document.source().to_owned()).collect();
         chemex_cli::attach_mnova_formulas(&requests, &mut registrations, &sources, &numbers)?;
         let mut assets = Vec::with_capacity(figures.items.len());
+        let mut spectra = None;
         for (index, figure) in figures.items.iter().enumerate() {
             let (pdf, source_hash, detail) = match &figure.request {
                 FigureRequest::ChemDraw { path, .. } => {
@@ -161,6 +186,7 @@ impl Preparation<'_> {
                         },
                     )
                     .map_err(|error| format!("{}: {error}", figure.request.path()))?;
+                    spectra = pdf.parent().map(Path::to_path_buf);
                     (pdf, hash_file(&figure.path)?, spectrum.to_string())
                 }
             };
@@ -175,10 +201,10 @@ impl Preparation<'_> {
                 FigureRegistration::Mnova { asset: target, .. } => *target = asset,
             }
         }
-        let folder = self.pass_folder(&namespace, "final", b"\\ChemexPreparedMode\n")?;
+        let folder = self.pass_folder(&namespace, "final", b"\\ChemexPreparedMode\n", None)?;
         let registration = tex::prepared_registrations(&registrations, &numbers).map_err(err)?;
         chemistry::write_if_changed(&folder.join(REGISTER), registration.as_bytes())?;
-        let inputs = Inputs { folder, assets: assets_folder(self.root)? };
+        let inputs = Inputs { folder, assets: assets_folder(self.root)?, spectra };
         if self.fingerprint(&manifest)? != key {
             return Err(
                 "LaTeX or figure sources changed during Chemex preparation; build again".into()
@@ -233,17 +259,24 @@ impl Preparation<'_> {
         Ok(format!("{:x}", hash.finalize()))
     }
 
-    fn pass_folder(&self, namespace: &str, pass: &str, mode: &[u8]) -> Result<PathBuf, String> {
-        let mode_file =
-            chemistry::cache_file(self.root, &format!("{namespace}/{pass}/chemex-mode.tex"))?;
+    fn pass_folder(
+        &self, namespace: &str, pass: &str, mode: &[u8], scratch: Option<&Path>,
+    ) -> Result<PathBuf, String> {
+        let mode_file = if let Some(scratch) = scratch {
+            let folder = scratch.join(pass);
+            fs::create_dir(&folder).map_err(err)?;
+            folder.join("chemex-mode.tex")
+        } else {
+            chemistry::cache_file(self.root, &format!("{namespace}/{pass}/chemex-mode.tex"))?
+        };
         let folder = mode_file.parent().ok_or("Missing Chemex preparation directory")?;
         chemistry::write_if_changed(&folder.join("chemex.sty"), tex::PACKAGE.as_bytes())?;
         chemistry::write_if_changed(&mode_file, mode)?;
         Ok(folder.to_path_buf())
     }
 
-    fn discover(&self, folder: &Path) -> Result<Figures, String> {
-        self.pass("Chemex discovery", folder)?;
+    fn discover(&self, folder: &Path, passes: &TexPasses<'_>) -> Result<Figures, String> {
+        self.pass("Chemex discovery", folder, passes)?;
         let requests = match fs::symlink_metadata(folder.join(REQUESTS)) {
             Ok(info) if info.is_file() => tex::read_figures(&folder.join(REQUESTS)).map_err(err)?,
             Ok(_) => return Err("Invalid Chemex figure request file".into()),
@@ -255,6 +288,7 @@ impl Preparation<'_> {
 
     fn number(
         &self, namespace: &str, figures: &Figures, registrations: &[FigureRegistration],
+        passes: &TexPasses<'_>,
     ) -> Result<(FieldValues, BTreeMap<String, String>), String> {
         let fields: Vec<_> = registrations
             .iter()
@@ -267,9 +301,10 @@ impl Preparation<'_> {
         if fields.is_empty() {
             return Ok((FieldValues::new(), BTreeMap::new()));
         }
-        let folder = self.pass_folder(namespace, "number", b"\\ChemexNumberingMode\n")?;
+        let folder =
+            self.pass_folder(namespace, "number", b"\\ChemexNumberingMode\n", passes.scratch)?;
         write_registrations(&folder, registrations)?;
-        self.pass("Chemex numbering", &folder)?;
+        self.pass("Chemex numbering", &folder, passes)?;
         let numbered = tex::read_figures(&folder.join(REQUESTS)).map_err(err)?;
         let expected: Vec<_> = figures.items.iter().map(|item| item.request.clone()).collect();
         tex::validate_figures(&expected, &numbered, "numbering").map_err(err)?;
@@ -278,7 +313,7 @@ impl Preparation<'_> {
         Ok((values, numbers))
     }
 
-    fn pass(&self, name: &str, folder: &Path) -> Result<(), String> {
+    fn pass(&self, name: &str, folder: &Path, passes: &TexPasses<'_>) -> Result<(), String> {
         let manifest = project::read_manifest(self.root)?;
         let mut command = commands::command("latexmk");
         let path = tex_path(folder);
@@ -299,33 +334,41 @@ impl Preparation<'_> {
             .args(super::build::engine_args(self.root, &manifest))
             .arg(self.document);
         search_paths::search_project_folder(&mut command, self.document);
-        prepend_inputs(&mut command, &[folder])?;
-        self.run_tool(name, command)
+        prepend_inputs(&mut command, [folder])?;
+        self.steps.begin(name, true);
+        check_tool(name, (passes.run)(command, folder)?)
     }
 
     fn run_tool(&self, name: &str, command: Command) -> Result<(), String> {
         self.steps.begin(name, true);
-        let (output, cancelled) = build::run_tracked(
+        check_tool(name, self.track_tool(command)?)
+    }
+
+    fn track_tool(&self, command: Command) -> Result<(Output, bool), String> {
+        build::run_tracked(
             command,
             self.active,
             self.steps,
             "Could not start Chemex tool: ",
             "Chemex tool stopped: ",
-        )?;
-        if cancelled {
-            return Err("Chemex preparation was stopped".into());
-        }
-        if !output.status.success() {
-            let log = commands::combined_output(&output);
-            let tail = log.lines().rev().take(25).collect::<Vec<_>>();
-            return Err(format!(
-                "{name} failed ({})\n{}",
-                output.status,
-                tail.into_iter().rev().collect::<Vec<_>>().join("\n")
-            ));
-        }
-        Ok(())
+        )
     }
+}
+
+fn check_tool(name: &str, (output, cancelled): (Output, bool)) -> Result<(), String> {
+    if cancelled {
+        return Err("Chemex preparation was stopped".into());
+    }
+    if !output.status.success() {
+        let log = commands::combined_output(&output);
+        let tail = log.lines().rev().take(25).collect::<Vec<_>>();
+        return Err(format!(
+            "{name} failed ({})\n{}",
+            output.status,
+            tail.into_iter().rev().collect::<Vec<_>>().join("\n")
+        ));
+    }
+    Ok(())
 }
 
 fn dependency_files(root: &Path) -> Result<Vec<PathBuf>, String> {
@@ -391,12 +434,18 @@ fn cached_inputs(root: &Path, namespace: &str, key: &str) -> Result<Option<Input
     if lines.clone().next().is_none() {
         return Ok(None);
     }
+    let mut spectra = None;
     for (index, line) in lines.enumerate() {
         let valid = if let Some(asset) = chemistry::Asset::parse(line) {
             if chemistry::pdf_key(asset.pdf).is_some() {
                 asset_cached(&assets, asset.pdf, asset.detail)
             } else {
-                chemistry::cached_spectrum_pdf(&spectrum_assets_folder(root)?, asset.pdf)
+                if spectra.is_none() {
+                    spectra = Some(spectrum_assets_folder(root)?);
+                }
+                spectra
+                    .as_deref()
+                    .is_some_and(|folder| chemistry::cached_spectrum_pdf(folder, asset.pdf))
             }
         } else if chemistry::pdf_key(line).is_some() {
             let path = chemistry::cache_file(
@@ -412,7 +461,7 @@ fn cached_inputs(root: &Path, namespace: &str, key: &str) -> Result<Option<Input
             return Ok(None);
         }
     }
-    Ok(Some(Inputs { folder, assets }))
+    Ok(Some(Inputs { folder, assets, spectra }))
 }
 
 fn asset_cached(folder: &Path, name: &str, numbered: &str) -> bool {
@@ -535,15 +584,18 @@ fn write_registrations(folder: &Path, registrations: &[FigureRegistration]) -> R
     )
 }
 
-fn prepend_inputs(command: &mut Command, paths: &[&Path]) -> Result<(), String> {
+fn prepend_inputs<'a>(
+    command: &mut Command, paths: impl IntoIterator<Item = &'a Path>,
+) -> Result<(), String> {
     let inherited = command
         .get_envs()
         .find(|(key, _)| *key == OsStr::new("TEXINPUTS"))
         .and_then(|(_, value)| value.map(OsStr::to_owned))
         .or_else(|| std::env::var_os("TEXINPUTS"))
         .unwrap_or_default();
-    let mut value = std::env::join_paths(paths.iter().map(|path| PathBuf::from(tex_path(path))))
-        .map_err(err)?;
+    let mut value =
+        std::env::join_paths(paths.into_iter().map(|path| PathBuf::from(tex_path(path))))
+            .map_err(err)?;
     value.push(if cfg!(windows) { ";" } else { ":" });
     value.push(OsString::from(inherited));
     command.env("TEXINPUTS", value);
@@ -561,6 +613,61 @@ fn tex_path(path: &Path) -> String {
 mod tests {
     use super::*;
     use crate::test_support::TempDir;
+
+    #[cfg(windows)]
+    #[test]
+    fn isolated_discovery_and_numbering_use_separate_scratch_folders() {
+        use std::cell::Cell;
+        use std::os::windows::process::ExitStatusExt;
+        use std::process::ExitStatus;
+
+        let root = TempDir::new("chemex-isolated-preparation");
+        let manifest = project::default_manifest("Chemex isolated preparation");
+        project::write_manifest(&root, &manifest).unwrap();
+        root.write("main.tex", "\\includegraphics{drawing.cdxml}");
+        root.write(
+            "drawing.cdxml",
+            "<CDXML><page id='1'><t id='2' p='10 20'><s>[[@compound-001]]</s></t></page></CDXML>",
+        );
+        let preparation = Preparation {
+            root: &root,
+            document: "main.tex",
+            engine: &manifest.engine,
+            active: &ActiveBuild::default(),
+            steps: &BuildSteps::silent(),
+        };
+        let calls = Cell::new(0);
+        let result = preparation.run_isolated(&|command, scratch| {
+            assert!(!scratch.starts_with(&*root));
+            assert_eq!(Some(&*root), command.get_current_dir());
+            let mode = fs::read_to_string(scratch.join("chemex-mode.tex")).unwrap();
+            let status = match calls.replace(calls.get() + 1) {
+                0 => {
+                    assert_eq!("\\ChemexDiscoveryMode\n", mode);
+                    assert!(!scratch.join(REGISTER).exists());
+                    fs::write(
+                        scratch.join(REQUESTS),
+                        "\\chemex@drawrequest{compound}{drawing.cdxml}\n",
+                    )
+                    .unwrap();
+                    0
+                }
+                1 => {
+                    assert_eq!("\\ChemexNumberingMode\n", mode);
+                    assert!(scratch.join(REGISTER).is_file());
+                    assert!(!scratch.join(REQUESTS).exists());
+                    1
+                }
+                _ => panic!("unexpected TeX pass"),
+            };
+            Ok((
+                Output { status: ExitStatus::from_raw(status), stdout: vec![], stderr: vec![] },
+                false,
+            ))
+        });
+        assert_eq!(2, calls.get());
+        assert!(result.err().is_some_and(|error| error.contains("Chemex numbering failed")));
+    }
 
     #[test]
     fn project_detection_and_fingerprint_include_nested_tex_and_cdxml() {
@@ -678,7 +785,15 @@ mod tests {
         let ready = fs::read_to_string(ready).unwrap();
         assert_eq!(Some(key.as_str()), ready.lines().next());
         assert_eq!(Some(sha256_hex(registration.as_bytes()).as_str()), ready.lines().nth(1));
-        assert!(cached_inputs(&root, &namespace, &key).unwrap().is_some());
+        let inputs = cached_inputs(&root, &namespace, &key).unwrap().unwrap();
+        let mut command = Command::new("latexmk");
+        inputs.configure(&mut command).unwrap();
+        let (_, search) =
+            command.get_envs().find(|(name, _)| *name == OsStr::new("TEXINPUTS")).unwrap();
+        assert_eq!(
+            Some(PathBuf::from(tex_path(&spectrum_assets_folder(&root).unwrap()))),
+            std::env::split_paths(search.unwrap()).nth(2)
+        );
         fs::remove_file(spectrum_assets_folder(&root).unwrap().join(&spectrum)).unwrap();
         assert!(cached_inputs(&root, &namespace, &key).unwrap().is_none());
         fs::write(spectrum_assets_folder(&root).unwrap().join(&spectrum), b"%PDF-1.4\nx\n%%EOF")

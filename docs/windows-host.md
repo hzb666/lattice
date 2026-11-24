@@ -16,7 +16,9 @@ Windows security protections. See the matching `.README.txt` asset for setup.
 There is no Windows auto-update: download each new version manually.
 Authenticode signing and Windows updater support are separate future work.
 The existing macOS/Linux release jobs are unchanged.
-The embedded Windows Agent stays disabled pending native verification.
+The embedded Windows Agent is enabled for Windows x64 when the packaged MXC
+runtime manifest and the startup capability probe pass. Other Windows
+architectures and development sidecars remain unavailable.
 One-click setup installs TeX Live for the current user
 (no administrator prompt, cancellable) and the managed paper tools, and installs
 a missing package with `tlmgr` or MiKTeX's package manager. The optional rtex
@@ -24,14 +26,27 @@ live preview is still macOS-only.
 
 ### Agent write boundary
 
-The Windows design uses [MXC ProcessContainer](https://github.com/microsoft/mxc)
-for process isolation. Synara and its subprocesses work in a writable copy,
-without access to the original project. Lattice applies permitted changes to the
-original. The writeback policy protects `.bib`, `.chem/`, ChemDraw and
-MestReNova assets, including files created after the Agent starts. That keeps
-protected changes off the original, but does not stop direct edits inside the
-disposable copy. Citation tools retain their separate, validated bibliography
-write path.
+Windows x64 uses [MXC ProcessContainer](https://github.com/microsoft/mxc).
+Each project gets its own Synara process, home, and temporary workspace. The
+process tree can read the original project. MXC denies writes to that project
+and access to its `.chem/` cache and `.git` metadata. Shell output stays in
+the isolated writable directories. Lattice never applies arbitrary shell
+changes or Git checkpoint contents to the original project.
+
+`replace_project_text` saves an exact replacement in an existing `.tex`, `.md`,
+`.sty`, `.cls`, or `.txt` file through the Lattice file transaction. Lattice
+keeps the before and after text in private turn history. Git checkpoints read
+the original manuscript files from the read-only mount. Undo uses the host's
+turn history and checks for concurrent changes. Bibliography edits go through
+the existing citation tools. Both the scratch workspace and checkpoints skip
+`.chem/`, ChemDraw and MestReNova source files. The original chemistry tools
+retain ownership of their documents, exports, and caches.
+
+Before a new provider turn, the embedded composer waits for Lattice to refresh
+the manuscript-only scratch mirror and fails closed if the host cannot do so.
+Steers during a live turn and in-turn comment reads do not refresh it, so a
+live turn's scratch state is not replaced; a queued draft refreshes when it
+becomes the next turn.
 
 The local probe uses Node 24, an NTFS checkout and `package/bin/x64/wxc-exec.exe`
 from `@microsoft/mxc-sdk@1.1.0`. It verifies the executor hash before launch.
@@ -64,27 +79,16 @@ partially probed: npm returned HTTP 200 and Anthropic returned HTTP 403.
 OpenAI timed out on this machine. No authenticated provider turn has been
 verified.
 
-The Windows GPUI Agent remains disabled. The implementation now creates a
-separate Synara home and sidecar for each project, denies the original project,
-and grants write access only to that project's staged root rather than its
-shared parent. The local probe also confirmed that MXC cannot deny one file
-under a writable project root while preserving ordinary writes: a denied
-descendant makes the writable policy too broad or too restrictive depending on
-the path combination. The host writeback policy still rejects protected paths
-before touching the original, but this does not match macOS direct-write
-protection. The project runtime and multi-window routing are not yet verified
-in the GPUI application.
+The packaged runtime must declare `windowsHostManuscript: 1`, which the
+Windows preparation script writes after applying the pinned Synara source
+patch. On startup, Lattice needs a bound project, compatible Git for Windows,
+the verified executor, and a successful MXC capability probe. Failure leaves
+the Agent unavailable.
 
-The implementation keeps the original project read-only to the sidecar and
-derives permitted writeback paths from completed Git checkpoints on the active
-thread; history replay and title changes supply no writeback paths. Before a
-transaction starts, the host compares staged bytes with the selected Git blob
-from the completed checkpoint or the turn-start checkpoint for Undo. It
-handles loose objects and packed refs. Divergent bytes, protected assets,
-missing objects, and Undo results that differ from the turn-start snapshot are
-preserved in staging for recovery. Packed-only Git objects fail closed; pack
-file reading is not implemented. The Node writeback helper is only for the
-probe fixture.
+The standalone MXC probe also checks read-only access to a fixture project
+with an explicit deny for its `.chem` cache and write access to a separate
+scratch directory. In that policy, reads of a manuscript succeed, direct
+manuscript edits and new `.bib` files fail, and the cache cannot be read.
 
 An MXC smoke test with TeX Live 2026 x64 produced a PDF and working forward
 and reverse SyncTeX with both `pdflatex` and `latexmk`. A separate figure
@@ -99,32 +103,24 @@ ingress and egress denied. The figure probe also passed with container UI
 isolation and clipboard and input injection blocked. This bridge still
 requires GPUI runtime validation.
 
-The Windows GPUI build and clean entry points share a per-project file lock
-with Agent writeback. Before publishing the first changes, the host records
-the project's NTFS identity in its private state. Future builds of that
-project, including watcher builds and builds after restarting Lattice, use
-MXC. Clean removes known hidden auxiliary files through the host.
+The Windows GPUI build and Clean entry points share a per-project file lock
+with Agent manuscript saves. Lattice records the project's NTFS identity
+before the first save. Subsequent builds, including those after a restart,
+execute project TeX under MXC. Clean removes recognized auxiliary files
+through the host.
 
 The isolated build reads the original project and writes to a separate
 temporary directory. The host validates the PDF and SyncTeX pair and
-publishes them through the project transaction. Auxiliaries for these builds
-use the hidden layout. The direct MXC probe passed with x64 TeX Live and
+publishes them through the project transaction alongside any root `.aux`,
+`.log`, `.bbl`, and `.blg` from that build, in the selected auxiliary layout.
+The direct MXC probe passed with x64 TeX Live and
 `latexmk -cd`, and SyncTeX resolved a source file in the original project.
 The integrated GPUI build and clean flows still need runtime validation.
 
-Normal and ChemEx project builds use the MXC TeX runner and host-side ChemEx
-preparation. The separate marked-PDF Review and export paths still use their
-existing runner. Windows Agent UI and checkpoint code remain dormant behind
-the startup gate. Acceptance must cover authenticated provider turns, citation
-tools with protected-file access denied, Review, Undo conflicts, rename
-writeback, restart recovery, per-project multi-window use, and behavior when
-MXC is unavailable. There is no UI flow yet for recovering an unpublished
-staging copy after restarting Lattice.
-
-The built-in Agent remains disabled in the GPUI Windows application, and this
-checkout currently has no GPUI Windows installer or release artifact. The
-existing experimental Tauri/NSIS installer instructions below do not package
-the GPUI application and must not be used to infer its release readiness.
+Release acceptance covers a real provider turn from `main.tex` save through
+preview, diff, and Undo, rejected protected writes by subprocesses, citations,
+concurrent edits, restart and multi-window isolation, and existing chemistry
+exports and caches.
 
 ## TeX distributions
 

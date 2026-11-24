@@ -1,4 +1,5 @@
 mod objects;
+#[cfg(test)]
 mod verify;
 
 use std::collections::BTreeMap;
@@ -16,6 +17,7 @@ pub(super) const CHECKPOINT_CONFIG: &[u8] =
 
 type GitOid = [u8; 20];
 
+#[cfg(test)]
 pub(super) use verify::verify_checkpoint_contents;
 
 pub(super) fn validate_checkpoint_root(root: &Root) -> io::Result<()> {

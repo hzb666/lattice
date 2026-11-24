@@ -5,8 +5,8 @@
 //! inside one Seatbelt profile, so in-process agents, provider CLIs, scripts,
 //! and delayed descendants all inherit the same protected-project write denial;
 //! the trusted parent app brokers the allowed bibliography mutations.
-//! Windows stays off until its sidecar can be confined to exactly one
-//! project's staged workspace.
+//! Windows uses the MXC project boundary and host-managed manuscript writes
+//! instead of this macOS-only extension guard.
 
 use std::path::Path;
 use std::process::Command;
@@ -17,12 +17,14 @@ pub(crate) const AGENT_PROTECTION_SANDBOX_PROFILE: &str = concat!(
     "(allow default)\n",
     "(deny file-write* (regex #\"(^|/)[.][cC][hH][eE][mM](/|$)|.*[.][bB][iI][bB]$|.*[.][cC][dD][xX]$|.*[.][cC][dD][xX][mM][lL]$|.*[.][mM][nN][oO][vV][aA]$|.*[.][mM][nN][jJ][sS]$|.*[.][mM][nN][lL]$|.*[.][mM][nN][lL][tT]$\"))",
 );
-/// Whether this platform blocks direct writes to protected project assets.
+/// Whether the legacy platform guard blocks direct writes to protected assets.
+/// Windows uses `windows_workspace` and is admitted separately by the runtime
+/// manifest and MXC capability probe.
 pub(super) const AVAILABLE: bool = cfg!(target_os = "macos");
 /// The `unsupported` state's message: English for logs and copied reports;
 /// the agent surfaces show their own localized notice for the state.
 pub(super) const MISSING: &str =
-    "The built-in agent is unavailable until Lattice can block direct writes to protected project assets on this platform.";
+    "The built-in agent's protected project runtime is unavailable for this platform, architecture, or project.";
 
 /// The sidecar's launch: `node` inside the guard, with Lattice's own `ps`
 /// replacement (`process_inspector`), which works only inside it.

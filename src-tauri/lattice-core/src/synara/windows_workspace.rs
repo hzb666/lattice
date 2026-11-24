@@ -1,12 +1,17 @@
-//! Host-side filesystem boundary for a writable MXC project copy.
+//! Host-side filesystem boundary for an isolated MXC project workspace.
 
 mod checkpoint_git;
+mod files;
+mod host_edits;
 mod native;
 mod snapshot;
 pub(super) mod tex_outputs;
+mod text_edit;
 mod transaction;
 
+pub use host_edits::{ProjectTextHistory, ProjectTextUndo};
 pub(super) use native::identity as file_identity;
+pub use text_edit::ProjectTextEdit;
 
 #[cfg(test)]
 mod tests;
@@ -27,22 +32,29 @@ pub(super) struct Workspace {
     staging: Root,
     baseline: Entries,
     recovery_required: bool,
+    host_managed: bool,
     _lease: Lease,
 }
 
 impl Workspace {
     /// Copy the project into a fresh stage. The caller owns stage cleanup.
+    #[cfg(test)]
     pub(super) fn prepare(original: &Path, staging: &Path) -> Result<Self, String> {
-        Self::open(original, staging, false).map_err(|error| error.to_string())
+        Self::open(original, staging, false, false).map_err(|error| error.to_string())
     }
 
     /// Reuse an existing stage only when its project contents match the writer's tree.
     /// The stage's root `.git` belongs to the sandbox and is reserved across restarts.
+    #[cfg(test)]
     pub(super) fn reopen(original: &Path, staging: &Path) -> Result<Self, String> {
-        Self::open(original, staging, true).map_err(|error| error.to_string())
+        Self::open(original, staging, true, false).map_err(|error| error.to_string())
     }
 
-    fn open(original: &Path, path: &Path, reuse: bool) -> io::Result<Self> {
+    pub(super) fn open_host_managed(original: &Path, staging: &Path) -> Result<Self, String> {
+        Self::open(original, staging, true, true).map_err(|error| error.to_string())
+    }
+
+    fn open(original: &Path, path: &Path, reuse: bool, host_managed: bool) -> io::Result<Self> {
         let original = Root::open(original)?;
         let (staging, created) = match Root::open(path) {
             Ok(root) => (root, false),
@@ -57,14 +69,26 @@ impl Workspace {
         let lease = Lease::acquire(&original, &staging)?;
         let mut recovery_required = false;
         let (baseline, initialize_checkpoint) = {
-            let initial = Snapshot::read(&original)?;
-            let stage = Snapshot::read(&staging)?;
-            let initialize_checkpoint = (created || (!reuse && stage.entries.is_empty()))
-                && !snapshot::has_checkpoint_root(&staging)?;
+            let initial = if host_managed {
+                Snapshot::read_manuscripts(&original)?
+            } else {
+                Snapshot::read_project(&original)?
+            };
+            let stage = if host_managed {
+                Snapshot::read_manuscripts(&staging)?
+            } else {
+                Snapshot::read(&staging)?
+            };
+            let initialize_checkpoint =
+                (host_managed || created || (!reuse && stage.entries.is_empty()))
+                    && !snapshot::has_checkpoint_root(&staging)?;
             if !initialize_checkpoint {
                 snapshot::validate_checkpoint_root(&staging)?;
             }
-            if reuse && !created {
+            if host_managed {
+                let steps = snapshot::plan_mirror(&initial, &stage)?;
+                transaction::run(&initial, &stage, steps, &mut recovery_required)?;
+            } else if reuse && !created {
                 if !snapshot::same_contents(&initial.entries, &stage.entries) {
                     return Err(invalid(
                         "Existing staging differs from the project and needs recovery",
@@ -88,7 +112,7 @@ impl Workspace {
                 snapshot::contextual(error, "Initialize checkpoint Git", &staging.path)
             })?;
         }
-        Ok(Self { original, staging, baseline, recovery_required, _lease: lease })
+        Ok(Self { original, staging, baseline, recovery_required, host_managed, _lease: lease })
     }
 
     #[cfg(test)]
@@ -96,6 +120,7 @@ impl Workspace {
         self.reconcile_inner(None, || Ok(())).map_err(|error| error.to_string())
     }
 
+    #[cfg(test)]
     pub(super) fn reconcile_checkpoint(
         &mut self, targets: &BTreeMap<PathBuf, String>,
         before_publish: impl FnOnce() -> io::Result<()>,
@@ -103,13 +128,20 @@ impl Workspace {
         self.reconcile_inner(Some(targets), before_publish).map_err(|error| error.to_string())
     }
 
+    #[cfg(test)]
     fn reconcile_inner(
         &mut self, targets: Option<&BTreeMap<PathBuf, String>>,
         before_publish: impl FnOnce() -> io::Result<()>,
     ) -> io::Result<Vec<PathBuf>> {
         self.check_ready()?;
+        if self.host_managed {
+            return Err(invalid(
+                "Checkpoint contents cannot write to the project",
+                &self.original.path,
+            ));
+        }
         let stage = Snapshot::read(&self.staging)?;
-        let original = Snapshot::read(&self.original)?;
+        let original = Snapshot::read_project(&self.original)?;
         let steps = snapshot::plan(&self.baseline, &stage, &original, true)?;
         if let Some(targets) = targets {
             snapshot::check_checkpoint_paths(&steps, targets)?;
@@ -138,11 +170,19 @@ impl Workspace {
 
     fn refresh_inner(&mut self) -> io::Result<()> {
         self.check_ready()?;
+        if self.host_managed {
+            let stage = Snapshot::read_manuscripts(&self.staging)?;
+            let original = Snapshot::read_manuscripts(&self.original)?;
+            let steps = snapshot::plan_mirror(&original, &stage)?;
+            transaction::run(&original, &stage, steps, &mut self.recovery_required)?;
+            self.baseline = original.entries;
+            return Ok(());
+        }
         let stage = Snapshot::read(&self.staging)?;
         if !snapshot::same_contents(&self.baseline, &stage.entries) {
             return Err(invalid("Staging has unpublished changes", &self.staging.path));
         }
-        let original = Snapshot::read(&self.original)?;
+        let original = Snapshot::read_project(&self.original)?;
         let steps = snapshot::plan(&stage.entries, &original, &stage, false)?;
         transaction::run(&original, &stage, steps, &mut self.recovery_required)?;
         self.baseline = original.entries;

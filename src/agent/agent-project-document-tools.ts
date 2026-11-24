@@ -1,5 +1,6 @@
 /* eslint-disable lingui/no-unlocalized-strings -- Protocol field names and Agent diagnostics are never rendered by Lattice UI. */
 
+import { invoke } from "@tauri-apps/api/core";
 import { isRecord } from "../app-utils";
 import {
   hasOnlyKeys,
@@ -70,4 +71,67 @@ export function executeAgentProjectDocumentToolRequest(
     }
     return { path, documentType: request.args.documentType, opened: true as const };
   });
+}
+
+export function replaceAgentProjectText(
+  value: unknown,
+  projectRoot: string | null,
+  executionRoot: string | null,
+): Promise<AgentToolResult<
+  typeof LATTICE_PROJECT_DOCUMENT_TOOL_RESULT,
+  { path: string; saved: true } | { conflictedPaths: string[] } | { paths: string[] }
+>> | null {
+  const request = parseToolEnvelope(value, SYNARA_PROJECT_DOCUMENT_TOOL_REQUEST, ["args"]);
+  const args = request?.args;
+  if (!request || !isRecord(args)
+    || (args.documentType !== "tex" && args.documentType !== "texUndo" && args.documentType !== "texHistory")) return null;
+  return runAgentTool(LATTICE_PROJECT_DOCUMENT_TOOL_RESULT, request.id as string, "manuscript_edit_failed", async () => {
+    if (!projectRoot || !executionRoot || (request.expiresAt as number) <= Date.now()) {
+      throw toolError("The isolated manuscript edit is unavailable or expired.", "manuscript_edit_unavailable");
+    }
+    const expiresAt = request.expiresAt;
+    if (args.documentType === "texHistory") {
+      const { threadId, turnId } = args;
+      if (!hasOnlyKeys(args, ["documentType", "threadId", "turnId"]) || !isTurnId(threadId) || !isTurnId(turnId)) {
+        throw toolError("Invalid manuscript history request.", "manuscript_edit_invalid");
+      }
+      const paths = await invoke<string[]>("agent_project_text_history", {
+        projectRoot, edit: { threadId, turnId, expiresAt },
+      });
+      return { paths };
+    }
+    if (args.documentType === "texUndo") {
+      const { threadId, turnIds, operationId, redo } = args;
+      if (
+        !hasOnlyKeys(args, ["documentType", "threadId", "turnIds", "operationId", "redo"])
+        || !isTurnId(threadId) || !isTurnId(operationId) || !Array.isArray(turnIds)
+        || turnIds.length === 0 || turnIds.length > 128 || !turnIds.every(isTurnId)
+        || typeof redo !== "boolean"
+      ) throw toolError("Invalid manuscript Undo request.", "manuscript_edit_invalid");
+      const conflictedPaths = await invoke<string[]>("agent_undo_project_text", {
+        projectRoot, edit: { threadId, turnIds, operationId, redo, expiresAt },
+      });
+      return { conflictedPaths };
+    }
+    const { path, oldText, newText, threadId, turnId } = args;
+    if (
+      !hasOnlyKeys(args, ["path", "documentType", "oldText", "newText", "threadId", "turnId"])
+      || !isTurnId(threadId) || !isTurnId(turnId)
+      || !isWorkspaceRelativePath(path)
+      || !/\.(?:tex|md|sty|cls|txt)$/i.test(path)
+      || typeof oldText !== "string" || oldText.length === 0 || oldText.length > 16_384
+      || typeof newText !== "string" || newText.length > 16_384
+    ) {
+      throw toolError("Invalid manuscript replacement.", "manuscript_edit_invalid");
+    }
+    await invoke("agent_replace_project_text", {
+      projectRoot,
+      edit: { path, oldText, newText, threadId, turnId, expiresAt },
+    });
+    return { path, saved: true as const };
+  });
+}
+
+function isTurnId(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= 256 && !value.includes("\0");
 }

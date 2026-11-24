@@ -32,15 +32,41 @@ pub(super) struct Snapshot<'a> {
     pub(super) root: &'a Root,
     pub(super) entries: Entries,
     pub(super) dirs: BTreeMap<PathBuf, Arc<File>>,
+    exclude_chem_cache: bool,
+    manuscripts_only: bool,
 }
 
 impl<'a> Snapshot<'a> {
-    pub(super) fn read(root: &'a Root) -> io::Result<Self> {
-        let mut snapshot = Self {
+    pub(super) fn empty(root: &'a Root) -> Self {
+        Self {
             root,
             entries: BTreeMap::new(),
             dirs: BTreeMap::from([(PathBuf::new(), Arc::clone(&root.directory))]),
-        };
+            exclude_chem_cache: false,
+            manuscripts_only: false,
+        }
+    }
+
+    pub(super) fn read(root: &'a Root) -> io::Result<Self> {
+        Self::scan(root, false, false)
+    }
+
+    pub(super) fn read_project(root: &'a Root) -> io::Result<Self> {
+        Self::scan(root, true, false)
+    }
+
+    pub(super) fn read_manuscripts(root: &'a Root) -> io::Result<Self> {
+        Self::scan(root, true, true)
+    }
+
+    pub(super) fn rescan(&self) -> io::Result<Self> {
+        Self::scan(self.root, self.exclude_chem_cache, self.manuscripts_only)
+    }
+
+    fn scan(root: &'a Root, exclude_chem_cache: bool, manuscripts_only: bool) -> io::Result<Self> {
+        let mut snapshot = Self::empty(root);
+        snapshot.exclude_chem_cache = exclude_chem_cache;
+        snapshot.manuscripts_only = manuscripts_only;
         let mut pending = vec![PathBuf::new()];
         while let Some(relative) = pending.pop() {
             let directory = Arc::clone(&snapshot.dirs[&relative]);
@@ -63,11 +89,22 @@ impl<'a> Snapshot<'a> {
                 continue;
             }
             let path = relative.join(name);
-            if !permitted_name(name) || !names.insert(folded) {
-                return Err(invalid("Ambiguous workspace name", &path));
+            if folded == ".CHEM" {
+                if self.exclude_chem_cache {
+                    continue;
+                }
+                return Err(invalid("Agent workspace contains a protected chemistry cache", &path));
             }
             if child.name.to_ascii_lowercase().starts_with(RECOVERY_PREFIX) {
                 return Err(invalid("Unfinished workspace transaction", &path));
+            }
+            if self.manuscripts_only
+                && (protected_path(&path) || (!child.directory && !manuscript(&path)))
+            {
+                continue;
+            }
+            if !permitted_name(name) || !names.insert(folded) {
+                return Err(invalid("Ambiguous workspace name", &path));
             }
             let identity = Identity { volume, index: child.index };
             let contents = if child.directory {
@@ -96,6 +133,12 @@ impl<'a> Snapshot<'a> {
             .map(Arc::as_ref)
             .ok_or_else(|| invalid("Missing workspace ancestor", path))
     }
+}
+
+pub(super) fn manuscript(path: &Path) -> bool {
+    path.extension().is_some_and(|extension| {
+        ["tex", "md", "sty", "cls", "txt"].iter().any(|name| extension.eq_ignore_ascii_case(name))
+    })
 }
 
 pub(super) fn split(path: &Path) -> io::Result<(&Path, &OsStr)> {
@@ -149,6 +192,19 @@ pub(super) struct Step {
 pub(super) fn plan(
     baseline: &Entries, source: &Snapshot<'_>, destination: &Snapshot<'_>, protect: bool,
 ) -> io::Result<Vec<Step>> {
+    plan_steps(baseline, source, destination, protect, false)
+}
+
+pub(super) fn plan_mirror(
+    source: &Snapshot<'_>, destination: &Snapshot<'_>,
+) -> io::Result<Vec<Step>> {
+    plan_steps(&destination.entries, source, destination, false, true)
+}
+
+fn plan_steps(
+    baseline: &Entries, source: &Snapshot<'_>, destination: &Snapshot<'_>, protect: bool,
+    retain_directories: bool,
+) -> io::Result<Vec<Step>> {
     let entries = &destination.entries;
     let paths: BTreeSet<_> = baseline.keys().chain(source.entries.keys()).collect();
     let mut steps = Vec::new();
@@ -156,6 +212,12 @@ pub(super) fn plan(
         let before = baseline.get(path).copied();
         let after = source.entries.get(path).copied();
         if before.map(|entry| entry.contents) == after.map(|entry| entry.contents) {
+            continue;
+        }
+        if retain_directories
+            && after.is_none()
+            && before.is_some_and(|entry| entry.contents == Contents::Directory)
+        {
             continue;
         }
         if protect && protected_path(path) {
@@ -178,6 +240,7 @@ pub(super) fn plan(
     Ok(steps)
 }
 
+#[cfg(test)]
 pub(super) fn check_checkpoint_paths(
     steps: &[Step], targets: &BTreeMap<PathBuf, String>,
 ) -> io::Result<()> {
@@ -202,7 +265,14 @@ pub(super) fn protected_path(path: &Path) -> bool {
                 || name.starts_with(".GIT")
                 || matches!(
                     name.as_str(),
-                    ".LATEXMKRC" | "LATEXMKRC" | ".LATTICE" | ".ENVRC" | ".OVERLEAF" | ".PAPERS"
+                    ".LATEXMKRC"
+                        | "LATEXMKRC"
+                        | ".LATTICE"
+                        | ".ENVRC"
+                        | ".OVERLEAF"
+                        | ".PAPERS"
+                        | "CHEMDRAW"
+                        | "MESTRENOVA"
                 )
                 || name.rsplit_once('.').is_some_and(|(_, extension)| {
                     matches!(extension, "BIB" | "CDX" | "CDXML" | "MNOVA" | "MNJS" | "MNL" | "MNLT")

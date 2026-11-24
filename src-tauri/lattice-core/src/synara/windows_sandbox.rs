@@ -147,6 +147,7 @@ fn check_capability(command: Command) -> io::Result<()> {
 
 fn check_probe_result(result: &serde_json::Value) -> io::Result<()> {
     let facts = &result["probes"];
+    let ui = &facts["uiCapabilities"];
     let supported = result["tier"].as_str() == Some("base-container")
         && result["needsDaclAugmentation"].as_bool() == Some(false)
         && [
@@ -155,7 +156,10 @@ fn check_probe_result(result: &serde_json::Value) -> io::Result<()> {
             "baseContainerSupportsIngressHostLoopbackAllow",
         ]
         .into_iter()
-        .all(|feature| facts[feature].as_bool() == Some(true));
+        .all(|feature| facts[feature].as_bool() == Some(true))
+        && ["canBlockClipboardRead", "canBlockClipboardWrite", "canBlockInputInjection"]
+            .into_iter()
+            .all(|feature| ui[feature].as_bool() == Some(true));
     if !supported {
         return Err(io::Error::new(
             io::ErrorKind::Unsupported,

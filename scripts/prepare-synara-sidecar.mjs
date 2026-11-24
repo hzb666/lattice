@@ -5,8 +5,9 @@
 //   node scripts/prepare-synara-sidecar.mjs [--allow-dirty]
 //
 // The source is scripts/synara-runtime.json's `sourceDirectory` unless
-// SYNARA_SOURCE_DIR names another checkout. --allow-dirty accepts uncommitted
-// changes and a revision other than the pin (development builds only).
+// SYNARA_SOURCE_DIR names another checkout. On macOS --allow-dirty accepts
+// uncommitted changes and a revision other than the pin for development.
+// Windows builds use the pin and the tracked patch in a temporary checkout.
 // SYNARA_MXC_PACKAGE_DIR can point to the extracted pinned MXC package.
 import {
   chmodSync,
@@ -27,12 +28,23 @@ import { pruneServerRuntime } from "./lib/synara-server-prune.mjs";
 import { capture, projectRoot, readJson, run, sha256, treeBytes, walkFiles, writeJson } from "./lib/util.mjs";
 import { NODE_RELEASES as TARGETS, prepareNodeRuntime } from "./lib/node-runtime.mjs";
 import { MXC_EXECUTOR, mxcExecutorMatches, stageMxcExecutor } from "./lib/mxc-executor.mjs";
-import { SYNARA_RUNTIME_INPUTS } from "./synara-runtime-inputs.mjs";
+import { prepareWindowsSynaraSource } from "./lib/synara-windows-source.mjs";
+import {
+  SYNARA_RUNTIME_INPUTS,
+  SYNARA_WINDOWS_RUNTIME_INPUTS,
+  SYNARA_WINDOWS_SOURCE_PATCH,
+} from "./synara-runtime-inputs.mjs";
 import { patchCodexHostProcess } from "./synara-codex-host.mjs";
 
 const runtimeConfig = readJson(join(projectRoot, "scripts/synara-runtime.json"));
 const allowDirty = process.argv.includes("--allow-dirty");
-const sourceRoot = resolve(projectRoot, process.env.SYNARA_SOURCE_DIR?.trim() || runtimeConfig.sourceDirectory);
+const sourceOverride = process.env.SYNARA_SOURCE_DIR?.trim();
+const configuredCheckout = resolve(projectRoot, sourceOverride || runtimeConfig.sourceDirectory);
+const localWindowsCheckout = join(projectRoot, ".synara-src");
+const sourceCheckout = !sourceOverride && process.platform === "win32" &&
+  !existsSync(join(configuredCheckout, ".git")) && existsSync(join(localWindowsCheckout, ".git"))
+  ? localWindowsCheckout
+  : configuredCheckout;
 const runtimeRoot = join(projectRoot, "src-tauri/synara-runtime");
 const cacheRoot = join(projectRoot, "node_modules/.cache/lattice/synara");
 const npmCache = join(projectRoot, "node_modules/.cache/lattice/npm");
@@ -45,7 +57,7 @@ const deviceHelperFiles = [
   "Sources/main.swift",
 ];
 
-const git = (args) => capture("git", args, { cwd: sourceRoot }).trim();
+const git = (args) => capture("git", args, { cwd: sourceRoot, env: sourceEnv }).trim();
 const fileSha256 = (path) => sha256(readFileSync(path));
 
 /**
@@ -97,12 +109,18 @@ function resolveBun() {
   const local = process.platform === "win32"
     ? join(projectRoot, "node_modules/bun/bin/bun.exe")
     : join(projectRoot, "node_modules/.bin/bun");
-  if (configured && existsSync(configured) && runsBun(configured)) return configured;
+  if (configured && existsSync(configured) && runsBun(configured)) {
+    return process.platform === "win32" ? resolve(configured) : configured;
+  }
   if (existsSync(local) && runsBun(local)) return local;
   try {
-    return capture(process.platform === "win32" ? "where" : "which", ["bun"], {
+    const candidates = capture(process.platform === "win32" ? "where" : "which", ["bun"], {
       stdio: ["ignore", "pipe", "ignore"],
     }).trim();
+    if (process.platform !== "win32") return candidates;
+    const executable = candidates.split(/\r?\n/).find((path) => /\.exe$/i.test(path) && runsBun(path));
+    if (!executable) throw new Error("No runnable bun.exe found.");
+    return executable;
   } catch {
     throw new Error(
       "Bun is required to build Synara. Install dependencies or set BUN_BIN to a Bun 1.4.4 or newer executable.",
@@ -218,7 +236,7 @@ function installServerRuntime(stageRoot) {
   run(
     process.platform === "win32" ? "npm.cmd" : "npm",
     ["install", "--omit=dev", "--package-lock=false", "--no-audit", "--no-fund"],
-    { cwd: serverRoot, env: { ...process.env, npm_config_cache: npmCache } },
+    { cwd: serverRoot, env: { ...sourceEnv, npm_config_cache: npmCache } },
   );
   const installedVersion = readJson(join(serverRoot, "node_modules/bibtex-tidy/package.json")).version;
   if (installedVersion !== bibtexTidyVersion) {
@@ -363,14 +381,14 @@ function buildWorkspace(workspaceDirectory, bun) {
     process.env.PATH ?? "",
   ].join(delimiter);
   const [shell, flag] = process.platform === "win32" ? ["cmd", "/c"] : ["sh", "-c"];
-  run(shell, [flag, command], { cwd: workspaceRoot, env: { ...process.env, PATH } });
+  run(shell, [flag, command], { cwd: workspaceRoot, env: { ...sourceEnv, PATH } });
 }
 
 // ---------------------------------------------------------------------------
 
-if (!existsSync(join(sourceRoot, ".git"))) {
+if (!existsSync(join(sourceCheckout, ".git"))) {
   throw new Error(
-    `Synara source is missing at ${sourceRoot}. Clone ${runtimeConfig.repository} there or set SYNARA_SOURCE_DIR.`,
+    `Synara source is missing at ${sourceCheckout}. Clone ${runtimeConfig.repository} there or set SYNARA_SOURCE_DIR.`,
   );
 }
 
@@ -384,15 +402,27 @@ if (!release.archive.includes(runtimeConfig.nodeVersion)) {
 }
 const nodeExecutable = target.includes("windows") ? "node.exe" : "node";
 const windowsMxc = target === "x86_64-pc-windows-msvc";
+const windowsHostManuscript = 1;
+const windowsPatchPath = join(projectRoot, SYNARA_WINDOWS_SOURCE_PATCH);
+if (windowsMxc && !existsSync(windowsPatchPath)) {
+  throw new Error(`The Windows Synara source patch is missing at ${windowsPatchPath}.`);
+}
+const windowsPatch = windowsMxc ? readFileSync(windowsPatchPath) : null;
+const windowsSourcePatchSha256 = windowsPatch === null ? null : sha256(windowsPatch);
+const windowsSource = windowsPatch === null
+  ? null
+  : prepareWindowsSynaraSource(sourceCheckout, runtimeConfig.revision, windowsPatch);
+const sourceRoot = windowsSource?.root ?? sourceCheckout;
+const sourceEnv = windowsSource?.env ?? process.env;
 
 const head = git(["rev-parse", "HEAD"]);
-const dirtyStatus = git(["status", "--short"]);
+const dirtyStatus = windowsMxc ? "" : git(["status", "--short"]);
 if (!allowDirty && dirtyStatus) {
   throw new Error(
     "Synara has uncommitted changes. Commit them to the maintained fork before building a release.",
   );
 }
-if (!allowDirty && head !== runtimeConfig.revision) {
+if ((windowsMxc || !allowDirty) && head !== runtimeConfig.revision) {
   throw new Error(
     `Synara is at ${head}, but Lattice pins ${runtimeConfig.revision}. Update scripts/synara-runtime.json intentionally after syncing and validating upstream.`,
   );
@@ -407,11 +437,15 @@ const migrationRuntimeSourceDigest = windowsMxc
 const buildKeyHash = createHash("sha256")
   .update(JSON.stringify(runtimeConfig))
   .update(target)
-  .update(sourceFingerprint(head));
+  .update(windowsMxc ? head : sourceFingerprint(head));
 for (const input of SYNARA_RUNTIME_INPUTS) {
   buildKeyHash.update(readFileSync(resolve(projectRoot, input)));
 }
-if (windowsMxc) buildKeyHash.update(readFileSync(new URL("./lib/mxc-executor.mjs", import.meta.url)));
+if (windowsPatch !== null) {
+  for (const input of SYNARA_WINDOWS_RUNTIME_INPUTS) {
+    buildKeyHash.update(input === SYNARA_WINDOWS_SOURCE_PATCH ? windowsPatch : readFileSync(join(projectRoot, input)));
+  }
+}
 const buildKey = buildKeyHash.digest("hex");
 const sourceDeviceHelperRoot = join(sourceRoot, "apps/server/native/device-helper");
 const existingManifestPath = join(runtimeRoot, "manifest.json");
@@ -430,7 +464,9 @@ if (existsSync(existingManifestPath)) {
     existingManifest.nodeVersion === runtimeConfig.nodeVersion &&
     existingManifest.bibtexTidyVersion === bibtexTidyVersion &&
     (!windowsMxc ||
-      (existingManifest.migrationRuntimeSourceDigest === migrationRuntimeSourceDigest &&
+      (existingManifest.windowsHostManuscript === windowsHostManuscript &&
+        existingManifest.windowsSourcePatchSha256 === windowsSourcePatchSha256 &&
+        existingManifest.migrationRuntimeSourceDigest === migrationRuntimeSourceDigest &&
         mxcExecutorMatches(runtimeRoot, existingManifest.mxcExecutor))) &&
     stagedFiles.every((path) => existsSync(join(runtimeRoot, path))) &&
     deviceHelperTreeMatches(sourceDeviceHelperRoot, join(runtimeRoot, "server/dist/device-helper"))
@@ -446,6 +482,7 @@ if (existsSync(existingManifestPath)) {
 }
 
 const bun = resolveBun();
+if (windowsMxc) run(bun, ["install", "--frozen-lockfile"], { cwd: sourceRoot, env: sourceEnv });
 
 /**
  * Reuse the previous `apps/web` build when nothing outside `apps/server` moved.
@@ -459,7 +496,7 @@ const bun = resolveBun();
  */
 const webBuildCachePath = join(cacheRoot, "web-build.json");
 const webArtifact = join(sourceRoot, "apps/web/dist/index.html");
-const webBuildKey = createHash("sha256")
+const webBuildKey = windowsMxc ? null : createHash("sha256")
   .update(sourceFingerprint(head, ["apps/server"]))
   .update("\0")
   .update(JSON.stringify(runtimeConfig))
@@ -475,16 +512,18 @@ function cachedWebBuildKey() {
 }
 
 const buildStartedAt = Date.now();
-if (cachedWebBuildKey() === webBuildKey) {
+if (webBuildKey !== null && cachedWebBuildKey() === webBuildKey) {
   console.log("Reusing the existing Synara web build (no change outside apps/server).");
 } else {
-  mkdirSync(cacheRoot, { recursive: true });
-  rmSync(webBuildCachePath, { force: true });
+  if (webBuildKey !== null) {
+    mkdirSync(cacheRoot, { recursive: true });
+    rmSync(webBuildCachePath, { force: true });
+  }
   buildWorkspace("apps/web", bun);
   if (!existsSync(webArtifact)) {
     throw new Error("The Synara web build did not produce apps/web/dist/index.html.");
   }
-  writeJson(webBuildCachePath, { webBuildKey });
+  if (webBuildKey !== null) writeJson(webBuildCachePath, { webBuildKey });
 }
 buildWorkspace("apps/server", bun);
 
@@ -548,7 +587,12 @@ try {
     target,
     nodeVersion: runtimeConfig.nodeVersion,
     nodeRuntime: "standalone",
-    ...(windowsMxc && { mxcExecutor: MXC_EXECUTOR, migrationRuntimeSourceDigest }),
+    ...(windowsMxc && {
+      mxcExecutor: MXC_EXECUTOR,
+      migrationRuntimeSourceDigest,
+      windowsHostManuscript,
+      windowsSourcePatchSha256,
+    }),
     bibtexTidyVersion,
     synaraVersion,
     synaraRevision: dirtyStatus ? `${head}+dirty` : head,

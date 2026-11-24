@@ -1,10 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
+import { invoke } from "@tauri-apps/api/core";
 import {
   executeAgentProjectDocumentToolRequest,
   parseAgentProjectDocumentToolRequest,
+  replaceAgentProjectText,
   SYNARA_PROJECT_DOCUMENT_TOOL_REQUEST,
   type AgentProjectDocumentToolRequest,
 } from "./agent-project-document-tools";
+
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
 function request(
   path: string,
@@ -63,6 +67,35 @@ describe("agent project document host protocol", () => {
     )).resolves.toMatchObject({
       ok: false,
       error: { code: "project_document_host_unavailable" },
+    });
+  });
+
+  it("routes an isolated manuscript edit to the native host and reports the save", async () => {
+    const envelope = {
+      ...request("unused.tldr", "board"),
+      args: {
+        path: "main.tex", documentType: "tex", oldText: "draft", newText: "revision",
+        threadId: "thread-1", turnId: "turn-1",
+      },
+    };
+    await expect(replaceAgentProjectText(envelope, null, "stage")).resolves.toMatchObject({ ok: false });
+    await expect(replaceAgentProjectText(envelope, "project", null)).resolves.toMatchObject({ ok: false });
+    await expect(replaceAgentProjectText({
+      ...envelope,
+      args: { ...envelope.args, path: "references.bib" },
+    }, "project", "stage")).resolves.toMatchObject({ ok: false });
+    expect(invoke).not.toHaveBeenCalled();
+
+    await expect(replaceAgentProjectText(envelope, "project", "stage")).resolves.toMatchObject({
+      ok: true,
+      result: { path: "main.tex", saved: true },
+    });
+    expect(invoke).toHaveBeenCalledExactlyOnceWith("agent_replace_project_text", {
+      projectRoot: "project",
+      edit: {
+        path: "main.tex", oldText: "draft", newText: "revision",
+        threadId: "thread-1", turnId: "turn-1", expiresAt: envelope.expiresAt,
+      },
     });
   });
 });

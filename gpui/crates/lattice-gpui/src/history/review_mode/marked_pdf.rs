@@ -100,9 +100,22 @@ impl MarkedPdf {
                 return;
             };
             let build_root = root.clone();
+            #[cfg(windows)]
+            let supervisor =
+                cx.update(|cx| crate::agent::runtime::AgentRuntime::get(cx).supervisor_for(&root));
             let built = cx
                 .background_executor()
                 .spawn(async move {
+                    #[cfg(windows)]
+                    return supervisor?.with_project_export_tex(&build_root, |tex| {
+                        lattice_core::latex::review_changes_pdf_with_tex(
+                            &build_root,
+                            &exports,
+                            export,
+                            tex,
+                        )
+                    });
+                    #[cfg(not(windows))]
                     lattice_core::latex::review_changes_pdf(&build_root, &exports, export)
                 })
                 .await;

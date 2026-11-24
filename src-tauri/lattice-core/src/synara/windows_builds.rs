@@ -27,6 +27,29 @@ pub struct ProjectBuild<'a> {
 }
 
 impl SynaraRuntime {
+    pub fn with_project_export_tex<T>(
+        &self, root: &Path,
+        work: impl FnOnce(Option<&crate::latex::ExportTex<'_>>) -> Result<T, String>,
+    ) -> Result<T, String> {
+        let tex = self.project_tex(root)?;
+        if !tex_isolated(tex.as_ref())? {
+            return work(None);
+        }
+        let control = self.control_dir();
+        let runtime = self
+            .server_entry
+            .ancestors()
+            .nth(3)
+            .ok_or("The bundled agent runtime has no directory.")?;
+        let sandbox = Preview { runtime, control: &control, project: root };
+        let run = |command, scratch: &Path, timeout, cancelled: &dyn Fn() -> bool| {
+            sandbox
+                .run_export(command, scratch, timeout, cancelled)
+                .map_err(|error| error.to_string())
+        };
+        work(Some(&run))
+    }
+
     pub fn build_project(&self, request: ProjectBuild<'_>) -> Result<BuildResult, String> {
         let tex = self.project_tex(request.root)?;
         if tex_isolated(tex.as_ref())? {
@@ -79,9 +102,7 @@ impl SynaraRuntime {
                     )
                     .map_err(|error| error.to_string())
             },
-            |output, document| {
-                tex_outputs::publish(request.root, output, document, AuxFiles::Hidden)
-            },
+            |output, document, layout| tex_outputs::publish(request.root, output, document, layout),
         )
     }
 

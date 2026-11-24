@@ -1997,20 +1997,12 @@ msgid "Agent is revising, {0} of {1} answered"
 msgstr "Agent is revising, {0} of {1} answered"
 
 #: src/agent/synara-loading-surface.tsx
-msgid "Agent isn’t available on Linux yet"
-msgstr "Agent isn’t available on Linux yet"
+msgid "Built-in Agent unavailable"
+msgstr "Built-in Agent unavailable"
 
 #: src/agent/synara-loading-surface.tsx
-msgid "Agent isn’t available on Windows yet"
-msgstr "Agent isn’t available on Windows yet"
-
-#: src/agent/synara-loading-surface.tsx
-msgid "Windows can isolate each project copy, but MXC cannot yet deny protected files below a writable project root while preserving ordinary Agent writes. Host writeback refuses protected changes, but this is not the macOS-equivalent boundary, so the built-in Agent stays off."
-msgstr "Windows can isolate each project copy, but MXC cannot yet deny protected files below a writable project root while preserving ordinary Agent writes. Host writeback refuses protected changes, but this is not the macOS-equivalent boundary, so the built-in Agent stays off."
-
-#: src/agent/synara-loading-surface.tsx
-msgid "On macOS, Lattice stops the Agent from editing .bib, .chem, ChemDraw, and MestReNova files directly, so every reference it adds is checked first. Linux doesn’t have that protection yet, so the Agent stays off here instead of running without it. Agent support for Linux is coming."
-msgstr "On macOS, Lattice stops the Agent from editing .bib, .chem, ChemDraw, and MestReNova files directly, so every reference it adds is checked first. Linux doesn’t have that protection yet, so the Agent stays off here instead of running without it. Agent support for Linux is coming."
+msgid "This platform does not provide the protected project boundary required by the built-in Agent."
+msgstr "This platform does not provide the protected project boundary required by the built-in Agent."
 
 #: src/agent/synara-permission-picker.tsx
 msgid "Agent permissions: {label}"
@@ -17344,10 +17336,6 @@ msgstr "This version of the agent runtime cannot proofread yet. Update Lattice t
 #: src/app/annotation-rounds.ts
 msgid "This version of the agent runtime cannot revise annotations yet. Update Lattice to use revisions."
 msgstr "This version of the agent runtime cannot revise annotations yet. Update Lattice to use revisions."
-
-#: src/agent/synara-loading-surface.tsx
-msgid "This Windows build cannot yet protect .bib files from direct agent edits. Use Claude Code or Codex in the Terminal panel. Features that require the built-in agent are unavailable."
-msgstr "This Windows build cannot yet protect .bib files from direct agent edits. Use Claude Code or Codex in the Terminal panel. Features that require the built-in agent are unavailable."
 
 #: src/platform/host-errors-workspace.ts
 msgid "This workspace is already open in the Lattice app."

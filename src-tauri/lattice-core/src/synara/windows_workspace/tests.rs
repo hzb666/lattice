@@ -1,4 +1,5 @@
 use std::fs::{self, OpenOptions};
+use std::os::windows::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 
 use super::{native, snapshot, transaction, Workspace};
@@ -23,6 +24,13 @@ impl Fixture {
     fn prepare(&self) -> Workspace {
         Workspace::prepare(&self.original, &self.stage).unwrap()
     }
+}
+
+fn text_edit(path: &str, old_text: &str, new_text: &str) -> super::ProjectTextEdit {
+    serde_json::from_value(serde_json::json!({
+        "path": path, "oldText": old_text, "newText": new_text, "expiresAt": u64::MAX,
+    }))
+    .unwrap()
 }
 
 #[test]
@@ -62,6 +70,141 @@ fn reconciles_changes_and_refreshes_citations_without_touching_checkpoints() {
     assert_eq!("checkpoint", fs::read_to_string(fixture.stage.join(".git/marker")).unwrap());
     assert_eq!("original git", fs::read_to_string(fixture.original.join(".git/marker")).unwrap());
     assert!(workspace.reconcile().unwrap().is_empty());
+}
+
+#[test]
+fn edits_only_the_quoted_tex_in_staging_until_publication() {
+    let fixture = Fixture::new();
+    let manuscript = fixture.original.join("main.tex");
+    fs::write(&manuscript, "draft\r\nbody body\r\n").unwrap();
+    fs::write(fixture.original.join("references.bib"), "draft").unwrap();
+    let mut workspace = fixture.prepare();
+    let control = fixture.scratch.path();
+    for path in [
+        "references.bib",
+        ".chem/main.tex",
+        "ChemDraw/main.tex",
+        "MestReNova/main.tex",
+        "../main.tex",
+        "new.tex",
+        "MAIN.TEX",
+    ] {
+        assert!(workspace.edit_text(control, &text_edit(path, "draft", "revision")).is_err());
+    }
+    assert!(workspace.edit_text(control, &text_edit("main.tex", "body", "revision")).is_err());
+    workspace.edit_text(control, &text_edit("main.tex", "draft", "revision")).unwrap();
+    assert!(workspace.edit_text(control, &text_edit("main.tex", "draft", "stale")).is_err());
+    assert_eq!("draft\r\nbody body\r\n", fs::read_to_string(&manuscript).unwrap());
+    assert_eq!(
+        "revision\r\nbody body\r\n",
+        fs::read_to_string(fixture.stage.join("main.tex")).unwrap()
+    );
+    assert_eq!(vec![PathBuf::from("main.tex")], workspace.reconcile().unwrap());
+    assert_eq!("revision\r\nbody body\r\n", fs::read_to_string(manuscript).unwrap());
+}
+
+#[test]
+fn host_managed_workspace_saves_original_and_undoes_after_reopen_without_caches() {
+    let fixture = Fixture::new();
+    let manuscript = fixture.original.join("main.tex");
+    fs::write(&manuscript, "draft\n\nunchanged\n\ncoauthor\n").unwrap();
+    fs::create_dir(fixture.original.join(".chem")).unwrap();
+    for folder in ["ChemDraw/cache", "MestReNova/cache"] {
+        fs::create_dir_all(fixture.original.join(folder)).unwrap();
+    }
+    for path in [".chem/cache.txt", "references.bib", "molecule.cdxml", "spectrum.mnova"] {
+        fs::write(fixture.original.join(path), "protected").unwrap();
+    }
+    for path in ["ChemDraw/cache/session.tex", "MestReNova/cache/session.txt"] {
+        fs::write(fixture.original.join(path), "private cache").unwrap();
+    }
+    let control = fixture.scratch.path();
+    let mut workspace = Workspace::open_host_managed(&fixture.original, &fixture.stage).unwrap();
+    for path in [
+        ".chem",
+        "ChemDraw",
+        "MestReNova",
+        "references.bib",
+        "molecule.cdxml",
+        "spectrum.mnova",
+    ] {
+        assert!(!fixture.stage.join(path).exists(), "{path}");
+    }
+    let edit = serde_json::from_value(serde_json::json!({
+        "path": "main.tex", "oldText": "draft", "newText": "revision",
+        "threadId": "thread", "turnId": "turn", "expiresAt": u64::MAX,
+    }))
+    .unwrap();
+    workspace.edit_original(control, &edit, || Ok(())).unwrap();
+    assert_eq!("revision\n\nunchanged\n\ncoauthor\n", fs::read_to_string(&manuscript).unwrap());
+    fs::write(fixture.stage.join("main.tex"), "untrusted scratch edit").unwrap();
+    assert!(workspace.reconcile().is_err());
+    drop(workspace);
+
+    fs::write(&manuscript, "revision\n\nunchanged\n\nwriter changes\n").unwrap();
+    let mut workspace = Workspace::open_host_managed(&fixture.original, &fixture.stage).unwrap();
+    let undo = serde_json::from_value(serde_json::json!({
+        "threadId": "thread", "turnIds": ["turn"], "operationId": "undo", "expiresAt": u64::MAX,
+    }))
+    .unwrap();
+    for _ in 0..2 {
+        assert!(workspace.undo_original(control, &undo, || Ok(())).unwrap().is_empty());
+        assert_eq!(
+            "draft\n\nunchanged\n\nwriter changes\n",
+            fs::read_to_string(&manuscript).unwrap()
+        );
+    }
+    let restore = serde_json::from_value(serde_json::json!({
+        "threadId": "thread", "turnIds": ["turn"], "operationId": "undo", "redo": true,
+        "expiresAt": u64::MAX,
+    }))
+    .unwrap();
+    assert!(workspace.undo_original(control, &restore, || Ok(())).unwrap().is_empty());
+    assert_eq!(
+        "revision\n\nunchanged\n\nwriter changes\n",
+        fs::read_to_string(manuscript).unwrap()
+    );
+}
+
+#[test]
+fn copies_and_reopens_without_opening_locked_chemistry_caches() {
+    let fixture = Fixture::new();
+    let caches = [
+        ".chem/molecules.sqlite",
+        ".chem/cache/chemdraw/drawing.svg",
+        "figures/.ChEm/cache/mestrenova/spectrum.pdf",
+    ]
+    .map(|path| fixture.original.join(path));
+    for cache in &caches {
+        fs::create_dir_all(cache.parent().unwrap()).unwrap();
+        fs::write(cache, "original cache").unwrap();
+    }
+    let locks = caches
+        .each_ref()
+        .map(|path| OpenOptions::new().read(true).write(true).share_mode(0).open(path).unwrap());
+    fs::write(fixture.original.join("paper.tex"), "draft").unwrap();
+    for asset in ["figures/drawing.cdxml", "figures/spectrum.mnova"] {
+        fs::write(fixture.original.join(asset), "source asset").unwrap();
+    }
+
+    let mut workspace = fixture.prepare();
+    assert!(!fixture.stage.join(".chem").exists());
+    assert!(!fixture.stage.join("figures/.ChEm").exists());
+    for asset in ["figures/drawing.cdxml", "figures/spectrum.mnova"] {
+        assert_eq!("source asset", fs::read_to_string(fixture.stage.join(asset)).unwrap());
+    }
+
+    fs::write(fixture.original.join("paper.tex"), "writer edit").unwrap();
+    workspace.refresh().unwrap();
+    assert_eq!("writer edit", fs::read_to_string(fixture.stage.join("paper.tex")).unwrap());
+    fs::write(fixture.stage.join("paper.tex"), "agent edit").unwrap();
+    assert_eq!(vec![PathBuf::from("paper.tex")], workspace.reconcile().unwrap());
+    drop(workspace);
+    Workspace::reopen(&fixture.original, &fixture.stage).unwrap();
+    drop(locks);
+    for cache in &caches {
+        assert_eq!("original cache", fs::read_to_string(cache).unwrap());
+    }
 }
 
 #[test]
@@ -288,7 +431,7 @@ fn checkpoint_repository_supports_synara_tree_capture_without_project_git() {
     let start = "refs/lattice/checkpoints/bootstrap/turn-start/thread";
     let baseline = run_git(&["update-ref", start, "HEAD"], &index).unwrap();
     assert!(baseline.status.success(), "{}", String::from_utf8_lossy(&baseline.stderr));
-    fs::write(&stage, "after").unwrap();
+    workspace.edit_text(fixture.scratch.path(), &text_edit("paper.tex", "draft", "after")).unwrap();
     let added = run_git(&["add", "-A", "--", "."], &index).unwrap();
     assert!(added.status.success(), "{}", String::from_utf8_lossy(&added.stderr));
     let tree = run_git(&["write-tree"], &index).unwrap();

@@ -236,7 +236,22 @@ impl ExportChangesSheet {
         );
         let exports = self.exports.clone();
         let export = exports.begin();
+        #[cfg(windows)]
+        let supervisor = crate::agent::runtime::AgentRuntime::get(cx).supervisor_for(&root);
         let run = cx.background_executor().spawn(async move {
+            #[cfg(windows)]
+            return supervisor?.with_project_export_tex(&root, |tex| {
+                lattice_core::latex::export_changes_pdf_with_tex(
+                    &root,
+                    &from,
+                    to.as_deref(),
+                    options,
+                    &exports,
+                    export,
+                    tex,
+                )
+            });
+            #[cfg(not(windows))]
             lattice_core::latex::export_changes_pdf(
                 &root,
                 &from,

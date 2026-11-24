@@ -21,8 +21,11 @@ mod hook;
 mod tests;
 
 use super::super::build::{run_tracked, ActiveBuild};
+use super::super::changes::export_source_path;
 use super::super::{default_root_document, BuildSteps};
-use super::{stage_with, test_build_keeping, ArxivChecks, ArxivOptions, CompileCheck, Scratch};
+use super::{
+    stage_with, test_build_with_tex, ArxivChecks, ArxivOptions, CompileCheck, ExportTex, Scratch,
+};
 use crate::project;
 use hook::{Placed, Record};
 use regex::Regex;
@@ -32,6 +35,7 @@ use std::fs;
 use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
+use std::time::Duration;
 use walkdir::WalkDir;
 
 /// The first line of an editable figure's entry file.
@@ -79,6 +83,12 @@ pub struct JournalExport {
 pub fn export(
     root: &Path, parent: &Path, options: JournalOptions,
 ) -> Result<JournalExport, String> {
+    export_with_tex(root, parent, options, None)
+}
+
+pub fn export_with_tex(
+    root: &Path, parent: &Path, options: JournalOptions, tex: Option<&ExportTex<'_>>,
+) -> Result<JournalExport, String> {
     let root = root.canonicalize().map_err(|error| error.to_string())?;
     let manifest = project::read_manifest(&root)?;
     let document = default_root_document(&manifest)?.path.clone();
@@ -87,7 +97,7 @@ pub fn export(
         return Err("This paper has no figure made from a drawing to export.".to_string());
     }
     let scratch = Scratch::new()?;
-    let (pdf, record) = typeset(&root, &document, &manifest.engine, &entries, &scratch.0)?;
+    let (pdf, record) = typeset(&root, &document, &manifest.engine, &entries, &scratch.0, tex)?;
     let placed = placed_entries(&root, &record.figures, &entries, &document);
     if placed.is_empty() {
         return Err("No figure made from a drawing was found in the typeset paper.".to_string());
@@ -124,7 +134,17 @@ pub fn export(
         }
     }
     let article = if options.article {
-        article(&root, &document, &entries, &placed, &names, figure_files, &folder, &mut problems)?
+        article(
+            &root,
+            &document,
+            &entries,
+            &placed,
+            &names,
+            figure_files,
+            &folder,
+            &mut problems,
+            tex,
+        )?
     } else {
         None
     };
@@ -217,8 +237,13 @@ fn clean_path(path: &str) -> String {
 /// Typeset the paper in `scratch` with the hook read first: its PDF and what the hook recorded.
 fn typeset(
     root: &Path, document: &str, engine: &str, entries: &BTreeMap<String, String>, scratch: &Path,
+    tex: Option<&ExportTex<'_>>,
 ) -> Result<(Vec<u8>, Record), String> {
-    let source = project::safe_path(root, document)?;
+    let source = if tex.is_some() {
+        export_source_path(root, document)?
+    } else {
+        project::safe_path(root, document)?
+    };
     let directory = source.parent().unwrap_or(root).to_path_buf();
     let stem = source.file_stem().and_then(|stem| stem.to_str()).unwrap_or("paper");
     let job = format!("{stem}-journal");
@@ -260,13 +285,17 @@ fn typeset(
         .arg(format!("\\input{{{}}}\\input{{{file_name}}}", tex_path(&hook_file)));
     // As the build reads it: a root in a subfolder finds `\input{figures/x}` from the project folder.
     super::super::search_paths::search_project_folder(&mut command, document);
-    let (_, stopped) = run_tracked(
-        command,
-        &ActiveBuild::default(),
-        &BuildSteps::new(|_, _| {}),
-        "Could not start TeX. Install MacTeX or TeX Live. ",
-        "TeX exited unexpectedly: ",
-    )?;
+    let (_, stopped) = if let Some(tex) = tex {
+        tex(command, scratch, Duration::from_secs(10 * 60), &|| false)?
+    } else {
+        run_tracked(
+            command,
+            &ActiveBuild::default(),
+            &BuildSteps::new(|_, _| {}),
+            "Could not start TeX. Install MacTeX or TeX Live. ",
+            "TeX exited unexpectedly: ",
+        )?
+    };
     if stopped {
         return Err("Typesetting the paper for the export stopped.".to_string());
     }
@@ -424,7 +453,7 @@ fn inline_entries(
 fn article(
     root: &Path, document: &str, entries: &BTreeMap<String, String>, placed: &[(String, Placed)],
     names: &[String], figure_files: BTreeMap<String, Vec<u8>>, folder: &Path,
-    problems: &mut Vec<String>,
+    problems: &mut Vec<String>, tex: Option<&ExportTex<'_>>,
 ) -> Result<Option<CompileCheck>, String> {
     let mut replaced = BTreeMap::new();
     // An entry the paper reads twice becomes the first of its figures.
@@ -460,7 +489,7 @@ fn article(
     let checks = ArxivChecks::default();
     let check = checks.begin();
     let built = folder.join(document).with_extension("pdf");
-    let result = test_build_keeping(&pack, &checks, check, Some(&built))?;
+    let result = test_build_with_tex(&pack, &checks, check, Some(&built), tex)?;
     if result.error.is_some() || !built.is_file() {
         problems.push("The source pack did not build on its own; see its log.".to_string());
     }
