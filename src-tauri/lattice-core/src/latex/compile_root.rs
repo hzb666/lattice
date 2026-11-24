@@ -1,6 +1,7 @@
 //! Which document a build compiles: the manifest default, or a one-off root
 //! the open file names for this build alone.
 
+use super::changes::input_loop::flattened;
 use super::default_root_document;
 use crate::models::ProjectManifest;
 use crate::project;
@@ -66,9 +67,27 @@ pub(super) fn choose_compile_root(root: &Path, open_document: Option<&str>) -> R
 /// The root the open file makes a build compile, when it wins over the
 /// manifest default ([`choose_compile_root`]'s rule).
 fn open_target(root: &Path, open_document: Option<&str>) -> Option<project::CompileRoot> {
-    open_document
-        .and_then(|open| project::resolve_compile_root(root, open))
+    let open = open_document?;
+    project::resolve_compile_root(root, open)
+        .or_else(|| including_root(root, open))
         .filter(|target| target.one_off || !project::main_document_chosen(root))
+}
+
+/// Select the root that includes an open chapter when the current default
+/// points at a different root document.
+fn including_root(root: &Path, open: &str) -> Option<project::CompileRoot> {
+    let open = open.trim().replace('\\', "/");
+    let manifest = project::read_manifest(root).ok()?;
+    let default = &default_root_document(&manifest).ok()?.path;
+    let reads = |document: &str| flattened(root, document).contains(&open);
+    if reads(default) {
+        return None;
+    }
+    let document = manifest
+        .root_documents
+        .iter()
+        .find(|document| &document.path != default && reads(&document.path))?;
+    Some(project::CompileRoot { path: document.path.clone(), one_off: false })
 }
 
 /// The document a build started with `open_document` in the editor would
@@ -156,6 +175,42 @@ mod tests {
         // A chapter, or no .tex open, builds the default.
         assert_eq!(target(Some("cvpr/sec/intro.tex")), "cvpr/supp_v3.tex");
         assert_eq!(target(None), "cvpr/supp_v3.tex");
+    }
+
+    /// A chapter compiles the one root that reads it, even after a different
+    /// root was built most recently.
+    #[test]
+    fn an_included_chapter_builds_its_root_after_another_root_was_built() {
+        let root = TempDir::new("chapter-root");
+        project::write_manifest(&root, &project::default_manifest("paper")).unwrap();
+        root.write(
+            "main.tex",
+            "\\documentclass{article}\n\\begin{document}\n\\input{sec/experiments}\n\\end{document}\n",
+        );
+        root.write("rebuttal.tex", "\\documentclass{article}\n\\begin{document}x\\end{document}\n");
+        root.write("sec/experiments.tex", "\\section{Experiments}\n");
+        root.write("sec/notes.tex", "\\section{Notes}\n");
+        let manifest = || project::read_manifest(&root).unwrap();
+        let compiled = || compiled_document(&root, &manifest()).unwrap();
+
+        choose_compile_root(&root, Some("main.tex")).unwrap();
+        choose_compile_root(&root, Some("rebuttal.tex")).unwrap();
+        assert_eq!(compiled(), "rebuttal.tex");
+
+        choose_compile_root(&root, Some("sec/experiments.tex")).unwrap();
+        assert_eq!(compiled(), "main.tex");
+        assert_eq!(
+            build_target(&root, &manifest(), Some("sec/experiments.tex")).unwrap(),
+            "main.tex"
+        );
+
+        choose_compile_root(&root, Some("rebuttal.tex")).unwrap();
+        choose_compile_root(&root, Some("sec/notes.tex")).unwrap();
+        assert_eq!(compiled(), "rebuttal.tex");
+
+        project::choose_root_document(&root, "rebuttal.tex").unwrap();
+        choose_compile_root(&root, Some("sec/experiments.tex")).unwrap();
+        assert_eq!(compiled(), "rebuttal.tex");
     }
 
     /// The captain's project: main.tex and main_v2.tex both declare a class.
