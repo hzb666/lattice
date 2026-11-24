@@ -224,6 +224,16 @@ function installServerRuntime(stageRoot) {
   const serverRoot = join(stageRoot, "server");
   mkdirSync(serverRoot, { recursive: true });
   cpSync(join(sourceRoot, "apps/server/dist"), join(serverRoot, "dist"), { recursive: true });
+  const clientIndex = join(serverRoot, "dist/client/index.html");
+  const clientHtml = readFileSync(clientIndex, "utf8");
+  if (!clientHtml.includes("</head>")) {
+    throw new Error("The staged Synara client is missing its document head.");
+  }
+  writeFileSync(clientIndex, clientHtml.replace("</head>", `<style>
+html[data-synara-embed="true"] :is(.chat-composer-shell, .chat-composer-surface) {
+  corner-shape: round;
+}
+</style></head>`));
   writeJson(join(serverRoot, "package.json"), {
     name: "@lattice/synara-runtime",
     private: true,
