@@ -198,6 +198,10 @@ It keeps upstream's theme-specification layout (palette, typography, layout, fix
 Open Slide is MIT licensed, Copyright (c) 2026 Yiwei Ho, under the same MIT text as the section above.
 The Open Slide runtime package itself is attributed in the generated Open Slide section below.
 
+## Neovim API contract (`docs/plugins.md`, "Compatibility")
+
+The plugin API's compatibility rules are adapted from the `api-contract` section of Neovim's `runtime/doc/api.txt` ([neovim/neovim](https://github.com/neovim/neovim), Apache-2.0, Copyright Neovim contributors). The text was rewritten for Lattice; no Neovim code is included.
+
 ## Ioskeley Mono (`src/assets/fonts/ioskeley-mono/`)
 
 The editor and code face is [Ioskeley Mono](https://github.com/ahatem/IoskeleyMono) v2.0.0, Copyright (c) 2025 Ahmed Hatem, a custom build of [Iosevka](https://github.com/be5invis/Iosevka), Copyright (c) 2015-2026 Renzhi Li.
