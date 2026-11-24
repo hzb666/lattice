@@ -52,17 +52,20 @@ pub fn urls(endpoints: &[&str], asset: &str) -> Vec<String> {
         .collect()
 }
 
-/// This app's source: the flavor's feeds and the updater's key, or the one
+/// This app's source: the updater's feed and signing key, or the one
 /// archive `LATTICE_TYPST_HELPER_URL` names (a local file, for rehearsing a
 /// release), still checked with that key.
 pub fn source() -> Option<Source> {
     let asset = asset()?;
-    let public_key = crate::updater::channel()?.public_key;
+    let channel = crate::updater::channel()?;
     let urls = match std::env::var("LATTICE_TYPST_HELPER_URL") {
         Ok(url) if !url.is_empty() => vec![url],
-        _ => urls(crate::flavor::current().endpoints, &asset),
+        _ => urls(&[channel.endpoint.as_str()], &asset),
     };
-    Some(Source { urls, public_key })
+    Some(Source {
+        urls,
+        public_key: channel.public_key,
+    })
 }
 
 /// The archive's size, from the first address that answers, for the
