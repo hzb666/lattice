@@ -18,12 +18,14 @@ struct Destination {
 /// folder, else `default`. A remembered folder on a drive that is not
 /// mounted, or one deleted since, quietly gives way to the default rather
 /// than failing the download.
-pub fn download_parent(config_dir: &Path, default: &Path) -> PathBuf {
+pub fn download_parent(
+    config_dir: &Path, default: impl FnOnce() -> Result<PathBuf, String>,
+) -> Result<PathBuf, String> {
     (fs::read_to_string(config_dir.join(DESTINATION_FILE)).ok())
         .and_then(|raw| serde_json::from_str::<Destination>(&raw).ok())
         .map(|destination| destination.folder)
         .filter(|folder| folder.is_dir())
-        .unwrap_or_else(|| default.to_path_buf())
+        .map_or_else(default, Ok)
 }
 
 /// Remember `folder` as where the next download goes. Best effort: failing
@@ -47,14 +49,11 @@ pub fn check_download_parent(folder: &Path) -> Result<(), String> {
     if !folder.is_dir() {
         return Err("That folder no longer exists. Choose another one.".to_string());
     }
-    let probe = folder.join(format!(".lattice-write-check-{}", std::process::id()));
-    match fs::File::create(&probe) {
-        Ok(_) => {
-            let _ = fs::remove_file(&probe);
-            Ok(())
-        }
-        Err(_) => Err("Lattice can't save files in that folder. Choose another one.".to_string()),
-    }
+    tempfile::Builder::new()
+        .prefix(".lattice-write-check-")
+        .tempfile_in(folder)
+        .map(drop)
+        .map_err(|_| "Lattice can't save files in that folder. Choose another one.".to_string())
 }
 
 #[cfg(test)]
@@ -66,16 +65,18 @@ mod tests {
     fn a_download_goes_where_the_last_one_went_while_that_folder_is_there() {
         let (config, default, chosen) =
             (TempDir::new("config"), TempDir::new("default"), TempDir::new("chosen"));
-        assert_eq!(download_parent(&config, &default), default.to_path_buf());
+        let fallback = || Ok(default.to_path_buf());
+        assert_eq!(download_parent(&config, fallback).unwrap(), default.to_path_buf());
 
         remember_download_parent(&config, &chosen);
-        assert_eq!(download_parent(&config, &default), chosen.to_path_buf());
+        let saved = download_parent(&config, || Err("Documents is unavailable".into())).unwrap();
+        assert_eq!(saved, chosen.to_path_buf());
 
         let gone = chosen.join("gone");
         remember_download_parent(&config, &gone);
-        assert_eq!(download_parent(&config, &default), default.to_path_buf());
+        assert_eq!(download_parent(&config, fallback).unwrap(), default.to_path_buf());
         fs::write(config.join(DESTINATION_FILE), "not json").unwrap();
-        assert_eq!(download_parent(&config, &default), default.to_path_buf());
+        assert_eq!(download_parent(&config, fallback).unwrap(), default.to_path_buf());
     }
 
     #[test]
@@ -83,6 +84,12 @@ mod tests {
         let folder = TempDir::new("writable");
         assert!(check_download_parent(&folder).is_ok());
         assert_eq!(fs::read_dir(&folder).unwrap().count(), 0, "the check leaves nothing behind");
+
+        let existing = folder.join(format!(".lattice-write-check-{}", std::process::id()));
+        fs::write(&existing, "keep").unwrap();
+        assert!(check_download_parent(&folder).is_ok());
+        assert_eq!(fs::read_to_string(existing).unwrap(), "keep");
+        assert_eq!(fs::read_dir(&folder).unwrap().count(), 1);
 
         assert!(check_download_parent(&folder.join("missing"))
             .unwrap_err()

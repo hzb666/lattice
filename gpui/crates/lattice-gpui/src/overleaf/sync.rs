@@ -102,7 +102,7 @@ pub fn reopen_local_copy(
 /// Where a download goes: the folder the last one went to, else
 /// `Documents/Overleaf Projects` (`overleaf_download_parent`).
 pub fn download_parent() -> Result<PathBuf, String> {
-    Ok(overleaf::download_parent(&config_dir(), &projects_dir()?))
+    overleaf::download_parent(&config_dir(), projects_dir)
 }
 
 /// Whether a project can be downloaded into `parent`, a folder just chosen.
