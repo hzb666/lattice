@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex};
 
 use base64::Engine;
 use blake2::{Blake2b512, Digest as _};
+use lattice_theme::AccentChoice;
 use ring::signature::{Ed25519KeyPair, KeyPair};
 
 use super::*;
@@ -241,6 +242,7 @@ fn installs_record_their_version_offer_updates_and_report_blocks() {
     f.site.publish(&f.key, 2, &[(ink, "1.1.0"), ("dev.example.bad", "1.0.0")], bad);
     let listing = f.registry.listing(&f.store, true);
     assert_eq!(listing.installed[0].update.as_deref(), Some("1.1.0"));
+    assert_eq!(listing.blocked_offers.keys().collect::<Vec<_>>(), ["dev.example.bad"]);
     let refused = f.registry.install_theme(&f.store, "dev.example.bad").unwrap_err();
     assert_eq!(refused, "dev.example.bad 1.0.0 is blocked: Phishes.");
     assert!(f.store.get("dev.example.bad").is_none());
@@ -256,6 +258,43 @@ fn installs_record_their_version_offer_updates_and_report_blocks() {
         (updated.version.as_str(), &updated.update, &updated.blocked),
         ("1.1.0", &None, &None)
     );
+}
+
+#[test]
+fn the_kill_switch_turns_a_disabled_theme_off_and_leaves_a_warned_one_on() {
+    let f = fixture();
+    let ink = "dev.example.ink";
+    let applied = || {
+        f.registry.resolve(&f.store, Some(ink), Appearance::Dark, AccentChoice::ThemeDefault).theme
+    };
+    let block = || {
+        let themes = f.registry.list_themes(&f.store);
+        themes.into_iter().find(|theme| theme.id == ink).and_then(|theme| theme.blocked)
+    };
+    f.site.publish(&f.key, 1, &[(ink, "1.0.0")], NO_BLOCKS);
+    f.registry.listing(&f.store, true);
+    f.registry.install_theme(&f.store, ink).unwrap();
+    assert_eq!((applied().as_deref(), block()), (Some(ink), None));
+
+    let warn =
+        r#"[{"id":"dev.example.ink","versions":"*","action":"warn","reason":"Low contrast."}]"#;
+    f.site.publish(&f.key, 2, &[(ink, "1.0.0")], warn);
+    f.registry.listing(&f.store, true);
+    assert_eq!(applied().as_deref(), Some(ink));
+    assert_eq!(block().unwrap().action, "warn");
+
+    let disable = r#"[{"id":"dev.example.ink","versions":"<=1.0.0","action":"disable","reason":"Phishes.","url":"https://example.com/1"}]"#;
+    f.site.publish(&f.key, 3, &[(ink, "1.0.0")], disable);
+    f.registry.listing(&f.store, true);
+    assert_eq!(applied(), None);
+    assert_eq!(block().unwrap().url.as_deref(), Some("https://example.com/1"));
+
+    f.site.take_down();
+    f.registry.listing(&f.store, true);
+    assert_eq!(applied(), None);
+
+    f.store.install_text(&theme_file(ink, "2.0.0")).unwrap();
+    assert_eq!((applied().as_deref(), block()), (Some(ink), None));
 }
 
 #[test]

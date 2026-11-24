@@ -50,6 +50,7 @@ pub struct ThemeInfo {
     pub description: String,
     pub source: ThemeSource,
     pub variants: Vec<VariantInfo>,
+    pub blocked: Option<crate::registry::BlockedEntry>,
 }
 
 impl ThemeInfo {
@@ -91,6 +92,7 @@ impl ThemeInfo {
             description: theme.description.clone(),
             source,
             variants,
+            blocked: None,
         }
     }
 }

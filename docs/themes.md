@@ -93,12 +93,23 @@ folder installs or selects a theme.
 ## Theme market
 
 `lattice-core::registry` fetches the signed index and block list from the
-Lattice registry. Both signatures bind the file name and serial; refreshes
-reject invalid signatures, mismatched serials and rollback to an older list.
-The last verified pair is cached for offline use. Theme downloads require
-HTTPS and must match the signed size, SHA-256, id and version before install.
-The signed block list can prevent an unsafe version from being installed and
-marks an already installed version for review.
+Lattice registry. Each signature must verify against one of the pinned
+minisign keys and bind the file name and serial. Both files must share a
+serial; refreshes reject invalid signatures and rollback to an older list.
+The last verified pair is cached in `<app data>/registry/cache.json`, verified
+again on read, and served offline.
+
+Theme downloads require HTTPS and must match the signed size, SHA-256, id and
+version before install. `<app data>/registry/installed.json` records the
+installed version for update offers. The signed block list prevents blocked
+versions from installing. It also turns off a blocked registry-installed
+theme without changing the saved choice; `warn` entries leave it applied and
+show their reason. File-installed themes are not subject to the registry's
+block list.
+
+Settings › Appearance › Theme files › Browse themes searches the verified
+listing and shows cached results while refreshing. Theme files are downloaded
+only after the writer chooses Install or Update.
 
 ## How GPUI applies a theme
 
