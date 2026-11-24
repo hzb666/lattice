@@ -364,12 +364,6 @@ impl ModalLayer {
 
     /// Give focus, when the layer first draws, to this handle inside the
     /// surface (a dialog's field, for typing at once) instead of the layer.
-    /// Draw the layer at `priority` among the window's deferred overlays.
-    pub fn priority(mut self, priority: usize) -> Self {
-        self.priority = priority;
-        self
-    }
-
     pub fn initial_focus(mut self, handle: FocusHandle) -> Self {
         self.initial_focus = Some(handle);
         self
