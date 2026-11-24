@@ -1,10 +1,8 @@
-//! Settings › Providers, MCP, Skills and Usage & limits (the Tauri app's
-//! `agent`, `mcp`, `api` and `usage` tabs): Synara's own settings pages for
-//! the open project, the Agent island's `settings` surface, filling the page
-//! as `synara-settings-pane.tsx` fills the Tauri dialog's. One surface serves
-//! the four, so a switch between them is a message to its loaded page, never
-//! a reload. The page scrolls in the island, so the surface takes the whole
-//! content column.
+//! Settings › Providers, MCP, Skills, Usage & limits and Archived threads:
+//! Synara's own settings pages for the open project, the Agent island's
+//! `settings` surface. One surface serves the five, so a switch between them
+//! is a message to its loaded page, never a reload. The page scrolls in the
+//! island, so the surface takes the whole content column.
 
 use gpui::{AnyElement, App, Entity, IntoElement, ParentElement as _, Styled as _, div};
 use lattice_i18n::t;
@@ -21,6 +19,7 @@ pub fn section(tab: SettingsTab) -> Option<(&'static str, String)> {
         SettingsTab::Mcp => ("integrations", t!("MCP").to_string()),
         SettingsTab::Api => ("skills", t!("Skills").to_string()),
         SettingsTab::Usage => ("usage", t!("Usage & limits").to_string()),
+        SettingsTab::Archived => ("archived", t!("Archived threads").to_string()),
         _ => return None,
     })
 }

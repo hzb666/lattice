@@ -154,6 +154,7 @@ choice!(
         Agent = "agent",
         Mcp = "mcp",
         Usage = "usage",
+        Archived = "archived",
         Environment = "environment",
         ModelEndpoint = "model-endpoint",
         /// The GPUI app's own: the Agent's font size.

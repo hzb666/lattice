@@ -93,6 +93,7 @@ pub fn drawn(tab: SettingsTab) -> SettingsTab {
         | SettingsTab::Mcp
         | SettingsTab::Api
         | SettingsTab::Usage
+        | SettingsTab::Archived
         | SettingsTab::ModelEndpoint
         | SettingsTab::AgentDisplay
         | SettingsTab::Environment
@@ -115,7 +116,11 @@ pub fn draw(
 ) -> AnyElement {
     match dialog.tab {
         SettingsTab::Editor => super::editor_pane::render(dialog, width, window, cx),
-        SettingsTab::Agent | SettingsTab::Mcp | SettingsTab::Api | SettingsTab::Usage => {
+        SettingsTab::Agent
+        | SettingsTab::Mcp
+        | SettingsTab::Api
+        | SettingsTab::Usage
+        | SettingsTab::Archived => {
             let surface = dialog.providers();
             super::providers_pane::render(surface, dialog.tab, width.narrow_dialog, cx)
         }

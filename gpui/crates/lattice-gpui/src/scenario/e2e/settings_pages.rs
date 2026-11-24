@@ -32,6 +32,7 @@ const PAGES: &[(SettingsTab, Option<&str>, Option<&str>)] = &[
     (SettingsTab::Mcp, None, Some("integrations")),
     (SettingsTab::Api, None, Some("skills")),
     (SettingsTab::Usage, None, Some("usage")),
+    (SettingsTab::Archived, None, Some("archived")),
     (SettingsTab::ModelEndpoint, Some("model-endpoint-address"), None),
     (SettingsTab::Environment, Some("agent-restart"), None),
     (SettingsTab::Literature, Some("literature-email"), None),
@@ -83,7 +84,7 @@ impl Run {
             }));
         }
         steps.check(
-            "every Settings section the Tauri app lists draws its page, Synara's four on one surface",
+            "every GPUI Settings section draws its page, Synara's five on one surface",
             all,
             json!({ "pages": drawn }),
         );
