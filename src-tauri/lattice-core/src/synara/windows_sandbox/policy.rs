@@ -34,7 +34,6 @@ pub(super) struct Roots {
     pub control: PathBuf,
     host_executable: PathBuf,
     home: PathBuf,
-    staging: PathBuf,
     workspace: PathBuf,
     original: Option<PathBuf>,
     system: PathBuf,
@@ -121,7 +120,6 @@ impl Roots {
             control,
             host_executable,
             home,
-            staging,
             workspace,
             original,
             system,
@@ -158,7 +156,7 @@ impl Roots {
             .join(" ");
         let environment = self.child_environment(command)?;
         // MXC enforces read-only access even for per-user relocated Program Files.
-        let mut readonly: Vec<_> = std::iter::once(&self.runtime)
+        let readonly: Vec<_> = std::iter::once(&self.runtime)
             .chain(self.git.iter().filter_map(git::Installation::additional_grant))
             .chain(std::iter::once(&self.host_executable))
             .chain(self.original.iter())

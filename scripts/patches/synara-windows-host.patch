@@ -1402,10 +1402,7 @@ index c96f181..f123e3d 100644
    readonly error?: { readonly code: string; readonly message: string };
  }
  
-@@ -53,6 +76,12 @@ function hasExpectedExtension(path: string, documentType: ProjectDocumentType):
-     .endsWith(documentType === "board" ? ".tldr" : ".lattice-sheet");
- }
- 
+@@ -57,1 +80,7 @@ export function parseProjectDocumentRequest(value: unknown): ProjectDocumentRequest | null {
 +function isTurnId(value: unknown): value is string {
 +  return (
 +    typeof value === "string" && value.length > 0 && value.length <= 256 && !value.includes("\0")
@@ -1413,8 +1410,6 @@ index c96f181..f123e3d 100644
 +}
 +
  export function parseProjectDocumentRequest(value: unknown): ProjectDocumentRequest | null {
-   if (!isRecord(value) || !hasOnlyKeys(value, ["id", "args", "expiresAt"])) return null;
-   if (
 @@ -61,17 +90,77 @@ export function parseProjectDocumentRequest(value: unknown): ProjectDocumentRequ
      value.id.length > 128 ||
      typeof value.expiresAt !== "number" ||
@@ -1576,7 +1571,7 @@ diff --git a/apps/web/src/components/chat/useChatTurnSubmission.ts b/apps/web/sr
        sendPreflightInFlightRef.current = true;
        const previous = await settlePendingComposerTurn(
          api,
-@@ -542,6 +557,7 @@ export function useChatTurnSubmission({
+@@ -542,10 +557,12 @@ export function useChatTurnSubmission({
              });
              return true;
            }
@@ -1584,6 +1579,11 @@ diff --git a/apps/web/src/components/chat/useChatTurnSubmission.ts b/apps/web/sr
            clearComposerInput(activeThread.id);
            scheduleComposerFocus();
            return lateSendHandlers.submitPlanFollowUp({
+             text: followUp.text,
+             interactionMode: followUp.interactionMode,
+             dispatchMode,
++            workspacePrepared: true,
+             ...(resumeQueueAfterSend ? { resumeQueueAfterSend } : {}),
 @@ -756,6 +772,7 @@ export function useChatTurnSubmission({
          });
          return true;
@@ -1593,11 +1593,62 @@ diff --git a/apps/web/src/components/chat/useChatTurnSubmission.ts b/apps/web/sr
          activeThread,
          isServerThread,
 
+diff --git a/apps/web/src/components/chat/chatSendTypes.ts b/apps/web/src/components/chat/chatSendTypes.ts
+--- a/apps/web/src/components/chat/chatSendTypes.ts
++++ b/apps/web/src/components/chat/chatSendTypes.ts
+@@ -30,6 +30,7 @@ export interface PlanFollowUpSubmission {
+   interactionMode: "default" | "plan";
+   dispatchMode: "queue" | "steer";
+   queuedTurn?: QueuedComposerPlanFollowUp;
++  workspacePrepared?: boolean;
+   /** Carries the queue hold captured before the ordinary send path's async preflight. */
+   resumeQueueAfterSend?: () => void;
+ }
+
+diff --git a/apps/web/src/components/chat/useChatTurnFollowUps.ts b/apps/web/src/components/chat/useChatTurnFollowUps.ts
+--- a/apps/web/src/components/chat/useChatTurnFollowUps.ts
++++ b/apps/web/src/components/chat/useChatTurnFollowUps.ts
+@@ -3,6 +3,8 @@ import { resolveTailUserMessageEditTarget } from "@synara/shared/conversationEdit";
+ import { providerSupportsNativeTurnSteering } from "@synara/shared/providerMetadata";
+ import { deriveAssociatedWorktreeMetadata } from "@synara/shared/threadWorkspace";
+ import { useNavigate } from "@tanstack/react-router";
++import { t } from "~/i18n";
++import { prepareLatticeWorkspaceForTurn } from "~/lib/latticeWorkspaceRefresh";
+ import {
+   COMPOSER_TURN_UNCERTAIN,
+   composerTurnMayHaveBeenSent,
+@@ -173,6 +175,7 @@ export function useChatTurnFollowUps({
+     interactionMode: nextInteractionMode,
+     dispatchMode,
+     queuedTurn,
++    workspacePrepared,
+     resumeQueueAfterSend: preparedQueueResume,
+   }: PlanFollowUpSubmission): Promise<boolean> {
+     const api = readNativeApi();
+@@ -206,6 +209,17 @@ export function useChatTurnFollowUps({
+     if (!trimmed) {
+       return false;
+     }
++    if (!workspacePrepared) {
++      sendInFlightRef.current = true;
++      try {
++        await prepareLatticeWorkspaceForTurn();
++      } catch {
++        setThreadError(activeThread.id, t("chat:couldNotStartTheChatTryAgain"));
++        return false;
++      } finally {
++        sendInFlightRef.current = false;
++      }
++    }
+-
++
+     const planDispatchSettings = {
+       ...resolveQueuedTurnDispatchSettings(turnDispatchSettings, queuedTurn),
 diff --git a/apps/web/src/lib/latticeWorkspaceRefresh.ts b/apps/web/src/lib/latticeWorkspaceRefresh.ts
 new file mode 100644
 --- /dev/null
 +++ b/apps/web/src/lib/latticeWorkspaceRefresh.ts
-@@ -0,0 +1,48 @@
+@@ -0,0 +1,55 @@
 +import { readEmbedMode } from "../embedMode";
 +import { randomUUID } from "./utils";
 +
@@ -1611,6 +1662,7 @@ new file mode 100644
 +  const config = readEmbedMode();
 +  if (!config) return;
 +  if (!config.hostOrigin) throw new Error("The Lattice project host is unavailable.");
++  const hostOrigin = config.hostOrigin;
 +
 +  const requestId = randomUUID();
 +  await new Promise<void>((resolve, reject) => {
@@ -1623,7 +1675,7 @@ new file mode 100644
 +    const onMessage = (event: MessageEvent) => {
 +      if (
 +        event.source !== window.parent ||
-+        event.origin !== config.hostOrigin ||
++        event.origin !== hostOrigin ||
 +        !event.data ||
 +        typeof event.data !== "object"
 +      ) return;
@@ -1645,7 +1697,7 @@ new file mode 100644
 +          requestId,
 +          workspaceRoot: config.workspaceRoot,
 +        },
-+        config.hostOrigin,
++        hostOrigin,
 +      );
 +    } catch {
 +      finish(false);
@@ -1657,7 +1709,7 @@ diff --git a/apps/web/src/lib/latticeWorkspaceRefresh.test.ts b/apps/web/src/lib
 new file mode 100644
 --- /dev/null
 +++ b/apps/web/src/lib/latticeWorkspaceRefresh.test.ts
-@@ -0,0 +1,85 @@
+@@ -0,0 +1,97 @@
 +import { afterEach, describe, expect, it, vi } from "vitest";
 +import { prepareLatticeWorkspaceForTurn } from "./latticeWorkspaceRefresh";
 +

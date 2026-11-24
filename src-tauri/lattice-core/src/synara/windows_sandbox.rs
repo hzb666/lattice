@@ -20,6 +20,42 @@ pub(super) fn paths_overlap(first: &Path, second: &Path) -> bool {
     policy::contains(first, second) || policy::contains(second, first)
 }
 
+pub(super) fn server_entry(path: &Path) -> io::Result<PathBuf> {
+    policy::dos_path(&path.canonicalize()?)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::path::{Component, Prefix};
+
+    use super::server_entry;
+
+    #[test]
+    fn server_entry_strips_windows_verbatim_prefix() -> std::io::Result<()> {
+        let directory = tempfile::tempdir()?;
+        let dist = directory.path().join("server/dist");
+        fs::create_dir_all(&dist)?;
+        let entry = dist.join("index.mjs");
+        fs::write(&entry, "")?;
+        let extended = entry.canonicalize()?;
+        assert!(matches!(
+            extended.components().next(),
+            Some(Component::Prefix(prefix)) if matches!(prefix.kind(), Prefix::VerbatimDisk(_))
+        ));
+
+        let normalized = server_entry(&extended)?;
+
+        assert!(normalized.is_file());
+        assert!(matches!(
+            normalized.components().next(),
+            Some(Component::Prefix(prefix)) if matches!(prefix.kind(), Prefix::Disk(_))
+        ));
+        assert_eq!(server_entry(&entry)?, normalized);
+        Ok(())
+    }
+}
+
 pub(super) struct SandboxConfig<'a> {
     pub runtime_root: &'a Path,
     pub host_executable: &'a Path,

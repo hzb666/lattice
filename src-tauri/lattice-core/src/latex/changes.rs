@@ -592,7 +592,8 @@ mod tests {
         git::write_version(&root, None, &newer).unwrap();
         let latexdiff = commands::resolve("latexdiff");
         let (exports, capture) = (ChangesExports::default(), TempDir::new("changes-capture"));
-        let run = Runner { exports: &exports, export: exports.begin(), capture: &capture };
+        let run =
+            Runner { exports: &exports, export: exports.begin(), capture: &capture, tex: None };
         let Ok(tex) =
             latexdiff_output(&run, &latexdiff, &older, &newer, "main.tex", OPTIONS, false)
         else {
@@ -643,7 +644,8 @@ mod tests {
         );
         let (exports, capture) =
             (ChangesExports::default(), TempDir::new("changes-repair-capture"));
-        let run = Runner { exports: &exports, export: exports.begin(), capture: &capture };
+        let run =
+            Runner { exports: &exports, export: exports.begin(), capture: &capture, tex: None };
         let versions = Versions { older: &newer, newer: &newer, document: "main.tex" };
         let manifest = project::default_manifest("paper");
         let Ok((pdf, unmarked)) = build_repairing(&run, versions, tex, &manifest) else {

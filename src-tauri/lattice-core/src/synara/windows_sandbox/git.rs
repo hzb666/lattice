@@ -76,8 +76,10 @@ pub(super) fn discover(
         Err(error) if error.kind() == io::ErrorKind::NotFound => {}
         Err(error) => return Err(error),
     }
-    let program_files = fs::canonicalize(program_files()?)?;
-    let installed = match fs::canonicalize(program_files.join("Git")) {
+    let program_files = dos_path(&fs::canonicalize(program_files()?)?)?;
+    let installed = match fs::canonicalize(program_files.join("Git"))
+        .and_then(|path| dos_path(&path))
+    {
         Ok(path) => path,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
         Err(error) => {

@@ -40,12 +40,5 @@ remaining `+` for dependencies and changes to removed files. Keep the original
 commit reference with `-x` and run the relevant checks on `chemex`. Do not
 rewrite already-pushed `main` or `chemex` history.
 
-Reviewed through `032f99db969bbaac2ca4760cc3fda191f583d692` on 2026-11-18. Applied `7c0a855e`, `de5782e9`, `b8beee04`, `b3dd2c79` and `a5199493`. Deferred:
-
-| Commit | Reason |
-| --- | --- |
-| `2917675e` | macOS sandbox and optional Synara runtime update; review when enabling that runtime. |
-| `469461b2`, `9856aff1` | Changes to the removed Tauri window and project-tab host. |
-| `7304f7b5` | Budget for the removed startup benchmark. |
-| `145182ef` | Tauri release version bump; retained manifests remain at the fork's existing version. |
-| `032f99db` | Plugin host phase 1 of 4; execution is currently macOS-only, so it does not provide Windows plugin support. |
+Use the [upstream sync log](docs/upstream-sync.md) for the last reviewed commit,
+local backports, and pending changes. Update it after each review.

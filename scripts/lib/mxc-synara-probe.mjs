@@ -2,10 +2,9 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { pathToFileURL } from "node:url";
 import { MXC_EXECUTOR, mxcExecutorMatches } from "./mxc-executor.mjs";
 import { capture, isMain, projectRoot, readJson, writeJson } from "./util.mjs";
 import { verifyWindowsExecutor, workspacePolicy } from "./windows-agent-sandbox.mjs";
@@ -128,20 +127,11 @@ assert.throws(() => writeFileSync(join(root, "mxc-probe-write"), "blocked"),
 console.log(result.stdout.trim() + "; installation write blocked");
 `);
   }
-  const prepareTemp = join(scratch, "prepare-temp.mjs");
-  writeFileSync(prepareTemp, `
-import assert from "node:assert/strict";
-import { mkdirSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { isAbsolute, relative, sep } from "node:path";
-const temporary = tmpdir();
-const fromHome = relative(process.env.SYNARA_HOME, temporary);
-assert.ok(fromHome && !isAbsolute(fromHome) && fromHome !== ".." && !fromHome.startsWith(".." + sep));
-mkdirSync(temporary, { recursive: true });
-`, { flag: "wx" });
+  const prepareTemp = readFileSync(join(projectRoot, "src-tauri/lattice-core/src/synara/windows_sandbox/prepare_temp.mjs"));
+  const preload = `--import=data:text/javascript;base64,${prepareTemp.toString("base64")}`;
   writeJson(config, policy);
   try {
-    const child = spawn(executor, [config, "--", node, "--import", pathToFileURL(prepareTemp).href, entry, "--dynamic-port"], {
+    const child = spawn(executor, [config, "--", node, preload, entry, "--dynamic-port"], {
       cwd: control,
       windowsHide: true,
       timeout: 45_000,

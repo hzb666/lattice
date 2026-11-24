@@ -441,7 +441,12 @@ impl SynaraRuntime {
         let mut command =
             bibliography_guard::command(&self.node.executable, &self.home_dir, &executable)?;
         self.node.configure(&mut command);
-        command.args(SIDECAR_V8_FLAGS).arg(&self.server_entry);
+        #[cfg(windows)]
+        let server_entry = windows_sandbox::server_entry(&self.server_entry)
+            .map_err(|error| format!("Could not resolve the bundled Synara service: {error}"))?;
+        #[cfg(not(windows))]
+        let server_entry = &self.server_entry;
+        command.args(SIDECAR_V8_FLAGS).arg(server_entry);
         // Web storage is scoped to the iframe origin, port included, so a
         // sidecar restarted within a session reuses its free port to keep the
         // storage its frames wrote. WebKit drops that storage at quit anyway,
@@ -609,6 +614,13 @@ pub fn task_relay_request(
     };
     #[cfg(not(windows))]
     let info = runtime.ensure_ready()?;
+    send_task_request(info, route, action, task_id, payload)
+}
+
+fn send_task_request(
+    info: SynaraRuntimeInfo, route: &str, action: &str, task_id: Option<&str>,
+    payload: serde_json::Value,
+) -> Result<serde_json::Value, String> {
     // Where the agent is off (`bibliography_guard`), say why.
     let origin = info.origin.ok_or_else(|| {
         info.message.clone().unwrap_or_else(|| "The agent service is unavailable.".to_string())
@@ -808,10 +820,22 @@ mod tests {
         let bundle_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .parent()
             .ok_or("Missing runtime resources directory")?
-            .to_path_buf();
+            .canonicalize()
+            .map_err(|error| error.to_string())?;
         let scratch = tempfile::tempdir().map_err(|error| error.to_string())?;
         let project = scratch.path().join("project");
         fs::create_dir(&project).map_err(|error| error.to_string())?;
+        let fixtures = [
+            ("main.tex", "draft"),
+            ("references.bib", "bibliography"),
+            ("scheme.cdxml", "drawing"),
+            ("spectrum.mnova", "spectrum"),
+            (".chem/cache.txt", "cache"),
+        ];
+        fs::create_dir(project.join(".chem")).map_err(|error| error.to_string())?;
+        for (path, contents) in fixtures {
+            fs::write(project.join(path), contents).map_err(|error| error.to_string())?;
+        }
         let resources = Resources {
             bundle_dir,
             app_data_dir: scratch.path().join("data"),
@@ -822,11 +846,24 @@ mod tests {
             Arc::new(|_: &str, _: serde_json::Value| {}),
             &project,
         )?;
-        let (mut child, _, logs) = runtime.spawn(&environment::AgentEnvironment::default())?;
-        let ready = wait_until_ready(&mut child, &logs, &runtime.home_dir, Instant::now());
-        child.terminate();
-        assert!(child.try_wait().map_err(|error| error.to_string())?.is_some());
-        ready.map(|_| ())
+        let info = runtime.ensure_project_ready(&project)?;
+        assert_eq!("ready", info.state, "{:?}", info.message);
+        let mirror = info.execution_root.ok_or("Missing manuscript mirror")?;
+        assert_eq!("draft", fs::read_to_string(mirror.join("main.tex")).unwrap());
+        fs::write(project.join("main.tex"), "writer revision").unwrap();
+        runtime.refresh_project_workspace(&project)?;
+        assert_eq!("writer revision", fs::read_to_string(mirror.join("main.tex")).unwrap());
+        for (path, contents) in fixtures.into_iter().skip(1) {
+            assert!(!mirror.join(path).exists(), "{path}");
+            assert_eq!(contents, fs::read_to_string(project.join(path)).unwrap());
+        }
+        runtime.shutdown();
+        let origin = info.origin.ok_or("Missing Synara origin")?;
+        let client = crate::http::loopback(Duration::from_secs(2))
+            .build()
+            .map_err(|error| error.to_string())?;
+        assert!(!health_is_ready(&client, &origin));
+        Ok(())
     }
 
     #[test]
@@ -855,8 +892,7 @@ mod tests {
             }
             requests
         });
-        let mut runtime = SynaraRuntime::default();
-        runtime.external_origin = Some(origin);
+        let info = SynaraRuntime::default().ready_info(&origin, None, 0);
         let payload = serde_json::json!({
             "workspaceRoot": "/paper", "runtimeMode": "full-access", "rootDocument": "main.tex",
             "diagnostics": [
@@ -865,7 +901,7 @@ mod tests {
             ]
         });
         let request = |action, thread_id, payload| {
-            task_relay_request(&runtime, COMPILE_REPAIR_ROUTE, action, thread_id, payload)
+            send_task_request(info.clone(), COMPILE_REPAIR_ROUTE, action, thread_id, payload)
         };
         let null = serde_json::Value::Null;
         assert_eq!(request("start", None, payload.clone()).unwrap()["threadId"], "repair:one");
@@ -879,7 +915,7 @@ mod tests {
         // A runtime without the route answers the router's plain 404.
         let text_task = serde_json::json!({"workspaceRoot": "/paper", "prompt": "Proofread"});
         assert_eq!(
-            task_relay_request(&runtime, TEXT_TASK_ROUTE, "start", None, text_task.clone())
+            send_task_request(info.clone(), TEXT_TASK_ROUTE, "start", None, text_task.clone())
                 .unwrap_err(),
             ROUTE_UNAVAILABLE
         );
@@ -890,7 +926,7 @@ mod tests {
         assert_eq!(request("status", Some("repair:gone"), null.clone()).unwrap_err(), TASK_UNKNOWN);
         // An unknown text task is a JSON 404, whose error reaches the reader as is.
         assert_eq!(
-            task_relay_request(&runtime, TEXT_TASK_ROUTE, "cancel", Some("text:gone"), null)
+            send_task_request(info, TEXT_TASK_ROUTE, "cancel", Some("text:gone"), null)
                 .unwrap_err(),
             "Task not found."
         );
