@@ -50,6 +50,7 @@ mod insert_flow;
 mod insert_pickers_flow;
 mod journal_export;
 mod layers;
+mod manuscript_flow;
 pub(crate) mod menus;
 mod molecule;
 mod open_failure;
