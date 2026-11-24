@@ -1,4 +1,4 @@
-//! The structured documents' islands (`crate::structured`), on the tutorial
+//! The structured documents (`crate::structured`), on the tutorial
 //! template's own board, spreadsheet and deck, copied into the scratch
 //! project:
 //!
@@ -10,10 +10,9 @@
 //!   (the queued overlay check: a deferred sheet over an island), and its
 //!   answer goes back to the page; hidden past the (shortened) hibernation
 //!   delay it is torn down, and comes back drawn with the edit;
-//! - a `.tldr` opens in the board island in the host's theme; a shape taken
-//!   out of the file on disk leaves the board; a rectangle drawn with native
-//!   input, its tab closed at once (inside the board's 300 ms debounce), is
-//!   in the file once the tab has gone;
+//! - an `.excalidraw` opens in the native board in the host's theme; a shape
+//!   taken out of the file on disk leaves the board; a rectangle drawn with
+//!   native input, its tab closed at once, is saved to the file;
 //! - an Open Slide deck opens in the slides island, which either frames the
 //!   runtime or, in a build without the staged runtime, says Open Slide could
 //!   not start, rather than loading forever.
@@ -39,15 +38,15 @@ const DECK: &str = include_str!(
     "../../../../../../src-tauri/templates/tutorial/slides/understanding-attention/index.tsx"
 );
 
-/// How many shapes a `.tldr` holds.
+/// How many live elements an `.excalidraw` holds.
 pub(super) fn shape_count(text: &str) -> usize {
     serde_json::from_str::<Value>(text)
         .ok()
         .and_then(|file| {
-            file["records"].as_array().map(|records| {
-                records
+            file["elements"].as_array().map(|elements| {
+                elements
                     .iter()
-                    .filter(|record| record["typeName"] == "shape")
+                    .filter(|element| element["isDeleted"] != true)
                     .count()
             })
         })
@@ -63,7 +62,7 @@ impl Run {
     ) -> Result<()> {
         cx.update(|cx| lattice_webview::set_hibernate_after(Some(Duration::from_millis(1500)), cx));
         self.sheet_island(cx, steps, root).await?;
-        self.board_island(cx, steps, root).await?;
+        self.native_board(cx, steps, root).await?;
         self.deck_island(cx, steps, root).await?;
         cx.update(|cx| lattice_webview::set_hibernate_after(None, cx));
         Ok(())
@@ -376,44 +375,57 @@ impl Run {
         Ok(())
     }
 
-    async fn board_island(&self, cx: &mut AsyncApp, steps: &mut Steps, root: &Path) -> Result<()> {
-        let path = root.join("e2e-map.tldr");
-        std::fs::write(&path, BOARD)?;
-        let Some((panel, island)) = self
-            .open_structured(cx, &path, Duration::from_secs(40))
-            .await?
-        else {
-            steps.check("a .tldr opens in the board island", false, json!({}));
+    async fn native_board(&self, cx: &mut AsyncApp, steps: &mut Steps, root: &Path) -> Result<()> {
+        let legacy_path = root.join("e2e-map.tldr");
+        let legacy_source = BOARD.to_string();
+        std::fs::write(&legacy_path, &legacy_source)?;
+        let path = root.join("e2e-map.excalidraw");
+        let panel = self.open(cx, &legacy_path, None)?;
+        steps.check(
+            "opening a .tldr creates an adjacent .excalidraw and preserves the original",
+            path.is_file()
+                && std::fs::read_to_string(&legacy_path)
+                    .is_ok_and(|text| text == legacy_source),
+            json!({ "legacy_exists": legacy_path.is_file(), "converted_exists": path.is_file() }),
+        );
+        let board = cx.update(|cx| {
+            panel
+                .read(cx)
+                .structured()
+                .and_then(|document| document.read(cx).board().cloned())
+        });
+        let Some(board) = board else {
+            steps.check("an .excalidraw opens in the native board", false, json!({}));
             return Ok(());
         };
-        let shapes_on_board = "document.querySelectorAll('.tl-shape').length";
-        // tldraw draws its shapes once the page has laid out.
-        let mut drawn_shapes = Value::Null;
-        for _ in 0..50 {
-            drawn_shapes = self.evaluate(cx, &island, shapes_on_board).await;
-            if drawn_shapes.as_u64().unwrap_or(0) > 0 {
-                break;
-            }
-            self.pause(cx, Duration::from_millis(200)).await;
-        }
-        let dark_class = "!!document.querySelector('.tl-container.tl-theme__dark')";
-        let light = self.evaluate(cx, &island, dark_class).await;
+        let shapes_on_board = |cx: &mut AsyncApp| {
+            cx.update(|cx| board.read(cx).scene.non_deleted_elements().count() as u64)
+        };
+        // The board follows the app's theme when it draws: its canvas is the
+        // editor sheet's color, and dark mode its own.
+        self.pause(cx, Duration::from_millis(500)).await;
+        let drawn_shapes = shapes_on_board(cx);
+        let ground = |cx: &mut AsyncApp| {
+            cx.update(|cx| {
+                use lattice_ui::ActiveLattice as _;
+                (lattice_board::theme::dark(), lattice_board::theme::canvas() == cx.palette().editor)
+            })
+        };
+        let light = ground(cx);
         cx.update(|cx| LatticeTheme::set_appearance(Appearance::Dark, cx));
         self.pause(cx, Duration::from_millis(500)).await;
-        let dark = self.evaluate(cx, &island, dark_class).await;
+        let dark = ground(cx);
         cx.update(|cx| LatticeTheme::set_appearance(Appearance::Light, cx));
         steps.check(
-            "a .tldr opens in the board island with its shapes, and follows the host's light and dark",
-            drawn_shapes.as_u64().unwrap_or(0) > 0 && light == false && dark == true,
-            json!({ "shapes": drawn_shapes, "light_dark_class": light, "dark_dark_class": dark }),
+            "an .excalidraw opens in the native board with its shapes, and follows the host's light and dark",
+            drawn_shapes > 0 && light == (false, true) && dark == (true, true),
+            json!({ "shapes": drawn_shapes, "light": [light.0, light.1], "dark": [dark.0, dark.1] }),
         );
 
-        self.island_shot(cx, "board-island").await?;
+        self.island_shot(cx, "board-native").await?;
 
-        // A shape taken out of the file on disk leaves the board. The board
-        // writes the file once on opening (tldraw settles its records), so
-        // the edit waits for that save: an edit on disk reloads only a clean
-        // buffer, and merges into an edited one on its next save.
+        // An edit on disk reloads only a clean buffer, and merges into an
+        // edited one on its next save.
         let clean = self
             .wait_for(cx, Duration::from_secs(10), |_, cx| {
                 !panel.read(cx).is_dirty(cx)
@@ -421,61 +433,94 @@ impl Run {
             .await;
         self.pause(cx, Duration::from_millis(500)).await;
         let mut file: Value = serde_json::from_str(&std::fs::read_to_string(&path)?)?;
-        let removed = file["records"].as_array_mut().and_then(|records| {
-            let parents: Vec<String> = records
+        let removed = file["elements"].as_array_mut().and_then(|elements| {
+            let held: Vec<String> = elements
                 .iter()
-                .filter_map(|record| record["parentId"].as_str().map(str::to_string))
+                .flat_map(|element| [&element["containerId"], &element["frameId"]])
+                .filter_map(|id| id.as_str().map(str::to_string))
                 .collect();
-            let index = records.iter().position(|record| {
-                record["typeName"] == "shape"
-                    && record["id"]
+            let index = elements.iter().position(|element| {
+                element["containerId"].is_null()
+                    && element["id"]
                         .as_str()
-                        .is_some_and(|id| !parents.iter().any(|parent| parent == id))
+                        .is_some_and(|id| !held.iter().any(|holder| holder == id))
             })?;
-            Some(records.remove(index))
+            Some(elements.remove(index))
         });
-        let before = drawn_shapes.as_u64().unwrap_or(0);
+        let before = shapes_on_board(cx);
         std::fs::write(&path, serde_json::to_string(&file)?)?;
         let mut after = before;
         let started = std::time::Instant::now();
         while started.elapsed() < Duration::from_secs(10) {
-            after = self
-                .evaluate(cx, &island, shapes_on_board)
-                .await
-                .as_u64()
-                .unwrap_or(before);
+            after = shapes_on_board(cx);
             if after < before {
                 break;
             }
             self.pause(cx, Duration::from_millis(250)).await;
         }
         steps.check(
-            "a shape taken out of the .tldr on disk leaves the board",
+            "a shape taken out of the .excalidraw on disk leaves the board",
             removed.is_some() && after < before,
-            json!({ "clean_first": clean, "before": before, "after": after, "removed": removed.map(|record| record["id"].clone()) }),
+            json!({ "clean_first": clean, "before": before, "after": after, "removed": removed.map(|element| element["id"].clone()) }),
         );
+
+        // Pen strokes in quick succession, as a writer sketches: each a
+        // native press, 40 drags 16 ms apart and a release, 120 ms between
+        // strokes, eight rows so later strokes start on earlier ones. Every
+        // stroke is an element of its own.
+        let bounds = cx.update(|cx| board.read(cx).bounds());
+        let native = self.native(cx)?;
+        let center = bounds.center();
+        native::send_click(native, point(center.x, center.y + px(120.)))?;
+        self.pause(cx, Duration::from_millis(300)).await;
+        native::send_key(native, 'p', false)?;
+        self.pause(cx, Duration::from_millis(300)).await;
+        let before_strokes = shapes_on_board(cx);
+        let strokes = 24;
+        for stroke in 0..strokes {
+            let from = point(
+                center.x - px(200.),
+                center.y - px(160.) + px((stroke % 8) as f32 * 40.),
+            );
+            native::send_mouse(native, native::Mouse::Down, from)?;
+            for step in 1..=40 {
+                let wobble = ((step as f32) * 0.5).sin() * 14.;
+                native::send_mouse(
+                    native,
+                    native::Mouse::Dragged,
+                    point(from.x + px(step as f32 * 10.), from.y + px(wobble)),
+                )?;
+                self.pause(cx, Duration::from_millis(16)).await;
+            }
+            native::send_mouse(native, native::Mouse::Up, point(from.x + px(400.), from.y))?;
+            self.pause(cx, Duration::from_millis(120)).await;
+        }
+        self.pause(cx, Duration::from_millis(300)).await;
+        let drawn = shapes_on_board(cx) - before_strokes;
+        steps.check(
+            "pen strokes drawn in quick succession with native input are an element each",
+            drawn == strokes,
+            json!({ "strokes": strokes, "elements_added": drawn }),
+        );
+        native::send_key(native, 'v', false)?;
+        self.pause(cx, Duration::from_millis(200)).await;
 
         // A rectangle drawn with native input; the tab closed at once.
         let on_disk = shape_count(&std::fs::read_to_string(&path)?);
-        let drew = match cx.update(|cx| island.read(cx).bounds(cx)) {
-            Some(bounds) => {
-                let native = self.native(cx)?;
-                let center = bounds.center();
-                native::send_click(native, point(center.x, center.y + px(120.)))?;
-                self.pause(cx, Duration::from_millis(300)).await;
-                native::send_key(native, 'r', false)?;
-                self.pause(cx, Duration::from_millis(200)).await;
-                self.native_drag(
-                    cx,
-                    point(center.x - px(60.), center.y + px(60.)),
-                    point(center.x + px(60.), center.y + px(160.)),
-                )
-                .await?;
-                true
-            }
-            None => false,
-        };
-        let on_board = self.evaluate(cx, &island, shapes_on_board).await;
+        let bounds = cx.update(|cx| board.read(cx).bounds());
+        let native = self.native(cx)?;
+        let center = bounds.center();
+        native::send_click(native, point(center.x, center.y + px(120.)))?;
+        self.pause(cx, Duration::from_millis(300)).await;
+        native::send_key(native, 'r', false)?;
+        self.pause(cx, Duration::from_millis(200)).await;
+        self.native_drag(
+            cx,
+            point(center.x - px(60.), center.y + px(60.)),
+            point(center.x + px(60.), center.y + px(160.)),
+        )
+        .await?;
+        let on_board = shapes_on_board(cx);
         self.close_panel(cx, &panel).await?;
         let saved = self
             .wait_for(cx, Duration::from_secs(8), |_, _| {
@@ -483,9 +528,9 @@ impl Run {
             })
             .await;
         steps.check(
-            "a rectangle drawn with native input on the board is in the .tldr after its tab closes at once",
-            drew && saved,
-            json!({ "drew": drew, "saved": saved, "shapes_before": on_disk, "on_board_before_close": on_board,
+            "a rectangle drawn with native input on the board is in the .excalidraw after its tab closes at once",
+            saved,
+            json!({ "saved": saved, "shapes_before": on_disk, "on_board_before_close": on_board,
                     "shapes_after": std::fs::read_to_string(&path).map(|text| shape_count(&text)).ok() }),
         );
         Ok(())

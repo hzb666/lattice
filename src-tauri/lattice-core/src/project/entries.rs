@@ -309,13 +309,12 @@ mod tests {
             assert!(create_entry(root, private, "file").is_err(), "{private}");
         }
         assert!(create_entry(root, "binary.exe", "file").is_err());
-        // Each source kind gets its seed; boards and spreadsheets seed empty
-        // because their editors initialize the store themselves.
+        // Each source kind gets its seed; the board starts with an empty scene.
         for (path, seed, kind) in [
             ("notes.md", "# Notes\n", "markdown"),
             ("extra.bib", "% Bibliography\n", "bib"),
             ("supplement.html", "", "text"),
-            ("sketch.tldr", "", "tldr"),
+            ("sketch.excalidraw", crate::board::EMPTY_SCENE, "board"),
             ("data.lattice-sheet", "", "spreadsheet"),
         ] {
             assert_eq!(create_entry(root, path, "file").unwrap(), path);

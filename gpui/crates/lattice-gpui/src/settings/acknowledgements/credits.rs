@@ -108,6 +108,10 @@ pub const CORE_SOFTWARE: &[Credit] = &[
         "tldraw license",
     ),
     Credit {
+        attribution: Some("The GPUI app's native whiteboard is ported from quiet.md by s1dashu"),
+        ..licensed(credit("Excalidraw", "https://excalidraw.com"), "MIT")
+    },
+    Credit {
         attribution: Some("Uses Trellis by DanFessler - github.com/DanFessler/trellis"),
         ..licensed(
             of(

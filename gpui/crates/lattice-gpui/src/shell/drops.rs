@@ -64,6 +64,7 @@ const SOURCE_EXTENSIONS: &[&str] = &[
     "sty",
     "cls",
     "bst",
+    "excalidraw",
     "tldr",
     "lattice-sheet",
     "tsx",

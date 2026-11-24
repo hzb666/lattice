@@ -166,6 +166,7 @@ pub const BUILD_SHORTCUT_LABEL: &str = "Ctrl+S";
 
 pub fn bind_keys(cx: &mut App) {
     commands::bind_keys(cx);
+    lattice_board::bind_keys(cx);
 }
 
 /// A project open in a window, with the name its tab shows.
@@ -690,6 +691,22 @@ impl Shell {
             return None;
         }
         let path = path.canonicalize().unwrap_or(path);
+        if path.extension().is_some_and(|extension| extension.eq_ignore_ascii_case("tldr")) {
+            let root = self.root(cx)?;
+            let root = root.canonicalize().unwrap_or(root);
+            let relative = crate::project::relative_path(&root, &path).ok()?;
+            match lattice_core::project::convert_tldr_board(&root, &relative) {
+                Ok(board) => return self.open_path(root.join(board), line, window, cx),
+                Err(error) => {
+                    notices::error(
+                        t!("Could not open the file"),
+                        crate::host_errors::text(&error),
+                        cx,
+                    );
+                    return None;
+                }
+            }
+        }
         if self.open_if_asset(&path, window, cx) {
             return None;
         }

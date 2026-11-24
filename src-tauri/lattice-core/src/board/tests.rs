@@ -345,10 +345,13 @@ fn a_project_board_converts_to_a_project_path() {
     fs::create_dir_all(fixture.root.join("boards")).unwrap();
     fs::write(fixture.root.join("boards/plan.tldr"), "").unwrap();
     fs::write(fixture.root.join("notes.md"), "").unwrap();
+    let converted = crate::project::convert_tldr_board(&fixture.root, "boards/plan.tldr").unwrap();
+    assert_eq!(converted, "boards/plan.excalidraw");
     assert_eq!(
         crate::project::convert_tldr_board(&fixture.root, "boards/plan.tldr").unwrap(),
-        "boards/plan.excalidraw"
+        converted
     );
+    assert_eq!(fs::read_to_string(fixture.root.join("boards/plan.tldr")).unwrap(), "");
     assert_eq!(
         fs::read_to_string(fixture.root.join("boards/plan.excalidraw")).unwrap(),
         empty_scene()
