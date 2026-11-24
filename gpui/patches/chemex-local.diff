@@ -1,0 +1,376 @@
+diff --git a/gpui-base/src/text/inline.rs b/gpui-base/src/text/inline.rs
+index 67b5fe9..219c371 100644
+--- a/gpui-base/src/text/inline.rs
++++ b/gpui-base/src/text/inline.rs
+@@ -930,6 +930,7 @@ impl Inline {
+         let links = self.links.clone();
+         window.set_tooltip(AnyTooltip {
+             view: tooltip,
++            anchor_bounds: None,
+             mouse_position: position,
+             check_visible_and_update: Rc::new(move |_, window, _| {
+                 let position = window.mouse_position();
+diff --git a/gpui-component/src/root.rs b/gpui-component/src/root.rs
+index 9833c0a..bfb8fce 100644
+--- a/gpui-component/src/root.rs
++++ b/gpui-component/src/root.rs
+@@ -722,6 +722,7 @@ impl gpui_base::RootPlugin for WindowState {
+         surface.style().refine(
+             &gpui::StyleRefinement::default()
+                 .font_family(cx.theme().font_family.clone())
++                .not_italic()
+                 .bg(cx.theme().tokens.background)
+                 .text_color(cx.theme().foreground)
+                 .rounded_tl(radii.top_left)
+@@ -729,6 +730,7 @@ impl gpui_base::RootPlugin for WindowState {
+                 .rounded_bl(radii.bottom_left)
+                 .rounded_br(radii.bottom_right),
+         );
++        surface.text_style().font_fallbacks = cx.theme().font_fallbacks.clone();
+     }
+ 
+     fn decorate(
+diff --git a/gpui-component/src/theme/mod.rs b/gpui-component/src/theme/mod.rs
+index ff86c0e..3a87e08 100644
+--- a/gpui-component/src/theme/mod.rs
++++ b/gpui-component/src/theme/mod.rs
+@@ -168,6 +168,9 @@ pub struct Theme {
+     /// [`Theme::change`] names that family here, so every text lookup hits
+     /// the font cache. A family set explicitly is used as-is.
+     pub font_family: SharedString,
++    /// Additional glyph fallback families for the window's default text.
++    #[serde(default)]
++    pub font_fallbacks: Option<gpui::FontFallbacks>,
+     /// The base font size for the application, default is 16px.
+     pub font_size: Pixels,
+     /// The monospace font family for the application.
+@@ -776,6 +779,7 @@ impl From<&ThemeColor> for Theme {
+             mode: ThemeMode::default(),
+             transparent: Hsla::transparent_black(),
+             font_family: ".SystemUIFont".into(),
++            font_fallbacks: None,
+             font_size: px(16.),
+             mono_font_family: mono_font::default_mono_font_family(),
+             mono_font_size: px(13.),
+diff --git a/gpui-fast/crates/gpui/Cargo.toml b/gpui-fast/crates/gpui/Cargo.toml
+index 0809e60..7c4bd99 100644
+--- a/gpui-fast/crates/gpui/Cargo.toml
++++ b/gpui-fast/crates/gpui/Cargo.toml
+@@ -71,6 +71,7 @@ bitflags.workspace = true
+ collections.workspace = true
+ bench_metrics = { workspace = true, optional = true }
+ criterion = { workspace = true, optional = true }
++dunce.workspace = true
+ derive_more = { workspace = true, features = ["add", "add_assign", "mul", "mul_assign", "not"] }
+ etagere.workspace = true
+ futures.workspace = true
+diff --git a/gpui-fast/crates/gpui/src/app.rs b/gpui-fast/crates/gpui/src/app.rs
+index 3d4e923..59955b6 100644
+--- a/gpui-fast/crates/gpui/src/app.rs
++++ b/gpui-fast/crates/gpui/src/app.rs
+@@ -2057,7 +2057,7 @@ impl App {
+ 
+     /// Reveals the specified path at the platform level, such as in Finder on macOS.
+     pub fn reveal_path(&self, path: &Path) {
+-        self.platform.reveal_path(path)
++        self.platform.reveal_path(dunce::simplified(path))
+     }
+ 
+     /// Opens the specified path with the system's default application.
+@@ -3584,6 +3584,9 @@ pub struct AnyTooltip {
+     /// The view used to display the tooltip
+     pub view: AnyView,
+ 
++    /// The hovered element's bounds, when the tooltip should be anchored to it.
++    pub anchor_bounds: Option<Bounds<Pixels>>,
++
+     /// The absolute position of the mouse when the tooltip was deployed.
+     pub mouse_position: Point<Pixels>,
+ 
+diff --git a/gpui-fast/crates/gpui/src/elements/div.rs b/gpui-fast/crates/gpui/src/elements/div.rs
+index 14a38c6..04dbd45 100644
+--- a/gpui-fast/crates/gpui/src/elements/div.rs
++++ b/gpui-fast/crates/gpui/src/elements/div.rs
+@@ -2448,7 +2448,11 @@ impl Interactivity {
+                     }
+                     if let Some(active_tooltip) = element_state.active_tooltip.as_ref() {
+                         if self.tooltip_builder.is_some() {
+-                            self.tooltip_id = set_tooltip_on_window(active_tooltip, window);
++                            self.tooltip_id = set_tooltip_on_window(
++                                active_tooltip,
++                                Some(bounds),
++                                window,
++                            );
+                         } else {
+                             // If there is no longer a tooltip builder, remove the active tooltip.
+                             if let Some(long_press_tooltip_active) =
+@@ -3818,14 +3822,16 @@ pub(crate) fn clear_active_tooltip_if_not_hoverable(
+ 
+ pub(crate) fn set_tooltip_on_window(
+     active_tooltip: &Rc<RefCell<Option<ActiveTooltip>>>,
++    anchor_bounds: Option<Bounds<Pixels>>,
+     window: &mut Window,
+ ) -> Option<TooltipId> {
+-    let tooltip = match active_tooltip.borrow().as_ref() {
++    let mut tooltip = match active_tooltip.borrow().as_ref() {
+         None => return None,
+         Some(ActiveTooltip::WaitingForShow { .. }) => return None,
+         Some(ActiveTooltip::Visible { tooltip, .. }) => tooltip.clone(),
+         Some(ActiveTooltip::WaitingForHide { tooltip, .. }) => tooltip.clone(),
+     };
++    tooltip.anchor_bounds = anchor_bounds;
+     Some(window.set_tooltip(tooltip))
+ }
+ 
+@@ -4045,6 +4051,7 @@ fn show_tooltip(
+         ActiveTooltip::Visible {
+             tooltip: AnyTooltip {
+                 view,
++                anchor_bounds: None,
+                 mouse_position: window.mouse_position(),
+                 check_visible_and_update: Rc::new(move |tooltip_bounds, window, cx| {
+                     if long_press_tooltip_active
+diff --git a/gpui-fast/crates/gpui/src/elements/text.rs b/gpui-fast/crates/gpui/src/elements/text.rs
+index 168f599..ed32bcd 100644
+--- a/gpui-fast/crates/gpui/src/elements/text.rs
++++ b/gpui-fast/crates/gpui/src/elements/text.rs
+@@ -987,8 +987,11 @@ impl Element for InteractiveText {
+ 
+                 if let Some(interactive_state) = interactive_state.as_mut() {
+                     if self.tooltip_builder.is_some() {
+-                        self.tooltip_id =
+-                            set_tooltip_on_window(&interactive_state.active_tooltip, window);
++                        self.tooltip_id = set_tooltip_on_window(
++                            &interactive_state.active_tooltip,
++                            None,
++                            window,
++                        );
+                     } else {
+                         // If there is no longer a tooltip builder, remove the active tooltip.
+                         interactive_state.long_press_tooltip_active.set(false);
+diff --git a/gpui-fast/crates/gpui/src/profiler/journal.rs b/gpui-fast/crates/gpui/src/profiler/journal.rs
+index 28c66b6..e5e8bc7 100644
+--- a/gpui-fast/crates/gpui/src/profiler/journal.rs
++++ b/gpui-fast/crates/gpui/src/profiler/journal.rs
+@@ -442,7 +442,7 @@ impl ForegroundRunnableCounter {
+     fn finished(&self) {
+         let _ = self
+             .0
+-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |count| {
++            .try_update(Ordering::AcqRel, Ordering::Acquire, |count| {
+                 count.checked_sub(1)
+             });
+     }
+diff --git a/gpui-fast/crates/gpui/src/window.rs b/gpui-fast/crates/gpui/src/window.rs
+index bfdec31..d74d87b 100644
+--- a/gpui-fast/crates/gpui/src/window.rs
++++ b/gpui-fast/crates/gpui/src/window.rs
+@@ -90,6 +90,9 @@ pub const DEFAULT_ADDITIONAL_WINDOW_SIZE: Size<Pixels> = Size {
+     height: Pixels(750.),
+ };
+ 
++const TOOLTIP_ANCHOR_GAP: Pixels = px(8.);
++const TOOLTIP_WINDOW_MARGIN: Pixels = px(4.);
++
+ /// Represents the two different phases when dispatching events.
+ #[derive(Default, Copy, Clone, Debug, Eq, PartialEq)]
+ pub enum DispatchPhase {
+@@ -2507,6 +2510,87 @@ impl ContentMask<Pixels> {
+     }
+ }
+ 
++fn position_tooltip(
++    anchor_bounds: Option<Bounds<Pixels>>,
++    mouse_position: Point<Pixels>,
++    tooltip_size: Size<Pixels>,
++    viewport_size: Size<Pixels>,
++) -> Bounds<Pixels> {
++    let Some(anchor) = anchor_bounds else {
++        return position_tooltip_at_cursor(mouse_position, tooltip_size, viewport_size);
++    };
++
++    let above = anchor.origin.y - tooltip_size.height - TOOLTIP_ANCHOR_GAP;
++    let below = anchor.bottom() + TOOLTIP_ANCHOR_GAP;
++    let y = if above >= TOOLTIP_WINDOW_MARGIN {
++        above
++    } else {
++        below
++    };
++    let mut bounds = Bounds::new(
++        point(anchor.center().x - tooltip_size.width * 0.5, y),
++        tooltip_size,
++    );
++
++    let right_limit = (viewport_size.width - TOOLTIP_WINDOW_MARGIN).max(TOOLTIP_WINDOW_MARGIN);
++    let bottom_limit = (viewport_size.height - TOOLTIP_WINDOW_MARGIN).max(TOOLTIP_WINDOW_MARGIN);
++    if bounds.right() > right_limit {
++        bounds.origin.x -= bounds.right() - right_limit;
++    }
++    if bounds.left() < TOOLTIP_WINDOW_MARGIN {
++        bounds.origin.x = TOOLTIP_WINDOW_MARGIN;
++    }
++    if bounds.bottom() > bottom_limit {
++        let above = anchor.origin.y - bounds.size.height - TOOLTIP_ANCHOR_GAP;
++        bounds.origin.y = if above >= TOOLTIP_WINDOW_MARGIN {
++            above
++        } else {
++            bottom_limit - bounds.size.height
++        };
++    }
++    if bounds.top() < TOOLTIP_WINDOW_MARGIN {
++        bounds.origin.y = TOOLTIP_WINDOW_MARGIN;
++    }
++    bounds
++}
++
++fn position_tooltip_at_cursor(
++    mouse_position: Point<Pixels>,
++    tooltip_size: Size<Pixels>,
++    viewport_size: Size<Pixels>,
++) -> Bounds<Pixels> {
++    let mut bounds = Bounds::new(mouse_position + point(px(1.), px(1.)), tooltip_size);
++    let window_bounds = Bounds {
++        origin: Point::default(),
++        size: viewport_size,
++    };
++
++    if bounds.right() > window_bounds.right() {
++        let new_x = mouse_position.x - bounds.size.width - px(1.);
++        if new_x >= Pixels::ZERO {
++            bounds.origin.x = new_x;
++        } else {
++            bounds.origin.x = cmp::max(
++                Pixels::ZERO,
++                bounds.origin.x - bounds.right() - window_bounds.right(),
++            );
++        }
++    }
++
++    if bounds.bottom() > window_bounds.bottom() {
++        let new_y = mouse_position.y - bounds.size.height - px(1.);
++        if new_y >= Pixels::ZERO {
++            bounds.origin.y = new_y;
++        } else {
++            bounds.origin.y = cmp::max(
++                Pixels::ZERO,
++                bounds.origin.y - bounds.bottom() - window_bounds.bottom(),
++            );
++        }
++    }
++    bounds
++}
++
+ impl Window {
+     fn mark_view_dirty(&mut self, view_id: EntityId) {
+         // Mark ancestor views as dirty. If already in the `dirty_views` set, then all its ancestors
+@@ -4108,37 +4192,12 @@ impl Window {
+             let mut element = tooltip_request.tooltip.view.clone().into_any_element();
+             let mouse_position = tooltip_request.tooltip.mouse_position;
+             let tooltip_size = element.layout_as_root(AvailableSpace::min_size(), self, cx);
+-
+-            let mut tooltip_bounds =
+-                Bounds::new(mouse_position + point(px(1.), px(1.)), tooltip_size);
+-            let window_bounds = Bounds {
+-                origin: Point::default(),
+-                size: self.viewport_size(),
+-            };
+-
+-            if tooltip_bounds.right() > window_bounds.right() {
+-                let new_x = mouse_position.x - tooltip_bounds.size.width - px(1.);
+-                if new_x >= Pixels::ZERO {
+-                    tooltip_bounds.origin.x = new_x;
+-                } else {
+-                    tooltip_bounds.origin.x = cmp::max(
+-                        Pixels::ZERO,
+-                        tooltip_bounds.origin.x - tooltip_bounds.right() - window_bounds.right(),
+-                    );
+-                }
+-            }
+-
+-            if tooltip_bounds.bottom() > window_bounds.bottom() {
+-                let new_y = mouse_position.y - tooltip_bounds.size.height - px(1.);
+-                if new_y >= Pixels::ZERO {
+-                    tooltip_bounds.origin.y = new_y;
+-                } else {
+-                    tooltip_bounds.origin.y = cmp::max(
+-                        Pixels::ZERO,
+-                        tooltip_bounds.origin.y - tooltip_bounds.bottom() - window_bounds.bottom(),
+-                    );
+-                }
+-            }
++            let tooltip_bounds = position_tooltip(
++                tooltip_request.tooltip.anchor_bounds,
++                mouse_position,
++                tooltip_size,
++                self.viewport_size(),
++            );
+ 
+             // It's possible for an element to have an active tooltip while not being painted (e.g.
+             // via the `visible_on_hover` method). Since mouse listeners are not active in this
+@@ -8280,6 +8339,66 @@ mod tests {
+         size,
+     };
+ 
++    #[test]
++    fn tooltip_anchors_above_its_trigger_independently_of_cursor_position() {
++        let anchor = Bounds::new(point(px(120.), px(100.)), size(px(32.), px(28.)));
++        let first_position = position_tooltip(
++            Some(anchor),
++            point(px(125.), px(110.)),
++            size(px(80.), px(24.)),
++            size(px(400.), px(300.)),
++        );
++        let second_position = position_tooltip(
++            Some(anchor),
++            point(px(145.), px(124.)),
++            size(px(80.), px(24.)),
++            size(px(400.), px(300.)),
++        );
++
++        assert_eq!(first_position.origin, point(px(96.), px(68.)));
++        assert_eq!(second_position.origin, first_position.origin);
++    }
++
++    #[test]
++    fn tooltip_uses_space_below_trigger_when_above_does_not_fit() {
++        let anchor = Bounds::new(point(px(8.), px(5.)), size(px(32.), px(28.)));
++        let tooltip = position_tooltip(
++            Some(anchor),
++            point(px(10.), px(10.)),
++            size(px(80.), px(24.)),
++            size(px(400.), px(300.)),
++        );
++
++        assert_eq!(tooltip.origin, point(px(4.), px(41.)));
++    }
++
++    #[test]
++    fn tooltip_flips_above_trigger_when_below_does_not_fit() {
++        let anchor = Bounds::new(point(px(120.), px(250.)), size(px(32.), px(28.)));
++        let tooltip = position_tooltip(
++            Some(anchor),
++            point(px(125.), px(260.)),
++            size(px(80.), px(24.)),
++            size(px(400.), px(300.)),
++        );
++
++        assert_eq!(tooltip.origin, point(px(96.), px(218.)));
++    }
++
++    #[test]
++    fn tooltip_clamps_to_left_and_right_window_edges() {
++        let left_anchor = Bounds::new(point(px(0.), px(100.)), size(px(20.), px(28.)));
++        let right_anchor = Bounds::new(point(px(370.), px(100.)), size(px(25.), px(28.)));
++        let viewport = size(px(400.), px(300.));
++        let tooltip_size = size(px(80.), px(24.));
++
++        let left = position_tooltip(Some(left_anchor), point(px(1.), px(110.)), tooltip_size, viewport);
++        let right = position_tooltip(Some(right_anchor), point(px(390.), px(110.)), tooltip_size, viewport);
++
++        assert_eq!(left.left(), TOOLTIP_WINDOW_MARGIN);
++        assert_eq!(right.right(), viewport.width - TOOLTIP_WINDOW_MARGIN);
++    }
++
+     #[gpui::test]
+     async fn test_focus_handle_release(cx: &mut TestAppContext) {
+         let (handle, survivor) = cx.update(|cx| (cx.focus_handle(), cx.focus_handle()));

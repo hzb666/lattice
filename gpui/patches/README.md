@@ -3,6 +3,8 @@
 Six crates the app builds on are vendored here, each with Lattice's changes, and swapped in through the workspace manifest's `[patch]` tables.
 Each is upstream's source at an exact pin plus the diffs in this directory, nothing else; `script/check-patches` rebuilds them from upstream and fails on any difference (CI runs it), and `script/check-patches --write` rebuilds them after a diff is edited or a pin moves.
 
+`chemex-local.diff` is applied last. It records the branch's tooltip placement, dialog typography, Windows path normalization and profiler compatibility across `gpui`, `gpui-component` and `gpui-base`.
+
 | Crate | Upstream | Pin | License | Diffs |
 |---|---|---|---|---|
 | `gpui-fast/crates/gpui` | [longbridge/gpui-fast](https://github.com/longbridge/gpui-fast) `crates/gpui` | commit `bbf6dead71bb5dbfd3c3592f7a3d0137d5cf81aa` | Apache-2.0 | `gpui-fast-vendoring.diff`, `gpui-fast-motion-and-type.diff`, `gpui-fast-interface-zoom.diff`, `gpui-fast-file-drop-modality.diff`, `gpui-fast-active-drag-type.diff`, `gpui-fast-deferred-draw-splice.diff`, `gpui-fast-single-scene-insert.diff`, `gpui-fast-ime-bindings.diff`, `gpui-fast-native-cursor.diff` |
