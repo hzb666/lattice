@@ -6,12 +6,12 @@
 | --- | --- |
 | 同步方向 | `upstream/main`（`leo1oel/lattice`）→ 本地 `chemex` |
 | 共同祖先 | `2cce98b71370fcff4b0db9aa20439d88650302cd` |
-| 最近逐笔审阅范围 | `9d43d560ad27599c5b1c4c91430df3f3be3d5aa7` 之后，共 56 笔 |
-| 已审阅至 | `650b134fb6d5968f2b27e34750059e5df83cb3ef`，Agent 支持任意文件附件 (#1254/#1256) |
-| 本地同步结果 | `5e6b9aad42f6fa446752f652280b0e2ae5a08eaa` |
-| 最近确认 | 2026-11-25，`git fetch upstream main` 后仍指向 `650b134f` |
+| 最近逐笔审阅范围 | `650b134fb6d5968f2b27e34750059e5df83cb3ef` 之后，共 6 笔 |
+| 已审阅至 | `5856572714327c6a22e3f92df42f952ed8c97488`，当前项目中新建模板稿件 (#1259/#1265) |
+| 本地同步结果 | `0769a69d`，完成本轮代码回移 |
+| 最近确认 | 2026-11-25，`git fetch upstream main` 后指向 `58565727` |
 
-早期记录曾审阅至 `032f99db969bbaac2ca4760cc3fda191f583d692`。`032f99db..9d43d560ad` 中已确认的回移和待办列在下文。`9d43d560..650b134f` 的 56 笔已逐笔核对；本轮补记了 Synara 1.6.2、主题/插件市场的回移，并核对了截止点后的三笔提交。
+早期记录曾审阅至 `032f99db969bbaac2ca4760cc3fda191f583d692`。`032f99db..9d43d560ad` 中已确认的回移和待办列在下文。`9d43d560..650b134f` 的 56 笔已逐笔核对；本轮继续逐笔审阅 `650b134f..58565727`，五笔选择性纳入，一笔因本地已删除 Tauri 宿主而跳过。
 
 ## 待整合
 
@@ -40,6 +40,12 @@
 | `c704848e` | 已有 `15bd91ba` | 当前 `chemex` 已包含该 GPUI tree-row drag 等待布局修复；确认是等价本地提交，不重复 cherry-pick。 |
 | `4cf86a3a` | 跳过 | 只删除已不存在的 `scripts/gpui-e2e-known-failures.json`；不恢复旧豁免文件。 |
 | `650b134f` | `184d3cf8` | 选择性加入 GPUI 任意文件附件、共享文件读取与测试；保留本地 macOS 场景限定，不带回 Tauri 宿主。 |
+| `938cf272` | `ff6c8a37` | 纳入 GPUI/Linux 的 PDFium 定位、资源目录与 CI 构建/测试/启动 smoke；只产出短期 unsigned artifact，不改发行配置。 |
+| `785140cb` | `f4c20a72` | 纳入 minted 代码块 PDF 反向定位，保留本地段落空行回退。 |
+| `065edcb9` | 跳过 | 上游的 Tauri 退役/原生接管发行流程不适用于已删除 Tauri 宿主的 ChemEx；其旧宿主 catch-up 迁移也不恢复。 |
+| `24cf539e` | `0769a69d` | 纳入 Windows E2E 截图和临时 unsigned archive；冲突解决时保留本地标题栏窗口控制 API。 |
+| `a2d78773` | `f557c3a9` | 与 `785140cb` 成组纳入 minted 源码匹配边界和测试，避免注释、相似代码块等误匹配。 |
+| `58565727` | `34025a87` | 纳入当前项目中新建模板稿件、文件冲突保护、主文档设置和新建项目位置预览；旧 `docs/guide` 保持删除。 |
 
 ## 已整合
 
@@ -91,7 +97,7 @@
 
 ```sh
 git fetch upstream main
-git log --reverse --oneline 650b134fb6d5968f2b27e34750059e5df83cb3ef..upstream/main
+git log --reverse --oneline 5856572714327c6a22e3f92df42f952ed8c97488..upstream/main
 ```
 
 逐笔读实际 diff，核对本地等价实现、前置依赖和被删除的路径。只摘取适用部分，保留 ChemEx、本地配置、Windows 隔离和现有工作区改动。整笔采用时使用 `git cherry-pick -x`。部分采用时在提交正文和本页注明来源及保留范围。
