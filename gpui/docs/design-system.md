@@ -40,10 +40,7 @@ The curves are the app's own `linear()` spring samples, so a GPUI animation foll
   A dialog's own buttons and keys close through the same exit with `ModalLayer::closing(id, cx, f)` (a click handler) or `ModalLayer::leave(id, window, cx, then)`, the owner's answer running once it has played; a Kit popover given `.exit(popup_exit())` stays drawn after it closes, as it was and taking no input, and `popup_motion(state, ..)` draws its entrance or its exit (`gpui/patches/gpui-base-popover-exit.diff`).
 - `loading::spinner` turns a busy mark once every 0.8 s (a Button, IconButton or StatusItem showing `Icon::LOADER` turns it by itself), and `loading::sheen` sweeps a band across a skeleton every 1.6 s; both rest under reduced motion.
 - `attention` holds the editor's attention moments as functions of time: a jump's `reveal_flash`, an outside edit's `change_wash`, and an accepted edit's strike, fold and settle (`accept`).
-- `animated_icon` holds the Tauri app's animated product icons (Settings' sections, the titlebar's Annotations, Git, History and linked Overleaf).
-  `IconButton::animated(icon)` replays the gesture when the pointer comes onto the button or focus lands on it, and `animated_icon::product_icon` draws one anywhere else, replaying after `animated_icon::replay_on` (called as its control draws, with the control's hovered-or-focused state).
-  At rest the icon is its glyph; playing, each frame is rasterized from the icon's SVG with its pieces where the Tauri app's keyframes put them, and the pieces and tracks are written from `src/animated-icons/` by `node scripts/gpui-animated-icons.mjs`, which `pnpm gate:changed` checks is current.
-  Under reduced motion the glyph blinks to 35% instead.
+- The titlebar and Settings use static product glyphs. Loading indicators still show when work is in progress.
 - Under reduced motion (`cx.reduce_motion()`), spatial travel lands at once and fades stay.
 
 ## Fluid hover

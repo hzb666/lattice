@@ -164,7 +164,6 @@ impl Shell {
             components::{IconButton, Surface},
         };
         IconButton::new("git", Icon::GIT)
-            .animated(lattice_ui::animated_icon::ProductIcon::GitBranch)
             .surface(Surface::Titlebar)
             .tooltip(lattice_i18n::t!("Git status and commit"))
             .disabled(self.project.is_none())

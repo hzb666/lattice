@@ -10,27 +10,23 @@
 //! Open in Overleaf and Open another Overleaf project. A dot on its corner
 //! says where the link stands: green while syncing, editing live or with
 //! the channel up, an accent dot for work waiting on Overleaf in manual
-//! mode, a breathing amber while the channel joins, and red when it failed
-//! (syncing carries on; the tooltip says why). Its icon fades up into place
-//! when it changes between linked and syncing (`StateSwap`).
+//! mode, amber while the channel joins, and red when it failed (syncing
+//! carries on; the tooltip says why).
 //!
 //! The window tells the bridge when it comes forward (a probe, and a
 //! channel waiting out its backoff joins now) or loses focus (a held
 //! board, sheet or deck goes up), and when it goes off screen, where the
 //! live poll rests.
 
-use std::{cell::Cell, time::Duration};
-
 use gpui::{
-    AnimationExt as _, AnyElement, AppContext as _, Context, Corners, Entity, IntoElement,
-    ParentElement as _, Styled as _, Subscription, Task, Window, actions, div, px,
+    AnyElement, AppContext as _, Context, Corners, Entity, IntoElement, ParentElement as _,
+    Styled as _, Subscription, Task, Window, actions, div, px,
 };
 use lattice_i18n::t;
 use lattice_settings::{OverleafSyncMode, SettingsTab, TitlebarTool};
 use lattice_ui::{
     ActiveLattice as _, Icon,
     components::{IconButton, MenuAction, MenuPopover, Surface},
-    motion::Motion,
     tokens::RADIUS_PILL,
 };
 
@@ -55,9 +51,6 @@ pub(crate) struct OverleafLayers {
     review: Option<(Entity<OverleafReview>, Subscription)>,
     /// Saving the window's editors before a sync or an upload.
     pending: Option<Task<()>>,
-    /// The control's icon as last drawn, and how many times it changed:
-    /// each change fades the new one in.
-    swap: Cell<Option<(&'static str, u32)>>,
 }
 
 impl Shell {
@@ -471,69 +464,13 @@ impl Shell {
         // or the channel up.
         let online = syncing || live_editing || channel == ChannelStatus::Live;
         let badge: Option<AnyElement> = if linked && online {
-            // Coming online sends one ripple out of the green dot
-            // (`overleaf-dot-ripple`): a 1.5px ring in the success hue at
-            // 90%, swelling to 2.6× as it fades, on the flourish tier. The
-            // dot is the same element while it stays online, so the ripple
-            // runs once per coming online; none under reduced motion.
-            // The ring is the shadow spread round the dot's 4px padding box,
-            // scaled about its centre: 7px across with a 1.5px edge at rest.
-            let ripple = (!cx.reduce_motion()).then(|| {
-                div()
-                    .absolute()
-                    .rounded(RADIUS_PILL)
-                    .border_color(palette.success)
-                    .with_animation(
-                        "overleaf-channel-ripple",
-                        Motion::Flourish.animation(),
-                        |ring, t| {
-                            let scale = 1. + 1.6 * t;
-                            let across = 7. * scale;
-                            let at = (4. - across) / 2.;
-                            ring.size(px(across))
-                                .left(px(at))
-                                .top(px(at))
-                                .border(px(1.5 * scale))
-                                .opacity(0.9 * (1. - t))
-                        },
-                    )
-            });
-            Some(dot(palette.success).children(ripple).into_any_element())
+            Some(dot(palette.success).into_any_element())
         } else if linked && pending {
             Some(dot(palette.accent).into_any_element())
         } else if linked && channel == ChannelStatus::Connecting {
-            Some(
-                dot(palette.warning)
-                    .with_animation(
-                        "overleaf-channel-breathe",
-                        gpui::Animation::new(Duration::from_millis(1_600)).repeat(),
-                        |this, t| {
-                            let phase = (t * std::f32::consts::TAU).cos();
-                            this.opacity(0.675 + 0.325 * phase)
-                        },
-                    )
-                    .into_any_element(),
-            )
+            Some(dot(palette.warning).into_any_element())
         } else if linked && channel == ChannelStatus::Error {
-            Some(
-                dot(palette.danger)
-                    .with_animation(
-                        "overleaf-channel-pop",
-                        Motion::Slow.animation(),
-                        |this, t| {
-                            let scale = if t < 0.6 {
-                                0.4 + (1.35 - 0.4) * (t / 0.6)
-                            } else {
-                                1.35 - 0.35 * ((t - 0.6) / 0.4)
-                            };
-                            let inset = 3.5 * (1. - scale);
-                            this.size(px(7. * scale))
-                                .top(px(3. + inset))
-                                .right(px(3. + inset))
-                        },
-                    )
-                    .into_any_element(),
-            )
+            Some(dot(palette.danger).into_any_element())
         } else {
             None
         };
@@ -557,56 +494,8 @@ impl Shell {
                 shell.open_overleaf_picker(window, cx)
             }
         }));
-        if linked {
-            primary = primary.animated(lattice_ui::animated_icon::ProductIcon::CloudUploadOutline);
-        }
-        let key = if syncing {
-            "syncing"
-        } else if linked {
-            "linked"
-        } else {
-            "unlinked"
-        };
-        let changes = match self.overleaf_layers.swap.get() {
-            None => 0,
-            Some((last, changes)) if last == key => changes,
-            Some((_, changes)) => changes + 1,
-        };
-        self.overleaf_layers.swap.set(Some((key, changes)));
-        // The unlinked cloud keeps the button's own ink, which follows the
-        // pointer; the linked icons sit on the accent wash in its ink.
-        let swapped: Option<AnyElement> = if syncing {
-            Some(infinity_loader("overleaf-syncing", px(14.), &palette).into_any_element())
-        } else if linked {
-            // The linked cloud's arrow dips when the button is hovered or
-            // focused (`provided-icons.tsx`).
-            Some(
-                lattice_ui::animated_icon::AnimatedProductIcon::new(
-                    lattice_ui::animated_icon::button_icon_id("overleaf"),
-                    lattice_ui::animated_icon::ProductIcon::CloudUploadOutline,
-                    px(14.),
-                    palette.accent,
-                )
-                .into_any_element(),
-            )
-        } else {
-            None
-        };
-        if let Some(content) = swapped {
-            primary = primary.content(if changes == 0 {
-                content
-            } else {
-                // Rises 3px as it fades up, on the moderate spring.
-                div()
-                    .relative()
-                    .child(content)
-                    .with_animation(
-                        gpui::ElementId::NamedInteger("overleaf-swap".into(), changes as u64),
-                        Motion::Moderate.animation(),
-                        |this, t| this.opacity(t.clamp(0., 1.)).top(px(3. * (1. - t))),
-                    )
-                    .into_any_element()
-            });
+        if syncing {
+            primary = primary.content(infinity_loader("overleaf-syncing", px(14.), &palette));
         }
         if let Some(badge) = badge {
             primary = primary.badge(badge);

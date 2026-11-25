@@ -18,7 +18,6 @@ use lattice_i18n::t;
 use lattice_settings::{Choice as _, SettingsTab};
 use lattice_ui::{
     ActiveLattice as _, Icon, TextRole, TextRoleStyle as _, TypeScale,
-    animated_icon::{self, ProductIcon},
     components::Field,
     fluid_hover::{FluidHover, ItemKind},
     interaction::{mix, track_pointer, use_interaction},
@@ -39,9 +38,7 @@ const NAV_RADIUS: Pixels = px(6.);
 #[derive(Clone, Copy)]
 struct Section {
     tab: SettingsTab,
-    /// Replays its gesture when the row is hovered (`AnimatedProductIcon`
-    /// in settings-dialog.tsx).
-    icon: ProductIcon,
+    icon: Icon,
 }
 
 fn groups() -> Vec<(SharedString, Vec<(Section, SharedString)>)> {
@@ -52,14 +49,14 @@ fn groups() -> Vec<(SharedString, Vec<(Section, SharedString)>)> {
                 (
                     Section {
                         tab: SettingsTab::Appearance,
-                        icon: ProductIcon::Faders,
+                        icon: Icon::FADERS,
                     },
                     t!("Appearance").into(),
                 ),
                 (
                     Section {
                         tab: SettingsTab::Editor,
-                        icon: ProductIcon::Logs,
+                        icon: Icon::CLIPBOARD_TEXT,
                     },
                     t!("Editor & builds").into(),
                 ),
@@ -71,56 +68,56 @@ fn groups() -> Vec<(SharedString, Vec<(Section, SharedString)>)> {
                 (
                     Section {
                         tab: SettingsTab::Agent,
-                        icon: ProductIcon::Robot,
+                        icon: Icon::ROBOT,
                     },
                     t!("Providers").into(),
                 ),
                 (
                     Section {
                         tab: SettingsTab::AgentDisplay,
-                        icon: ProductIcon::Faders,
+                        icon: Icon::FADERS,
                     },
                     t!("Display").into(),
                 ),
                 (
                     Section {
                         tab: SettingsTab::Mcp,
-                        icon: ProductIcon::Plugs,
+                        icon: Icon::PLUGS,
                     },
                     t!("MCP").into(),
                 ),
                 (
                     Section {
                         tab: SettingsTab::Api,
-                        icon: ProductIcon::Package,
+                        icon: Icon::PACKAGE,
                     },
                     t!("Skills").into(),
                 ),
                 (
                     Section {
                         tab: SettingsTab::Usage,
-                        icon: ProductIcon::ClockBack,
+                        icon: Icon::CLOCK_BACK,
                     },
                     t!("Usage & limits").into(),
                 ),
                 (
                     Section {
                         tab: SettingsTab::Archived,
-                        icon: ProductIcon::Chat,
+                        icon: Icon::CHAT,
                     },
                     t!("Archived threads").into(),
                 ),
                 (
                     Section {
                         tab: SettingsTab::ModelEndpoint,
-                        icon: ProductIcon::Sparkle,
+                        icon: Icon::SPARKLE,
                     },
                     t!("Model endpoint").into(),
                 ),
                 (
                     Section {
                         tab: SettingsTab::Environment,
-                        icon: ProductIcon::ApiKey,
+                        icon: Icon::API_KEY,
                     },
                     t!("Environment").into(),
                 ),
@@ -132,21 +129,21 @@ fn groups() -> Vec<(SharedString, Vec<(Section, SharedString)>)> {
                 (
                     Section {
                         tab: SettingsTab::Overleaf,
-                        icon: ProductIcon::CloudUpload,
+                        icon: Icon::CLOUD_UPLOAD_FILL,
                     },
                     "Overleaf".into(),
                 ),
                 (
                     Section {
                         tab: SettingsTab::Literature,
-                        icon: ProductIcon::ApiKey,
+                        icon: Icon::API_KEY,
                     },
                     t!("Literature services").into(),
                 ),
                 (
                     Section {
                         tab: SettingsTab::Plugins,
-                        icon: ProductIcon::Package,
+                        icon: Icon::PACKAGE,
                     },
                     t!("Plugins").into(),
                 ),
@@ -158,14 +155,14 @@ fn groups() -> Vec<(SharedString, Vec<(Section, SharedString)>)> {
                 (
                     Section {
                         tab: SettingsTab::Doctor,
-                        icon: ProductIcon::Sparkle,
+                        icon: Icon::SPARKLE,
                     },
                     t!("TeX doctor").into(),
                 ),
                 (
                     Section {
                         tab: SettingsTab::Logs,
-                        icon: ProductIcon::Receipt,
+                        icon: Icon::RECEIPT,
                     },
                     t!("Logs").into(),
                 ),
@@ -176,7 +173,7 @@ fn groups() -> Vec<(SharedString, Vec<(Section, SharedString)>)> {
             vec![(
                 Section {
                     tab: SettingsTab::Acknowledgements,
-                    icon: ProductIcon::Chat,
+                    icon: Icon::CHAT,
                 },
                 t!("Acknowledgements").into(),
             )],
@@ -338,9 +335,6 @@ impl SettingsDialog {
         let (interaction, pointer) = use_interaction(id.clone(), window, cx);
         let active = section.tab == self.tab && !(narrow && !self.narrow_page);
         let tab = section.tab;
-        let icon_id = ElementId::NamedChild(std::sync::Arc::new(id.clone()), "icon".into());
-        // The row's hover is `track_pointer`'s; the icon replays as it begins.
-        animated_icon::replay_on(icon_id.clone(), interaction.pointer.hovered, window, cx);
         let item = div()
             .id(id)
             .relative()
@@ -401,17 +395,8 @@ impl SettingsDialog {
             .child(
                 div()
                     .flex_none()
-                    .when(section.icon == ProductIcon::Sparkle, |this| {
-                        this.mt(px(-1.))
-                    })
-                    .child(animated_icon::product_icon(
-                        icon_id,
-                        section.icon,
-                        px(15.),
-                        ink,
-                        window,
-                        cx,
-                    )),
+                    .when(section.icon == Icon::SPARKLE, |this| this.mt(px(-1.)))
+                    .child(section.icon.element(px(15.), ink)),
             )
             .child(
                 div()
