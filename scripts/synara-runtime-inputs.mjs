@@ -12,6 +12,7 @@ export const SYNARA_RUNTIME_INPUTS = [
   "scripts/lib/codesign.mjs",
   "scripts/lib/runtime-prune.mjs",
   "scripts/lib/synara-server-prune.mjs",
+  "scripts/lib/synara-build-output.mjs",
 ];
 
 export const SYNARA_WINDOWS_SOURCE_PATCH = "scripts/patches/synara-windows-host.patch";

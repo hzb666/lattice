@@ -24,6 +24,7 @@ import {
 import { createHash } from "node:crypto";
 import { basename, delimiter, dirname, join, relative, resolve } from "node:path";
 import { codesign, signMachOTree, signingIdentity } from "./lib/codesign.mjs";
+import { assertFreshSynaraBuild } from "./lib/synara-build-output.mjs";
 import { pruneServerRuntime } from "./lib/synara-server-prune.mjs";
 import { capture, projectRoot, readJson, removePath, run, sha256, treeBytes, walkFiles, writeJson } from "./lib/util.mjs";
 import { NODE_RELEASES as TARGETS, prepareNodeRuntime } from "./lib/node-runtime.mjs";
@@ -495,7 +496,8 @@ function cachedWebBuildKey() {
 }
 
 const buildStartedAt = Date.now();
-if (webBuildKey !== null && cachedWebBuildKey() === webBuildKey) {
+const webBuildReused = webBuildKey !== null && cachedWebBuildKey() === webBuildKey;
+if (webBuildReused) {
   console.log("Reusing the existing Synara web build (no change outside apps/server).");
 } else {
   if (webBuildKey !== null) {
@@ -533,14 +535,7 @@ if (!deviceHelperTreeMatches(sourceDeviceHelperRoot, join(sourceRoot, "apps/serv
   );
 }
 
-const serverEntry = join(sourceRoot, "apps/server/dist/index.mjs");
-if (!existsSync(serverEntry) || statSync(serverEntry).mtimeMs < buildStartedAt) {
-  throw new Error("The Synara build did not produce a fresh apps/server/dist/index.mjs.");
-}
-const clientIndex = join(sourceRoot, "apps/server/dist/client/index.html");
-if (!existsSync(clientIndex) || fileSha256(clientIndex) !== fileSha256(webArtifact)) {
-  throw new Error("The Synara server build did not copy the current web client index.");
-}
+assertFreshSynaraBuild(sourceRoot, { buildStartedAt, webBuildReused });
 
 mkdirSync(cacheRoot, { recursive: true });
 const stageRoot = mkdtempSync(join(dirname(runtimeRoot), ".synara-runtime-"));
