@@ -24,6 +24,7 @@ use std::{
     ops::Range,
     rc::Rc,
     sync::Arc,
+    sync::atomic::{AtomicBool, Ordering},
     time::Instant,
 };
 
@@ -32,12 +33,14 @@ use editor::{
     display_map::{BlockPlacement, BlockProperties, BlockStyle, CustomBlockId},
 };
 use gpui::{
-    App, AppContext as _, Bounds, Context, Entity, EventEmitter, FocusHandle, Focusable,
-    HitboxBehavior, InteractiveElement as _, IntoElement, ParentElement as _, Pixels, Render,
-    SharedString, Styled as _, Subscription, TextRun, Window, canvas, div, point, px, size,
+    Action as _, App, AppContext as _, Bounds, Context, Entity, EventEmitter, FocusHandle,
+    Focusable, HitboxBehavior, InteractiveElement as _, IntoElement, ParentElement as _, Pixels,
+    Render, SharedString, Styled as _, Subscription, TextRun, Window, canvas, div, point, px, size,
 };
 use language::{Buffer, BufferEvent, BufferSnapshot};
-use lattice_ui::{ActiveLattice as _, editor_theme};
+use lattice_ui::{ActiveLattice as _, Icon, components::Button, editor_theme};
+
+gpui::actions!(lattice_editor, [TogglePreambleFold]);
 
 mod caret_card;
 mod current_line;
@@ -117,6 +120,8 @@ pub struct LatticeEditor {
     folds: Option<FoldSource>,
     fold_cache: RefCell<HashMap<u32, Option<FoldRange>>>,
     preamble_separator_row: Option<Option<u32>>,
+    preamble_fold_row: Option<u32>,
+    preamble_folded: Arc<AtomicBool>,
     /// The source gutter's geometry as of the last render (`None` before
     /// the first), the pointer over it and what it painted.
     gutter_layout: Option<GutterLayout>,
@@ -210,6 +215,8 @@ impl LatticeEditor {
             folds: None,
             fold_cache: RefCell::default(),
             preamble_separator_row: None,
+            preamble_fold_row: None,
+            preamble_folded: Arc::new(AtomicBool::new(false)),
             gutter_layout: None,
             gutter_pointer: GutterPointer::default(),
             painted_gutter: Rc::default(),
@@ -256,68 +263,83 @@ impl LatticeEditor {
         const LAYER: &str = "latex-preamble-separator";
         const LINES: u32 = 2;
 
+        let snapshot = self.buffer.read(cx).snapshot();
         let body_row = if self.folds.is_some() {
-            crate::latex::folding::document_body_row(&self.buffer.read(cx).snapshot())
+            crate::latex::folding::document_body_row(&snapshot)
         } else {
             None
         };
+        self.preamble_fold_row =
+            body_row.and_then(|_| crate::latex::folding::initial_preamble_row(&snapshot));
         if self.preamble_separator_row == Some(body_row) {
             return;
         }
         self.preamble_separator_row = Some(body_row);
-        let blocks = body_row
-            .map(|line| {
-                let palette = cx.lattice().palette.clone();
-                let ground = editor_theme::ground(cx.lattice().code_theme, &palette);
-                let rule = palette.line_strong;
-                let label = palette.text_secondary;
-                let font = cx.lattice().fonts.ui.clone();
-                vec![BlockWidget {
-                    line,
-                    side: BlockSide::Above,
-                    lines: LINES,
-                    render: Arc::new(move |_| {
-                        div()
-                            .relative()
-                            .size_full()
-                            .bg(ground)
-                            .child(
-                                div()
-                                    .absolute()
-                                    .left_0()
-                                    .right_0()
-                                    .top(gpui::relative(0.5))
-                                    .h(px(1.))
-                                    .bg(rule),
-                            )
-                            .child(
-                                div()
-                                    .absolute()
-                                    .inset_0()
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .child(
-                                        div()
-                                            .flex()
-                                            .px(px(8.))
-                                            .h(px(16.))
-                                            .items_center()
-                                            .rounded(px(4.))
-                                            .bg(ground)
-                                            .font_family(font.clone())
-                                            .text_size(px(11.))
-                                            .text_color(label)
-                                            .child("Λ ")
-                                            .child(lattice_i18n::t!("Document Preamble"))
-                                            .child(" Λ"),
-                                    ),
-                            )
-                            .into_any_element()
-                    }),
-                }]
-            })
-            .unwrap_or_default();
+        let blocks =
+            body_row
+                .map(|line| {
+                    let palette = cx.lattice().palette.clone();
+                    let ground = editor_theme::ground(cx.lattice().code_theme, &palette);
+                    let rule = palette.line_strong;
+                    let preamble_folded = self.preamble_folded.clone();
+                    vec![BlockWidget {
+                        line,
+                        side: BlockSide::Above,
+                        lines: LINES,
+                        render: Arc::new(move |context| {
+                            const RULE_POSITION: f32 = 0.55;
+                            let half_button = px(14.);
+                            let rule_y = (context.line_height * (LINES as f32 * RULE_POSITION))
+                                .max(half_button);
+                            let button_top = rule_y - half_button;
+                            div()
+                                .relative()
+                                .size_full()
+                                .bg(ground)
+                                .child(
+                                    div()
+                                        .absolute()
+                                        .left_0()
+                                        .right_0()
+                                        .top(rule_y)
+                                        .h(px(1.))
+                                        .bg(rule),
+                                )
+                                .child(
+                                    div()
+                                        .absolute()
+                                        .left_0()
+                                        .right_0()
+                                        .top(button_top)
+                                        .flex()
+                                        .justify_center()
+                                        .child(
+                                            div().rounded(px(4.)).bg(ground).child(
+                                                Button::new(
+                                                    "latex-preamble-toggle",
+                                                    lattice_i18n::t!("Document Preamble"),
+                                                )
+                                                .icon(if preamble_folded.load(Ordering::Relaxed) {
+                                                    Icon::CHEVRON_DOWN
+                                                } else {
+                                                    Icon::CHEVRON_UP
+                                                })
+                                                .compact()
+                                                .ghost()
+                                                .on_click(|_, window, cx| {
+                                                    window.dispatch_action(
+                                                        TogglePreambleFold.boxed_clone(),
+                                                        cx,
+                                                    );
+                                                }),
+                                            ),
+                                        ),
+                                )
+                                .into_any_element()
+                        }),
+                    }]
+                })
+                .unwrap_or_default();
         self.set_blocks(LAYER, blocks, cx);
     }
 
@@ -701,6 +723,11 @@ impl Focusable for LatticeEditor {
 
 impl Render for LatticeEditor {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let preamble_folded = self
+            .preamble_fold_row
+            .is_some_and(|row| self.is_folded(row, window, cx));
+        self.preamble_folded
+            .store(preamble_folded, Ordering::Relaxed);
         if let Some(card) = self.refocus.take()
             && (card.contains_focused(window, cx) || window.focused(cx).is_none())
         {
@@ -755,6 +782,12 @@ impl Render for LatticeEditor {
                 if this.fold_at_caret(window, cx) {
                     cx.stop_propagation();
                 }
+            }))
+            .capture_action(cx.listener(|this, _: &TogglePreambleFold, window, cx| {
+                if let Some(row) = this.preamble_fold_row {
+                    this.toggle_fold(row, window, cx);
+                }
+                cx.stop_propagation();
             }))
             .capture_action(
                 cx.listener(|this, _: &editor::actions::FoldAll, window, cx| {
