@@ -7,10 +7,10 @@
 //! centre; past one line (a long title or detail, actions, a progress bar)
 //! the mark and the X pin to the title's line instead. The title is the
 //! subtitle's 13/18 at medium weight, three lines at most; the detail the
-//! caption's 12/16 in the secondary ink, four lines at most, its line breaks
-//! kept, the whole of it in a tooltip. Actions are compact Buttons 6px
-//! apart, the first tinted, after a Copy button when the card has text to
-//! copy; a running operation adds its bar and its percentage.
+//! caption's 12/16 in the secondary ink, wrapping within the message column
+//! and keeping its line breaks. Actions are compact Buttons 6px apart, the
+//! first tinted, after a Copy button when the card has text to copy; a running
+//! operation adds its bar and its percentage.
 //!
 //! The stack (`lattice-gpui`'s notices) owns where each card stands and how
 //! it moves; a card only draws itself, with its words faded out while it
@@ -19,16 +19,15 @@
 use std::{rc::Rc, time::Duration};
 
 use gpui::{
-    Animation, AnimationExt as _, AnyElement, AnyView, App, ClipboardItem, ElementId, Hsla,
+    Animation, AnimationExt as _, AnyElement, App, ClipboardItem, ElementId, Hsla,
     InteractiveElement as _, IntoElement, ParentElement as _, Pixels, RenderOnce, SharedString,
-    StatefulInteractiveElement as _, Styled as _, Window, div, prelude::FluentBuilder as _, px,
-    relative,
+    Styled as _, Window, div, prelude::FluentBuilder as _, px, relative,
 };
 use gpui_kit::base::{Transition, transition};
 
 use crate::{
     ActiveLattice as _, Elevation, Icon, Palette, TextRole, TextRoleStyle as _,
-    components::{Button, IconButton, LatticeTooltip},
+    components::{Button, IconButton},
     icons::ICON_LARGE,
     motion::Motion,
     tokens::{CONTAINER_TOAST, FONT_WEIGHT_MEDIUM},
@@ -226,7 +225,6 @@ impl RenderOnce for Toast {
             .unwrap_or_else(|| icon.element(ICON_LARGE, hue).into_any_element());
         // Past one line the mark and the X stand on the title's line box.
         let pin = |size: f32| px(((TITLE_LINE - size) / 2.).max(-8.));
-        let detail = self.detail.clone();
         let title = div()
             .text_role(TextRole::Subtitle, cx)
             .font_weight(FONT_WEIGHT_MEDIUM)
@@ -239,15 +237,14 @@ impl RenderOnce for Toast {
                     .children(crate::parity::text_probe(region, 0, self.title.clone()))
             })
             .child(self.title.clone());
-        let detail = detail.map(|detail| {
-            let tip = detail.clone();
+        let detail = self.detail.map(|detail| {
             div()
                 .id(child("detail"))
+                .w_full()
                 .text_role(TextRole::Caption, cx)
                 .text_color(palette.text_secondary)
-                .line_clamp(4)
+                .whitespace_normal()
                 .child(detail)
-                .tooltip(move |_, cx| -> AnyView { LatticeTooltip::view(tip.clone(), None, cx) })
         });
         let has_actions = self.copy.is_some() || !self.actions.is_empty();
         let copy = self

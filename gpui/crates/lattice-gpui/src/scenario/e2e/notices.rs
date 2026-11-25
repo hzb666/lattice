@@ -152,8 +152,10 @@ impl Run {
 
         // An error offers Copy with its title and detail; a running
         // operation's bar moves until its outcome replaces it.
+        let log_line = format!("D:/build/{}/manuscript.log", "a1b2c3d4".repeat(16));
+        let detail = [log_line.as_str(); 6].join("\n");
         show(
-            Notice::new(ToastLevel::Error, "Stack check failed").detail("The reason"),
+            Notice::new(ToastLevel::Error, "Stack check failed").detail(detail.clone()),
             cx,
         );
         show(
@@ -165,10 +167,14 @@ impl Run {
         cx.update(|cx| notices::update_progress("stack-check-run", ToastProgress::Fraction(0.6), cx));
         self.pause(cx, SETTLE).await;
         let cards = cx.update(|cx| stack.read(cx).cards());
-        let copy = cards
-            .iter()
-            .find(|card| card.title == "Stack check failed")
-            .and_then(|card| card.copy.clone());
+        let error = cards.iter().find(|card| card.title == "Stack check failed");
+        let copy = error.and_then(|card| card.copy.clone());
+        let error_height = error.map(|card| card.natural);
+        steps.check(
+            "the error card grows to wrap long paths on each log line",
+            error_height.is_some_and(|height| height > 256.),
+            json!({ "height": error_height }),
+        );
         let progress = cards
             .iter()
             .find(|card| card.title == "Stack check running")
@@ -181,7 +187,7 @@ impl Run {
         let titles = cx.update(|cx| stack.read(cx).titles());
         steps.check(
             "an error carries Copy with its title and detail, and a running notice's bar moves until its outcome replaces it",
-            copy.as_deref() == Some("Stack check failed\nThe reason")
+            copy.as_deref() == Some(format!("Stack check failed\n{detail}").as_str())
                 && progress.is_some_and(|share| (share - 0.6).abs() < 1e-3)
                 && titles.iter().any(|t| &**t == "Stack check done")
                 && !titles.iter().any(|t| &**t == "Stack check running"),
