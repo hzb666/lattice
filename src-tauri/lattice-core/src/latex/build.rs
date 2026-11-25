@@ -29,6 +29,7 @@ use std::time::{Instant, SystemTime};
 mod active;
 mod beside;
 mod chemex_output;
+mod current;
 #[cfg(windows)]
 mod isolated;
 mod unchanged;
@@ -37,6 +38,7 @@ pub(crate) use active::begin_active;
 pub(crate) use active::stop_requested;
 pub use active::{abort, is_running, ActiveBuild};
 use active::{finish_active, stop_stalled, terminate, was_stalled, BuildSession};
+pub use current::current_build;
 #[cfg(windows)]
 pub(crate) use isolated::isolated_project_build;
 

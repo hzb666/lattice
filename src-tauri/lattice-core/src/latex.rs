@@ -74,7 +74,9 @@ pub use aux_files::AuxFiles;
 /// process they own — abort signals a whole process group.
 #[cfg(all(test, unix))]
 pub(crate) use build::begin_active as begin_for_test;
-pub use build::{abort, build, classify_build_error, clean, is_running, ActiveBuild};
+pub use build::{
+    abort, build, classify_build_error, clean, current_build, is_running, ActiveBuild,
+};
 #[cfg(windows)]
 pub(crate) use build::{isolated_project_build, project_build_target, stop_requested};
 
@@ -271,7 +273,8 @@ pub struct BuildResult {
     /// Nothing the document reads changed since its last build, which failed,
     /// and nobody asked for this one (`build::unchanged`): the result restates
     /// that build's errors, and the PDF and SyncTeX map on disk are its, of
-    /// these same inputs. Nothing was typeset or written.
+    /// these same inputs. Nothing was typeset or written. Also set on a
+    /// [`current_build`], which restates a last build that succeeded.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub unchanged: bool,
     /// The project-relative folder holding this build's `.aux` and the other
