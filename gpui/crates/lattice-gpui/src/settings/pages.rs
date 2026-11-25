@@ -156,6 +156,7 @@ impl SettingsDialog {
     }
 
     /// Settings › Plugins, once drawn.
+    #[cfg(target_os = "macos")]
     pub fn plugins_pane(&self) -> Option<Entity<super::plugins_pane::PluginsPane>> {
         self.pages.plugins.clone()
     }

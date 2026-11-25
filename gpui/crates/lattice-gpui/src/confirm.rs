@@ -191,7 +191,7 @@ impl ConfirmHost {
     }
 
     /// The open question's body, for a scenario.
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    #[cfg(target_os = "macos")]
     pub fn question_list(&self) -> Vec<SharedString> {
         self.pending
             .as_ref()

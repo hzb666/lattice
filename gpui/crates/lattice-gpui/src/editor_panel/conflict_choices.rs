@@ -177,6 +177,7 @@ impl EditorPanel {
     }
 
     /// Whether the buffer holds a conflict start, for a scenario.
+    #[cfg(target_os = "macos")]
     pub fn buffer_has_markers_for_scenario(&self, cx: &App) -> bool {
         self.buffer.read(cx).text().contains(START)
     }

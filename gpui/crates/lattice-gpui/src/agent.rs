@@ -109,6 +109,7 @@ impl SynaraPanel {
     }
 
     /// The Agent's separate window, while it has one.
+    #[cfg(target_os = "macos")]
     pub fn window_handle(&self) -> Option<AnyWindowHandle> {
         self.window
     }

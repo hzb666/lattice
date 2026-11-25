@@ -78,6 +78,7 @@ impl OverleafBridge {
 
     /// A document is live or being joined: what a switch under way must not
     /// take up again.
+    #[cfg(target_os = "macos")]
     pub fn holds_live(&self) -> bool {
         self.documents.live.is_some() || self.documents.joining.is_some()
     }

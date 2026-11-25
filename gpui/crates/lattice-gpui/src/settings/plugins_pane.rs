@@ -486,11 +486,13 @@ impl PluginsPane {
         self.plugins.clone().unwrap_or_default()
     }
 
+    #[cfg(target_os = "macos")]
     pub fn is_busy(&self) -> bool {
         self.busy.is_some()
     }
 
     /// The install form's error, for a scenario.
+    #[cfg(target_os = "macos")]
     pub fn install_error(&self) -> Option<String> {
         self.errors.get(&Target::Install).cloned()
     }
