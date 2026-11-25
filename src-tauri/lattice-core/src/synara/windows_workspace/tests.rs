@@ -2,6 +2,7 @@ use std::fs::{self, OpenOptions};
 use std::os::windows::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 
+use super::checkpoint_git::CHECKPOINT_CONFIG;
 use super::{native, snapshot, transaction, Workspace};
 use tempfile::TempDir;
 
@@ -372,7 +373,7 @@ fn checkpoint_git_rejects_config_alternates_and_unowned_refs() {
     let config = fixture.stage.join(".git/config");
     fs::write(&config, "[core]\n\tworktree = C:/Users/Public\n").unwrap();
     assert!(Workspace::reopen(&fixture.original, &fixture.stage).is_err());
-    fs::write(&config, snapshot::CHECKPOINT_CONFIG).unwrap();
+    fs::write(&config, CHECKPOINT_CONFIG).unwrap();
 
     let alternates = fixture.stage.join(".git/objects/info/alternates");
     fs::write(&alternates, fixture.original.to_string_lossy().as_bytes()).unwrap();

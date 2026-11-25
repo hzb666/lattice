@@ -212,12 +212,12 @@ fn env_of(command: &Command, name: &str) -> Option<PathBuf> {
 fn the_sidecar_gets_the_agent_dir_only_once_an_endpoint_is_saved() {
     let home = TempDir::new("model-endpoint");
     let mut command = Command::new("true");
-    configure_sidecar(&mut command, &home, Path::new(EXE));
+    configure_sidecar_for_runtime(&mut command, &home, &home, Path::new(EXE));
     assert_eq!(env_of(&command, "PI_CODING_AGENT_DIR"), None);
 
     let draft = endpoint(Protocol::OpenAiCompletions, "https://a.com/v1", vec![model("m")]);
     save(&home, Path::new("/old/place/lattice"), draft, KeyUpdate::Replace("k".into())).unwrap();
-    configure_sidecar(&mut command, &home, Path::new(EXE));
+    configure_sidecar_for_runtime(&mut command, &home, &home, Path::new(EXE));
     assert_eq!(env_of(&command, "PI_CODING_AGENT_DIR"), Some(home.join("pi-agent")));
     assert_eq!(saved(&home)["providers"]["lattice"]["apiKey"], key_command(Path::new(EXE)));
 }
@@ -243,7 +243,7 @@ fn a_keyless_endpoint_keeps_its_placeholder_when_the_app_moves() {
     let home = TempDir::new("model-endpoint");
     let draft = endpoint(Protocol::OpenAiCompletions, "http://localhost:1234/v1", vec![model("m")]);
     save(&home, Path::new("/old/lattice"), draft, KeyUpdate::Keep).unwrap();
-    configure_sidecar(&mut Command::new("true"), &home, Path::new(EXE));
+    configure_sidecar_for_runtime(&mut Command::new("true"), &home, &home, Path::new(EXE));
     assert_eq!(saved(&home)["providers"]["lattice"]["apiKey"], NO_KEY);
 }
 

@@ -9,7 +9,7 @@ use sha2::{Digest, Sha256};
 use unicode_normalization::UnicodeNormalization;
 
 pub(super) use super::checkpoint_git::{
-    has_checkpoint_root, initialize_checkpoint_root, validate_checkpoint_root, CHECKPOINT_CONFIG,
+    has_checkpoint_root, initialize_checkpoint_root, validate_checkpoint_root,
 };
 use super::native::{self, Identity, Root};
 use super::{invalid, permitted_name, RECOVERY_PREFIX};

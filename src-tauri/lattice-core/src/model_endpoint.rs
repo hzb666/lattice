@@ -6,7 +6,7 @@
 //!
 //! Lattice owns Pi's configuration for it, `<agent home>/pi-agent/`, and
 //! starts the sidecar with `PI_CODING_AGENT_DIR` there once an endpoint is
-//! saved (`configure_sidecar`). The writer's own `~/.pi/agent` is never read
+//! saved (`configure_sidecar_for_runtime`). The writer's own `~/.pi/agent` is never read
 //! or written. Its `models.json` holds one provider, `lattice`, and is the
 //! only record of the endpoint: the pane reads it back, and fields Lattice
 //! does not set (a hand-added `compat` or `headers`) survive a save.
@@ -276,10 +276,6 @@ fn with_endpoint(document: Option<Value>, endpoint: &Endpoint, api_key: &str) ->
 /// moves with the app (a reinstall elsewhere, a development build), so it is
 /// written again here when it differs. A broken file starts the sidecar
 /// without the endpoint rather than not at all.
-pub(crate) fn configure_sidecar(command: &mut Command, home_dir: &Path, executable: &Path) {
-    configure_sidecar_for_runtime(command, home_dir, home_dir, executable);
-}
-
 pub(crate) fn configure_sidecar_for_runtime(
     command: &mut Command, settings_home: &Path, runtime_home: &Path, executable: &Path,
 ) {

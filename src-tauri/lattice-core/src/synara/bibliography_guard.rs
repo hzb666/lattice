@@ -8,7 +8,9 @@
 //! Windows uses the MXC project boundary and host-managed manuscript writes
 //! instead of this macOS-only extension guard.
 
+#[cfg(not(windows))]
 use std::path::Path;
+#[cfg(not(windows))]
 use std::process::Command;
 
 #[cfg(target_os = "macos")]
@@ -45,7 +47,7 @@ pub(super) fn command(node: &Path, home_dir: &Path, executable: &Path) -> Result
 }
 
 /// Keep other platforms from launching the sidecar without a guard.
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", windows)))]
 pub(super) fn command(
     _node: &Path, _home_dir: &Path, _executable: &Path,
 ) -> Result<Command, String> {

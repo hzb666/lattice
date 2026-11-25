@@ -11,6 +11,7 @@
 
 mod bibliography_guard;
 mod environment;
+#[cfg(any(not(windows), test))]
 mod preferences;
 #[cfg(target_os = "macos")]
 mod proxy;

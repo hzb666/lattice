@@ -16,10 +16,14 @@ pub use text_edit::ProjectTextEdit;
 #[cfg(test)]
 mod tests;
 
-use std::collections::{BTreeMap, HashMap};
+#[cfg(test)]
+use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(test)]
+use std::path::PathBuf;
 use std::sync::{LazyLock, Mutex};
 
 use native::{Identity, Root};

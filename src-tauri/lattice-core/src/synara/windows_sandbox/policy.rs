@@ -329,14 +329,51 @@ fn open_host_executable(path: &Path) -> io::Result<(PathBuf, File)> {
         .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
         .open(&expected)?;
     let metadata = pin.metadata()?;
+    let links = link_count(&pin)?;
     if !metadata.is_file()
         || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
-        || link_count(&pin)? != 1
+        || (links != 1 && !(links == 2 && cargo_release_alias_matches(&expected, &pin)?))
         || !same_path(&final_path(&pin)?, &expected)
     {
         return Err(invalid("The Lattice key helper must be a pinned, ordinary executable file"));
     }
     Ok((expected, pin))
+}
+
+fn cargo_release_alias_matches(path: &Path, executable: &File) -> io::Result<bool> {
+    let Some(profile) = path.parent() else {
+        return Ok(false);
+    };
+    let Some(target) = profile.parent() else {
+        return Ok(false);
+    };
+    if !path
+        .file_name()
+        .is_some_and(|name| windows_eq(name, std::ffi::OsStr::new("lattice-gpui.exe")))
+        || !profile
+            .file_name()
+            .is_some_and(|name| windows_eq(name, std::ffi::OsStr::new("release")))
+        || !target.file_name().is_some_and(|name| windows_eq(name, std::ffi::OsStr::new("target")))
+    {
+        return Ok(false);
+    }
+
+    let alias = profile.join("deps/lattice_gpui.exe");
+    let alias = match OpenOptions::new()
+        .read(true)
+        .share_mode(FILE_SHARE_READ)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+        .open(alias)
+    {
+        Ok(alias) => alias,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error),
+    };
+    let metadata = alias.metadata()?;
+    Ok(metadata.is_file()
+        && metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT == 0
+        && link_count(&alias)? == 2
+        && same_file(executable, &alias)?)
 }
 
 fn allowed_env(name: &str) -> bool {
@@ -383,11 +420,23 @@ pub(super) fn reject_existing_aliases(root: &Path) -> io::Result<()> {
 }
 
 pub(super) fn link_count(file: &File) -> io::Result<u32> {
+    Ok(file_information(file)?.nNumberOfLinks)
+}
+
+fn same_file(first: &File, second: &File) -> io::Result<bool> {
+    let first_info = file_information(first)?;
+    let second_info = file_information(second)?;
+    Ok(first_info.dwVolumeSerialNumber == second_info.dwVolumeSerialNumber
+        && first_info.nFileIndexHigh == second_info.nFileIndexHigh
+        && first_info.nFileIndexLow == second_info.nFileIndexLow)
+}
+
+fn file_information(file: &File) -> io::Result<BY_HANDLE_FILE_INFORMATION> {
     let mut info = BY_HANDLE_FILE_INFORMATION::default();
     if unsafe { GetFileInformationByHandle(file.as_raw_handle(), &mut info) } == 0 {
         return Err(io::Error::last_os_error());
     }
-    Ok(info.nNumberOfLinks)
+    Ok(info)
 }
 
 pub(super) fn open_directory(path: &Path) -> io::Result<(PathBuf, File)> {
@@ -558,9 +607,38 @@ pub(super) fn invalid(message: &'static str) -> io::Error {
 
 #[cfg(test)]
 mod tests {
+    use std::{fs, io};
+
     use super::{
-        allowed_env, contains, quote_arg, valid_migration_digest, Path, MIGRATION_DIGEST_ENV,
+        allowed_env, contains, link_count, open_host_executable, quote_arg,
+        reject_existing_aliases, same_path, valid_migration_digest, Path, MIGRATION_DIGEST_ENV,
     };
+
+    #[test]
+    fn only_the_cargo_release_alias_is_allowed_for_the_host_executable() -> io::Result<()> {
+        let target = tempfile::tempdir()?;
+        let release = target.path().join("target/release");
+        let deps = release.join("deps");
+        fs::create_dir_all(&deps)?;
+        let executable = release.join("lattice-gpui.exe");
+        let alias = deps.join("lattice_gpui.exe");
+        fs::write(&executable, b"test executable")?;
+        fs::hard_link(&executable, &alias)?;
+
+        let (pinned_path, pin) = open_host_executable(&executable)?;
+        assert!(same_path(&pinned_path, &executable.canonicalize()?));
+        assert_eq!(2, link_count(&pin)?);
+        assert_eq!(io::ErrorKind::InvalidInput, reject_existing_aliases(&deps).unwrap_err().kind());
+        drop(pin);
+
+        fs::remove_file(&alias)?;
+        fs::hard_link(&executable, target.path().join("lattice_gpui.exe"))?;
+        assert_eq!(
+            io::ErrorKind::InvalidInput,
+            open_host_executable(&executable).unwrap_err().kind()
+        );
+        Ok(())
+    }
 
     #[test]
     fn command_line_preserves_quotes_and_trailing_backslashes() {
