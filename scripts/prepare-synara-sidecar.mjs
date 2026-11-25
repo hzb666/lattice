@@ -35,6 +35,7 @@ import {
   SYNARA_WINDOWS_SOURCE_PATCH,
 } from "./synara-runtime-inputs.mjs";
 import { patchCodexHostProcess } from "./synara-codex-host.mjs";
+import { patchSynaraShortcutRepeat } from "./lib/synara-shortcut-repeat.mjs";
 
 const runtimeConfig = readJson(join(projectRoot, "scripts/synara-runtime.json"));
 const allowDirty = process.argv.includes("--allow-dirty");
@@ -481,6 +482,7 @@ const webBuildKey = windowsMxc ? null : createHash("sha256")
   .update(sourceFingerprint(head, ["apps/server"]))
   .update("\0")
   .update(JSON.stringify(runtimeConfig))
+  .update(readFileSync(resolve(projectRoot, "scripts/lib/synara-shortcut-repeat.mjs")))
   .digest("hex");
 
 function cachedWebBuildKey() {
@@ -500,7 +502,20 @@ if (webBuildKey !== null && cachedWebBuildKey() === webBuildKey) {
     mkdirSync(cacheRoot, { recursive: true });
     rmSync(webBuildCachePath, { force: true });
   }
-  buildWorkspace("apps/web", bun);
+  // shortcut: patch the checkout in place until the pinned Synara fork forwards repeat.
+  const shortcutPath = join(sourceRoot, "apps/web/src/latticeHostShortcuts.ts");
+  const sourceShortcutStatus = git(["status", "--short", "--", "apps/web/src/latticeHostShortcuts.ts"]);
+  if (sourceShortcutStatus) {
+    throw new Error("Refusing to patch a modified Synara host-shortcut source file.");
+  }
+  const originalShortcuts = readFileSync(shortcutPath, "utf8");
+  const patchedShortcuts = patchSynaraShortcutRepeat(originalShortcuts);
+  try {
+    if (patchedShortcuts !== originalShortcuts) writeFileSync(shortcutPath, patchedShortcuts);
+    buildWorkspace("apps/web", bun);
+  } finally {
+    if (patchedShortcuts !== originalShortcuts) writeFileSync(shortcutPath, originalShortcuts);
+  }
   if (!existsSync(webArtifact)) {
     throw new Error("The Synara web build did not produce apps/web/dist/index.html.");
   }
