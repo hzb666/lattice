@@ -11,6 +11,8 @@ use std::{path::Path, time::Duration};
 
 use anyhow::{Context as _, Result};
 use gpui::{AsyncApp, Entity, Focusable as _, Keystroke, point, px};
+use lattice_i18n::{t, tc};
+use lattice_ui::components::{menu_snapshot, record_menus};
 use serde_json::json;
 
 use super::Steps;
@@ -114,11 +116,17 @@ impl Run {
             .await?;
         let native = self.native(cx)?;
         let at = point(rect.left() + px(3.), rect.center().y);
+        cx.update(record_menus);
         native::send_mouse(native, native::Mouse::Moved, at)?;
         native::send_right_click(native, at)?;
         self.pause(cx, Duration::from_millis(300)).await;
         let (caret, in_text, focused) = self.text_focus(cx, &panel)?;
         let menu_has_keys = !in_text && focused;
+        let reveal = t!("Reveal cursor in PDF");
+        let has_reveal = cx.update(|cx| {
+            menu_snapshot(tc!("macOS menu bar", "Select All"), cx)
+                .is_some_and(|menu| menu.rows.iter().any(|(_, label, _)| *label == reveal))
+        });
         native::send_key(native, '\u{1b}', false)?;
         self.pause(cx, Duration::from_millis(300)).await;
         let (_, back, _) = self.text_focus(cx, &panel)?;
@@ -126,6 +134,11 @@ impl Run {
             "a right-click on a word in the source puts the caret there and opens the editing menu with the keyboard, and Escape gives the keyboard back to the text",
             caret == offset && menu_has_keys && back,
             json!({ "caret": caret, "pointer_offset": offset, "menu_has_keys": menu_has_keys, "text_focused_after_escape": back }),
+        );
+        steps.check(
+            "the source menu offers Reveal cursor in PDF",
+            has_reveal,
+            json!({}),
         );
         Ok(())
     }

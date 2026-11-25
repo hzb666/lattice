@@ -17,12 +17,13 @@ use editor::{
 };
 use gpui::{
     Context, Div, Focusable as _, InteractiveElement as _, MouseButton, MouseDownEvent,
-    ParentElement as _, Stateful, Window,
+    ParentElement as _, Stateful, Window, prelude::FluentBuilder as _,
 };
-use lattice_i18n::tc;
+use lattice_i18n::{t, tc};
 use lattice_ui::components::{ContextMenu, MenuAction};
 
 use super::{EditorPanel, definition::Definition};
+use crate::shell::ForwardSync;
 
 impl EditorPanel {
     /// The source's ⌘-click and right-click, on its element.
@@ -35,6 +36,8 @@ impl EditorPanel {
         let menu = ContextMenu::<()>::keyed("editor-source-menu", window, cx);
         let opener = menu.clone();
         let editor = self.editor().clone();
+        let can_reveal = self.relative().to_ascii_lowercase().ends_with(".tex")
+            || lattice_core::project::is_typst_path(self.relative());
         element
             .capture_any_mouse_down(
                 cx.listener(move |this, event: &MouseDownEvent, window, cx| {
@@ -100,8 +103,15 @@ impl EditorPanel {
                     .item(MenuAction::dispatch_on(
                         tc!("macOS menu bar", "Select All"),
                         Box::new(SelectAll),
-                        focus,
+                        focus.clone(),
                     ))
+                    .when(can_reveal, |menu| {
+                        menu.separator().item(MenuAction::dispatch_on(
+                            t!("Reveal cursor in PDF"),
+                            Box::new(ForwardSync),
+                            focus,
+                        ))
+                    })
                 },
             ))
     }
