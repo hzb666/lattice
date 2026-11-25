@@ -1,6 +1,7 @@
 {
   "about": "Generated from src/settings/code-themes.ts by design-system/code-themes.mjs. Do not edit.",
   "order": [
+    "vscode",
     "github",
     "lattice",
     "one",
@@ -12,6 +13,76 @@
     "monokai"
   ],
   "themes": [
+    {
+      "id": "vscode",
+      "name": "VS Code",
+      "kinds": [
+        "light",
+        "dark"
+      ],
+      "apps": {
+        "light": {
+          "kind": "light",
+          "ground": "window",
+          "properties": {
+            "--code-caret": "#000000",
+            "--code-ground": "var(--editor-bg)",
+            "--code-ink": "#000000",
+            "--code-line": "color-mix(in srgb, #000000 8%, var(--editor-bg))",
+            "--code-line-number": "#237893",
+            "--code-line-number-contrast": "#237893",
+            "--code-selection": "color-mix(in srgb, #add6ff 60%, var(--editor-bg))",
+            "--code-selection-focused": "color-mix(in srgb, #add6ff 100%, var(--editor-bg))",
+            "--syntax-attribute": "#cf0a06",
+            "--syntax-bracket": "#000000",
+            "--syntax-citation": "#000000",
+            "--syntax-comment": "#057804",
+            "--syntax-comment-doc": "#057804",
+            "--syntax-constant": "#0000ff",
+            "--syntax-function": "#795e26",
+            "--syntax-keyword": "#0000ff",
+            "--syntax-number": "#04764d",
+            "--syntax-operator": "#000000",
+            "--syntax-property": "#001080",
+            "--syntax-reference": "#000000",
+            "--syntax-string": "#a31515",
+            "--syntax-type": "#0d708a",
+            "--syntax-variable": "#001080",
+            "--syntax-variable-special": "#0000ff"
+          }
+        },
+        "dark": {
+          "kind": "dark",
+          "ground": "window",
+          "properties": {
+            "--code-caret": "#aeafad",
+            "--code-ground": "var(--editor-bg)",
+            "--code-ink": "#d4d4d4",
+            "--code-line": "color-mix(in srgb, #d4d4d4 8%, var(--editor-bg))",
+            "--code-line-number": "#858585",
+            "--code-line-number-contrast": "#868686",
+            "--code-selection": "color-mix(in srgb, #264f78 60%, var(--editor-bg))",
+            "--code-selection-focused": "color-mix(in srgb, #264f78 100%, var(--editor-bg))",
+            "--syntax-attribute": "#9cdcfe",
+            "--syntax-bracket": "#d4d4d4",
+            "--syntax-citation": "#d4d4d4",
+            "--syntax-comment": "#71a05c",
+            "--syntax-comment-doc": "#71a05c",
+            "--syntax-constant": "#569cd6",
+            "--syntax-function": "#dcdcaa",
+            "--syntax-keyword": "#569cd6",
+            "--syntax-number": "#b5cea8",
+            "--syntax-operator": "#d4d4d4",
+            "--syntax-property": "#9cdcfe",
+            "--syntax-reference": "#d4d4d4",
+            "--syntax-string": "#ce9178",
+            "--syntax-type": "#4ec9b0",
+            "--syntax-variable": "#9cdcfe",
+            "--syntax-variable-special": "#569cd6"
+          }
+        }
+      }
+    },
     {
       "id": "github",
       "name": "GitHub",
