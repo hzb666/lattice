@@ -14,19 +14,22 @@ impl Island {
         if self.window.window_id() == window.window_handle().window_id() {
             return;
         }
+        if let Some(webview) = self.webview.clone() {
+            let result = webview
+                .update(cx, |webview, cx| webview.move_to_window(window, cx))
+                .map_err(|error| anyhow::anyhow!("{error}"));
+            if let Err(error) = result {
+                log::error!("{}: moving the page: {error:#}", self.config.name);
+                return;
+            }
+            refuse_keyboard_while_hidden(webview.read(cx), window);
+            self.listen_to_focus(window, cx);
+        }
         self.window = window.window_handle();
         self._window_subscriptions = vec![activation(window, cx)];
         // The keyboard stays in the window the page left; the page takes it
         // again in this one when clicked.
         self.page_focused = false;
-        if let Some(webview) = self.webview.clone() {
-            if let Err(error) = webview.update(cx, |webview, cx| webview.move_to_window(window, cx))
-            {
-                log::error!("{}: moving the page: {error:#}", self.config.name);
-            }
-            refuse_keyboard_while_hidden(webview.read(cx), window);
-            self.listen_to_focus(window, cx);
-        }
         self.drawn = true;
         self.sync_native_visibility(cx);
         cx.notify();
@@ -36,6 +39,23 @@ impl Island {
     /// as it is, until the island is drawn in another
     /// ([`Island::move_to_window`]).
     pub fn leave_window(&mut self, cx: &mut Context<Self>) {
+        #[cfg(target_os = "windows")]
+        if let Some(webview) = &self.webview
+            && self.window.window_id() != self.origin.window_id()
+        {
+            let mut move_error = None;
+            let result = self.origin.update(cx, |_, window, cx| {
+                move_error = webview
+                    .update(cx, |webview, cx| webview.move_to_window(window, cx))
+                    .map_err(|error| anyhow::anyhow!("{error}"))
+                    .err();
+            });
+            if let Some(error) = move_error {
+                log::error!("{}: parking the page: {error:#}", self.config.name);
+            } else if let Err(error) = result {
+                log::error!("{}: parking the page: {error:#}", self.config.name);
+            }
+        }
         if let Some(webview) = &self.webview {
             webview.read(cx).leave_window();
         }

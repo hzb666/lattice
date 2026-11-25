@@ -92,3 +92,8 @@ features = [
 ]
 optional = true
 default-features = false
+
+[target.'cfg(target_os = "windows")'.dependencies]
+webview2-com = "0.38"
+windows = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
+windows-062 = { package = "windows", version = "0.62", features = ["Win32_Foundation"] }

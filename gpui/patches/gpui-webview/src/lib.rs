@@ -6,11 +6,15 @@ mod composition;
 mod linux;
 #[cfg(target_os = "macos")]
 mod macos;
+#[cfg(all(feature = "gpui-fast", target_os = "windows"))]
+mod windows_composition;
 
 #[cfg(all(feature = "gpui-fast", target_os = "macos"))]
 use composition::NativeWebViewSurface;
 #[cfg(all(feature = "gpui-fast", target_os = "linux"))]
 use linux::NativeWebViewSurface;
+#[cfg(all(feature = "gpui-fast", target_os = "windows"))]
+use windows_composition::NativeWebViewSurface;
 
 use std::{cell::Cell, ops::Deref, rc::Rc};
 
@@ -68,7 +72,10 @@ pub struct WebView {
     zoom: Cell<f64>,
     /// Whether the last geometry update failed, so each failure is logged once until it recovers.
     geometry_failed: Cell<bool>,
-    #[cfg(all(feature = "gpui-fast", any(target_os = "macos", target_os = "linux")))]
+    #[cfg(all(
+        feature = "gpui-fast",
+        any(target_os = "macos", target_os = "linux", target_os = "windows")
+    ))]
     composition: Option<NativeWebViewSurface>,
     /// The GPUI scale factor the page zoom was last matched to.
     #[cfg(target_os = "linux")]
@@ -85,7 +92,10 @@ pub struct WebView {
 impl Drop for WebView {
     fn drop(&mut self) {
         self.hide();
-        #[cfg(all(feature = "gpui-fast", any(target_os = "macos", target_os = "linux")))]
+        #[cfg(all(
+            feature = "gpui-fast",
+            any(target_os = "macos", target_os = "linux", target_os = "windows")
+        ))]
         if let Some(surface) = self.composition.take() {
             surface.release(self.webview.clone());
         }
@@ -105,13 +115,28 @@ impl WebView {
                 None
             }
         };
+        #[cfg(all(feature = "gpui-fast", target_os = "windows"))]
+        let composition = match wry::WebViewExtWindows::composition_controller(&webview) {
+            Some(_) => match NativeWebViewSurface::new(&webview, window, cx) {
+                Ok(surface) => Some(surface),
+                Err(error) => {
+                    log::warn!("WebView composition unavailable: {error:#}");
+                    None
+                }
+            },
+            None => None,
+        };
         #[cfg(target_os = "linux")]
         let origin = Rc::new(Cell::new(gpui::Point::default()));
         #[cfg(target_os = "linux")]
         linux::forward_mouse_down(&webview, origin.clone(), window, cx);
         #[cfg(target_os = "linux")]
         linux::match_scale_factor(&webview, window.scale_factor(), 1.0);
-        #[cfg(not(any(all(feature = "gpui-fast", target_os = "macos"), target_os = "linux")))]
+        #[cfg(not(any(
+            all(feature = "gpui-fast", target_os = "macos"),
+            all(feature = "gpui-fast", target_os = "windows"),
+            target_os = "linux"
+        )))]
         let _ = window;
 
         Self {
@@ -125,6 +150,8 @@ impl WebView {
             composition,
             #[cfg(all(feature = "gpui-fast", target_os = "linux"))]
             composition: None,
+            #[cfg(all(feature = "gpui-fast", target_os = "windows"))]
+            composition,
             #[cfg(target_os = "linux")]
             scale_factor: Cell::new(window.scale_factor()),
             #[cfg(all(feature = "gpui-fast", target_os = "macos"))]
@@ -132,6 +159,21 @@ impl WebView {
             #[cfg(target_os = "linux")]
             origin,
         }
+    }
+
+    /// Require a WebView2 composition controller and attach it to GPUI Fast.
+    #[cfg(all(feature = "gpui-fast", target_os = "windows"))]
+    pub fn new_with_composition(
+        webview: wry::WebView,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> anyhow::Result<Self> {
+        let this = Self::new(webview, window, cx);
+        anyhow::ensure!(
+            this.composition.is_some(),
+            "the WebView was not built with a composition controller"
+        );
+        Ok(this)
     }
 
     /// Build a webview as a child of `window`, performing the platform setup Wry requires.
@@ -163,16 +205,29 @@ impl WebView {
 
             builder.build_as_child(&parent)?
         };
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(all(feature = "gpui-fast", target_os = "windows"))]
+        {
+            use wry::WebViewBuilderExtWindows as _;
+            let webview = builder
+                .with_composition_controller(true)
+                .build_as_child(&*window)?;
+            return Self::new_with_composition(webview, window, cx)
+                .map_err(|error| wry::Error::Io(std::io::Error::other(error)));
+        }
+        #[cfg(not(any(target_os = "linux", all(feature = "gpui-fast", target_os = "windows"))))]
         let webview = builder.build_as_child(&*window)?;
 
+        #[cfg(not(all(feature = "gpui-fast", target_os = "windows")))]
         Ok(Self::new(webview, window, cx))
     }
 
     /// Set window-relative bounds, including offscreen loading bounds.
     /// With window composition, position the managed container and its child together.
     pub fn set_bounds(&self, bounds: Rect) -> wry::Result<()> {
-        #[cfg(all(feature = "gpui-fast", any(target_os = "macos", target_os = "linux")))]
+        #[cfg(all(
+            feature = "gpui-fast",
+            any(target_os = "macos", target_os = "linux", target_os = "windows")
+        ))]
         if let Some(surface) = &self.composition {
             return surface
                 .set_bounds(&self.webview, bounds)
@@ -193,7 +248,10 @@ impl WebView {
         let visible = document.intersect(&clip);
         if visible.is_empty() || !self.visible.get() {
             self.set_native_visible(false)?;
-            #[cfg(all(feature = "gpui-fast", any(target_os = "macos", target_os = "linux")))]
+            #[cfg(all(
+                feature = "gpui-fast",
+                any(target_os = "macos", target_os = "linux", target_os = "windows")
+            ))]
             if let Some(surface) = &self.composition {
                 // Hidden preparation still gives WebKit its real layout width.
                 if self.visible.get() && !document.is_empty() {
@@ -202,7 +260,10 @@ impl WebView {
             }
             return Ok(());
         }
-        #[cfg(all(feature = "gpui-fast", any(target_os = "macos", target_os = "linux")))]
+        #[cfg(all(
+            feature = "gpui-fast",
+            any(target_os = "macos", target_os = "linux", target_os = "windows")
+        ))]
         if let Some(surface) = &self.composition {
             surface.set_geometry(&self.webview, document, visible)?;
             surface.set_visible(true)?;
@@ -233,7 +294,10 @@ impl WebView {
     // visibility preference, so prepaint can retry when the view becomes unclipped.
     fn set_native_visible(&self, visible: bool) -> wry::Result<()> {
         self.webview.set_visible(visible)?;
-        #[cfg(all(feature = "gpui-fast", any(target_os = "macos", target_os = "linux")))]
+        #[cfg(all(
+            feature = "gpui-fast",
+            any(target_os = "macos", target_os = "linux", target_os = "windows")
+        ))]
         if let Some(surface) = &self.composition {
             surface
                 .set_visible(visible)
@@ -243,8 +307,7 @@ impl WebView {
     }
 
     /// Move the native view into `window`, the one being updated, keeping its page as it
-    /// is: nothing is reloaded. Only with GPUI Fast's window composition on macOS; elsewhere
-    /// it returns an error and the view stays where it is.
+    /// is: nothing is reloaded. Only with GPUI Fast's window composition on macOS and Windows.
     pub fn move_to_window(&mut self, window: &mut Window, cx: &mut App) -> anyhow::Result<()> {
         #[cfg(all(feature = "gpui-fast", target_os = "macos"))]
         {
@@ -255,18 +318,25 @@ impl WebView {
             self.composition = Some(surface.move_to(&self.webview, window, cx)?);
             Ok(())
         }
-        #[cfg(not(all(feature = "gpui-fast", target_os = "macos")))]
+        #[cfg(all(feature = "gpui-fast", target_os = "windows"))]
+        {
+            self.composition
+                .as_mut()
+                .ok_or_else(|| anyhow::anyhow!("the WebView has no composition surface"))?
+                .move_to(&self.webview, window, cx)
+        }
+        #[cfg(not(all(feature = "gpui-fast", any(target_os = "macos", target_os = "windows"))))]
         {
             let _ = (window, cx);
-            anyhow::bail!("moving a WebView between windows needs GPUI Fast on macOS")
+            anyhow::bail!("moving a WebView between windows needs GPUI Fast on macOS or Windows")
         }
     }
 
     /// Take the native view out of its window before that window closes, keeping its page;
-    /// [`WebView::move_to_window`] puts it in another. Only with GPUI Fast's window
-    /// composition on macOS; elsewhere it does nothing.
+    /// [`WebView::move_to_window`] puts it in another. On macOS and Windows, the page is
+    /// detached from the closing window's composition surface.
     pub fn leave_window(&self) {
-        #[cfg(all(feature = "gpui-fast", target_os = "macos"))]
+        #[cfg(all(feature = "gpui-fast", any(target_os = "macos", target_os = "windows")))]
         if let Some(surface) = &self.composition {
             surface.leave_window(&self.webview);
         }
@@ -275,7 +345,7 @@ impl WebView {
     /// Give the keyboard back to the GPUI view of the window the page is in, which a
     /// moved page has changed ([`WebView::move_to_window`]).
     pub fn focus_parent(&self) -> wry::Result<()> {
-        #[cfg(all(feature = "gpui-fast", target_os = "macos"))]
+        #[cfg(all(feature = "gpui-fast", any(target_os = "macos", target_os = "windows")))]
         if let Some(surface) = &self.composition {
             surface.focus_parent(&self.webview);
             return Ok(());
@@ -494,6 +564,10 @@ impl Element for WebViewElement {
 
         let parent = self.parent.read(cx);
         #[cfg(all(feature = "gpui-fast", any(target_os = "macos", target_os = "linux")))]
+        if let Some(surface) = &parent.composition {
+            surface.set_scale_factor(window.scale_factor());
+        }
+        #[cfg(all(feature = "gpui-fast", target_os = "windows"))]
         if let Some(surface) = &parent.composition {
             surface.set_scale_factor(window.scale_factor());
         }

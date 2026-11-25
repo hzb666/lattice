@@ -21,6 +21,8 @@ GPUI_BASE_SHA256=f3e9ae5237737cfd110d0ff513fcd9c20f97d98ebabd0a73164068177f0aca4
 # GPUI Kit's webview (the islands' native page), the same way.
 GPUI_WEBVIEW_VERSION=0.9.1
 GPUI_WEBVIEW_SHA256=6b355bcda56e128a7c2e27257653a6441ab792dcfbdae49c63ce329c846f4b5d
+LB_WRY_VERSION=0.53.3
+LB_WRY_SHA256=d9cfe72bff8acf9af0d6d276569be5b9cb3f313f9882761ada5a50d3044214d4
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
 patches="$root/patches"
@@ -67,6 +69,16 @@ if [ "$actual" != "$GPUI_WEBVIEW_SHA256" ]; then
 fi
 tar -xzf "$work/gpui-webview.crate" -C "$work"
 
+# lb-wry, checked against the version already pinned in Cargo.lock.
+curl -fsSL -o "$work/lb-wry.crate" \
+  "https://static.crates.io/crates/lb-wry/lb-wry-$LB_WRY_VERSION.crate"
+actual="$(sha256 "$work/lb-wry.crate")"
+if [ "$actual" != "$LB_WRY_SHA256" ]; then
+  echo "lb-wry $LB_WRY_VERSION: checksum $actual, expected $LB_WRY_SHA256" >&2
+  exit 1
+fi
+tar -xzf "$work/lb-wry.crate" -C "$work"
+
 # What is vendored of each, before any diff: the crates' sources without
 # their examples, benches and docs (upstream's own tests are not run here),
 # and crates.io's packaging files left out.
@@ -90,26 +102,31 @@ for crate in gpui-component:$GPUI_COMPONENT_VERSION gpui-base:$GPUI_BASE_VERSION
   rm -f "$out/$name/Cargo.lock" "$out/$name/Cargo.toml.orig" \
     "$out/$name/.cargo_vcs_info.json" "$out/$name/.cargo-ok"
 done
+mkdir -p "$out/lb-wry"
+for file in Cargo.toml LICENSE-APACHE LICENSE-MIT README.md build.rs rustfmt.toml; do
+  cp "$work/lb-wry-$LB_WRY_VERSION/$file" "$out/lb-wry/"
+done
+cp -R "$work/lb-wry-$LB_WRY_VERSION/src" "$work/lb-wry-$LB_WRY_VERSION/examples" "$out/lb-wry/"
 
 # The diffs, in order.
 for diff in gpui-fast-vendoring gpui-fast-lab-occlusion gpui-fast-motion-and-type gpui-fast-overlay-first-mouse gpui-fast-interface-zoom gpui-fast-lab-assume-key gpui-fast-file-drop-modality gpui-fast-active-drag-type gpui-fast-backdrop-blur gpui-fast-font-smoothing gpui-fast-deferred-draw-splice gpui-fast-glyph-outline gpui-fast-element-opacity gpui-fast-single-scene-insert gpui-fast-ime-bindings gpui-fast-native-cursor gpui-fast-held-keys gpui-fast-lazy-journal \
-  gpui-component-overlays gpui-component-lattice-hooks gpui-base-popover-exit gpui-base-max-length gpui-base-empty-folder gpui-webview-interface-zoom gpui-webview-move-window chemex-local; do
+  gpui-component-overlays gpui-component-lattice-hooks gpui-base-popover-exit gpui-base-max-length gpui-base-empty-folder gpui-webview-interface-zoom gpui-webview-move-window gpui-webview-windows-composition lb-wry-webview2-composition chemex-local; do
   git -C "$out" apply --whitespace=nowarn "$patches/$diff.diff"
 done
 
 if [ "${1:-}" = "--write" ]; then
-  rm -rf "$patches/gpui-fast" "$patches/gpui-component" "$patches/gpui-base" "$patches/gpui-webview"
-  cp -R "$out/gpui-fast" "$out/gpui-component" "$out/gpui-base" "$out/gpui-webview" "$patches/"
+  rm -rf "$patches/gpui-fast" "$patches/gpui-component" "$patches/gpui-base" "$patches/gpui-webview" "$patches/lb-wry"
+  cp -R "$out/gpui-fast" "$out/gpui-component" "$out/gpui-base" "$out/gpui-webview" "$out/lb-wry" "$patches/"
   echo "patches/ rebuilt from gpui-fast $GPUI_FAST_REV, gpui-component $GPUI_COMPONENT_VERSION, gpui-base $GPUI_BASE_VERSION and gpui-webview $GPUI_WEBVIEW_VERSION"
   exit 0
 fi
 
 status=0
-for dir in gpui-fast gpui-component gpui-base gpui-webview; do
+for dir in gpui-fast gpui-component gpui-base gpui-webview lb-wry; do
   diff -r -x target -x Cargo.lock "$out/$dir" "$patches/$dir" || status=1
 done
 if [ "$status" -ne 0 ]; then
   echo "patches/ is not upstream plus its diffs; see patches/README.md" >&2
   exit 1
 fi
-echo "patches/ is gpui-fast $GPUI_FAST_REV, gpui-component $GPUI_COMPONENT_VERSION, gpui-base $GPUI_BASE_VERSION and gpui-webview $GPUI_WEBVIEW_VERSION plus its diffs"
+echo "patches/ is gpui-fast $GPUI_FAST_REV, gpui-component $GPUI_COMPONENT_VERSION, gpui-base $GPUI_BASE_VERSION, gpui-webview $GPUI_WEBVIEW_VERSION and lb-wry $LB_WRY_VERSION plus their diffs"

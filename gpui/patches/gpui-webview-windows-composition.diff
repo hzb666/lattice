@@ -1,0 +1,1164 @@
+diff --git a/gpui-webview/Cargo.toml b/gpui-webview/Cargo.toml
+index 66f60ca..54bbad1 100644
+--- a/gpui-webview/Cargo.toml
++++ b/gpui-webview/Cargo.toml
+@@ -78,7 +78,9 @@ version = "0.3"
+ features = [
+     "std",
+     "NSAppearance",
++    "NSResponder",
+     "NSView",
++    "NSWindow",
+ ]
+ default-features = false
+ 
+@@ -90,3 +92,8 @@ features = [
+ ]
+ optional = true
+ default-features = false
++
++[target.'cfg(target_os = "windows")'.dependencies]
++webview2-com = "0.38"
++windows = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
++windows-062 = { package = "windows", version = "0.62", features = ["Win32_Foundation"] }
+diff --git a/gpui-webview/README.md b/gpui-webview/README.md
+index 9e7d1eb..09a7839 100644
+--- a/gpui-webview/README.md
++++ b/gpui-webview/README.md
+@@ -11,11 +11,11 @@ Supported platforms:
+ | Platform | Engine | GPUI overlays above the page |
+ | --- | --- | --- |
+ | macOS | WKWebView | With `gpui-fast` |
+-| Windows | WebView2 | Not yet; the WebView covers overlays |
++| Windows | WebView2 | With `gpui-fast` |
+ | Linux (X11 / XWayland) | WebKitGTK | With `gpui-fast` |
+ | Linux (Wayland) | — | Not supported; run on XWayland |
+ 
+-To render GPUI overlays above the page on macOS and Linux, run the application on GPUI Fast and enable the `gpui-fast` feature of both crates:
++To render GPUI overlays above the page on macOS, Windows and Linux, run the application on GPUI Fast and enable the `gpui-fast` feature of both crates:
+ 
+ ```toml
+ [dependencies]
+@@ -27,11 +27,12 @@ gpui-webview = { version = "0.7", features = ["gpui-fast"] }
+ - On gpui-pre, the native view is attached to the window directly. It covers GPUI content in its bounds, including popovers, dialogs, menus and tooltips. It cannot be clipped either: when its container clips it only partly, for example in a scrolled region, it keeps its full bounds and extends past the container. It is hidden only when it is scrolled out of view entirely or hidden by the application.
+ - With `gpui-fast` on macOS, `WebView::new()` registers the native view with window composition so GPUI overlays can render above it. Composition failures are logged and fall back to the plain native attachment.
+ - With `gpui-fast` on Linux, `WebView::build()` builds the native view in a window composition surface, with the same fallback.
+-- Use `WebView::set_bounds()` and `WebView::set_visible()` to keep the managed container and Wry child synchronized. Raw Wry handles bypass this coordination.
++- With `gpui-fast` on Windows, `WebView::build()` creates a WebView2 composition controller and forwards GPUI mouse and wheel input to it. Moving an island updates WebView2's parent window without reloading its page. Call `WebView::new_with_composition()` when a platform must build the Wry webview outside a GPUI update.
++- Use `WebView::set_bounds()` and `WebView::set_visible()` to keep the managed surface and browser controller synchronized. Raw Wry handles bypass this coordination.
+ - Use `WebView::build()` to attach a webview to a GPUI window with the platform setup Wry needs.
+ - On Linux, the webview uses WebKitGTK and requires the application to run on X11 (or XWayland in a Wayland session). Start it with `gpui_kit::platform::linux(WindowingModes::X11)`; `WebView::build()` returns an error on a Wayland window. Wayland is not supported.
+ 
+-On Windows, or without `gpui-fast`, use the webview in a separate window or a Popup layer when overlapping GPUI content is required.
++Without `gpui-fast`, use the webview in a separate window or a Popup layer when overlapping GPUI content is required.
+ 
+ ## Run Example
+ 
+diff --git a/gpui-webview/src/composition.rs b/gpui-webview/src/composition.rs
+index b4f2344..0768950 100644
+--- a/gpui-webview/src/composition.rs
++++ b/gpui-webview/src/composition.rs
+@@ -15,12 +15,85 @@ pub(super) struct NativeWebViewSurface {
+     surface: WindowCompositionSurface,
+     original_parent: Retained<NSView>,
+     scale_factor: Cell<f32>,
++    /// The window's interface zoom: GPUI's pixels are this many points, so
++    /// the WebView's frame, which AppKit measures in points, is scaled by it.
++    interface_zoom: Cell<f32>,
+     window: AnyWindowHandle,
++    /// The WebView left the window (`leave_window`), whose views go with it:
++    /// nothing here touches them again, while the island is still drawn in
++    /// the window it moves to before the move.
++    left: Cell<bool>,
+     cx: AsyncApp,
+ }
+ 
+ impl NativeWebViewSurface {
+     pub(super) fn new(webview: &wry::WebView, window: &Window, cx: &gpui::App) -> Result<Self> {
++        // SAFETY: Wry built the WebView as a child of this window's view, which
++        // AppKit retains for as long as the WebView is in it.
++        let original_parent =
++            unsafe { webview.webview().superview() }.context("WebView has no parent")?;
++        Self::attach(webview, original_parent, window, cx)
++    }
++
++    /// Move the WebView into `window`: a surface of that window's own takes it, and this
++    /// one leaves the window it was in. WebKit keeps the page as it is, since a WKWebView
++    /// moved between windows is neither reloaded nor torn down. `window` must not be the one
++    /// the WebView is in now, and is being updated, so `cx` can still reach the other.
++    pub(super) fn move_to(
++        self,
++        webview: &wry::WebView,
++        window: &Window,
++        cx: &mut gpui::App,
++    ) -> Result<Self> {
++        self.give_back_keyboard(webview);
++        let moved = Self::attach(webview, window_view(window)?, window, cx)?;
++        let result = self.window.update(cx, |_, window, _| {
++            window
++                .enable_window_composition()?
++                .remove_surface(self.surface.id())
++        });
++        if let Ok(Err(error)) = result {
++            log::warn!("cannot release WebView composition surface: {error:#}");
++        }
++        Ok(moved)
++    }
++
++    /// Take the WebView out of its window, which is about to close: a window
++    /// torn down with the WebView still in it leaves it pointing at views
++    /// that are gone. `move_to` puts it in a window again.
++    pub(super) fn leave_window(&self, webview: &wry::WebView) {
++        self.give_back_keyboard(webview);
++        webview.webview().removeFromSuperview();
++        self.left.set(true);
++    }
++
++    /// A page holding the keyboard leaves its window with nothing to type
++    /// into but the window itself: GPUI's view there takes it back first.
++    fn give_back_keyboard(&self, webview: &wry::WebView) {
++        let view = webview.webview();
++        if let Some(window) = view.window()
++            && window.firstResponder().is_some_and(|responder| {
++                std::ptr::addr_eq(Retained::as_ptr(&responder), Retained::as_ptr(&view))
++            })
++        {
++            window.makeFirstResponder(Some(&self.original_parent));
++        }
++    }
++
++    /// Give the keyboard back to the GPUI view of the window the WebView is in. Wry's own
++    /// `focus_parent` names the view it was built in, which a moved WebView has left.
++    pub(super) fn focus_parent(&self, webview: &wry::WebView) {
++        if let Some(window) = webview.webview().window() {
++            window.makeFirstResponder(Some(&self.original_parent));
++        }
++    }
++
++    fn attach(
++        webview: &wry::WebView,
++        original_parent: Retained<NSView>,
++        window: &Window,
++        cx: &gpui::App,
++    ) -> Result<Self> {
+         let composition = window.enable_window_composition()?;
+         let surface = composition.create_native_surface()?;
+         let attached = (|| {
+@@ -31,19 +104,19 @@ impl NativeWebViewSurface {
+             anyhow::ensure!(parent != 0, "native surface has no AppKit view");
+             let view = webview.webview();
+             // SAFETY: Wry and the composition surface own these AppKit views;
+-            // this constructor runs on GPUI's main/UI thread.
+-            unsafe {
+-                let original_parent = view.superview().context("WebView has no parent")?;
+-                (&*(parent as *const NSView)).addSubview(&view);
+-                Ok(original_parent)
+-            }
++            // this constructor runs on GPUI's main/UI thread. Adding the view
++            // takes it out of the one it was in.
++            unsafe { (&*(parent as *const NSView)).addSubview(&view) };
++            Ok(())
+         })();
+         match attached {
+-            Ok(original_parent) => Ok(Self {
++            Ok(()) => Ok(Self {
+                 surface,
+                 original_parent,
+                 scale_factor: Cell::new(window.scale_factor()),
++                interface_zoom: Cell::new(window.interface_zoom()),
+                 window: window.window_handle(),
++                left: Cell::new(false),
+                 cx: cx.to_async(),
+             }),
+             Err(error) => {
+@@ -57,7 +130,14 @@ impl NativeWebViewSurface {
+         self.scale_factor.set(scale_factor);
+     }
+ 
++    pub(super) fn set_interface_zoom(&self, zoom: f32) {
++        self.interface_zoom.set(zoom);
++    }
++
+     pub(super) fn set_bounds(&self, webview: &wry::WebView, rect: wry::Rect) -> Result<()> {
++        if self.left.get() {
++            return Ok(());
++        }
+         let scale = self.scale_factor.get();
+         let (position, extent) = logical_bounds(rect, scale);
+         let bounds = Bounds::new(
+@@ -69,9 +149,10 @@ impl NativeWebViewSurface {
+             .set_bounds(bounds.to_device_pixels(scale))?;
+         // WKWebView remains owned by Wry, on its creating UI thread.
+         // Its frame is local to the managed surface, whose frame is window-relative.
++        let zoom = f64::from(self.interface_zoom.get());
+         webview.webview().setFrame(NSRect::new(
+             NSPoint::new(0., 0.),
+-            NSSize::new(extent.width, extent.height),
++            NSSize::new(extent.width * zoom, extent.height * zoom),
+         ));
+         Ok(())
+     }
+@@ -83,25 +164,32 @@ impl NativeWebViewSurface {
+         document: Bounds<gpui::Pixels>,
+         visible: Bounds<gpui::Pixels>,
+     ) -> Result<()> {
++        if self.left.get() {
++            return Ok(());
++        }
+         let scale = self.scale_factor.get();
+         self.surface
+             .platform_surface()?
+             .set_bounds(visible.to_device_pixels(scale))?;
+         let offset = document.origin - visible.origin;
++        let zoom = self.interface_zoom.get();
+         webview.webview().setFrame(NSRect::new(
+             NSPoint::new(
+-                f64::from(offset.x),
+-                f64::from(visible.size.height - offset.y - document.size.height),
++                f64::from(offset.x * zoom),
++                f64::from((visible.size.height - offset.y - document.size.height) * zoom),
+             ),
+             NSSize::new(
+-                f64::from(document.size.width),
+-                f64::from(document.size.height),
++                f64::from(document.size.width * zoom),
++                f64::from(document.size.height * zoom),
+             ),
+         ));
+         Ok(())
+     }
+ 
+     pub(super) fn set_visible(&self, visible: bool) -> Result<()> {
++        if self.left.get() {
++            return Ok(());
++        }
+         self.surface.platform_surface()?.set_visible(visible)
+     }
+ 
+@@ -111,6 +199,9 @@ impl NativeWebViewSurface {
+         self.cx
+             .clone()
+             .spawn(async move |cx| {
++                if self.left.get() {
++                    return;
++                }
+                 self.original_parent.addSubview(&webview.webview());
+                 let result = self.window.update(cx, |_, window, _| {
+                     window
+@@ -125,6 +216,18 @@ impl NativeWebViewSurface {
+     }
+ }
+ 
++/// The GPUI view of `window`, which a WebView built in it would have as its parent.
++fn window_view(window: &Window) -> Result<Retained<NSView>> {
++    use wry::raw_window_handle::{HasWindowHandle, RawWindowHandle};
++    let RawWindowHandle::AppKit(handle) = HasWindowHandle::window_handle(window)?.as_raw() else {
++        anyhow::bail!("not an AppKit window");
++    };
++    // SAFETY: GPUI's window owns its view for as long as the window is open,
++    // and this runs on the main thread inside the window's update.
++    unsafe { Retained::retain(handle.ns_view.as_ptr().cast::<NSView>()) }
++        .context("the window has no view")
++}
++
+ // Staging positions must remain window-relative at every display scale.
+ fn logical_bounds(
+     rect: wry::Rect,
+diff --git a/gpui-webview/src/lib.rs b/gpui-webview/src/lib.rs
+index 7341293..dc15467 100644
+--- a/gpui-webview/src/lib.rs
++++ b/gpui-webview/src/lib.rs
+@@ -6,11 +6,15 @@ mod composition;
+ mod linux;
+ #[cfg(target_os = "macos")]
+ mod macos;
++#[cfg(all(feature = "gpui-fast", target_os = "windows"))]
++mod windows_composition;
+ 
+ #[cfg(all(feature = "gpui-fast", target_os = "macos"))]
+ use composition::NativeWebViewSurface;
+ #[cfg(all(feature = "gpui-fast", target_os = "linux"))]
+ use linux::NativeWebViewSurface;
++#[cfg(all(feature = "gpui-fast", target_os = "windows"))]
++use windows_composition::NativeWebViewSurface;
+ 
+ use std::{cell::Cell, ops::Deref, rc::Rc};
+ 
+@@ -68,11 +72,18 @@ pub struct WebView {
+     zoom: Cell<f64>,
+     /// Whether the last geometry update failed, so each failure is logged once until it recovers.
+     geometry_failed: Cell<bool>,
+-    #[cfg(all(feature = "gpui-fast", any(target_os = "macos", target_os = "linux")))]
++    #[cfg(all(
++        feature = "gpui-fast",
++        any(target_os = "macos", target_os = "linux", target_os = "windows")
++    ))]
+     composition: Option<NativeWebViewSurface>,
+     /// The GPUI scale factor the page zoom was last matched to.
+     #[cfg(target_os = "linux")]
+     scale_factor: Cell<f32>,
++    /// The window's interface zoom the page zoom was last matched to: the
++    /// page is zoomed with the interface, as GPUI's own pixels are.
++    #[cfg(all(feature = "gpui-fast", target_os = "macos"))]
++    interface_zoom: Cell<f64>,
+     /// The window-relative origin that page clicks are forwarded to GPUI from.
+     #[cfg(target_os = "linux")]
+     origin: Rc<Cell<gpui::Point<Pixels>>>,
+@@ -81,7 +92,10 @@ pub struct WebView {
+ impl Drop for WebView {
+     fn drop(&mut self) {
+         self.hide();
+-        #[cfg(all(feature = "gpui-fast", any(target_os = "macos", target_os = "linux")))]
++        #[cfg(all(
++            feature = "gpui-fast",
++            any(target_os = "macos", target_os = "linux", target_os = "windows")
++        ))]
+         if let Some(surface) = self.composition.take() {
+             surface.release(self.webview.clone());
+         }
+@@ -101,13 +115,28 @@ impl WebView {
+                 None
+             }
+         };
++        #[cfg(all(feature = "gpui-fast", target_os = "windows"))]
++        let composition = match wry::WebViewExtWindows::composition_controller(&webview) {
++            Some(_) => match NativeWebViewSurface::new(&webview, window, cx) {
++                Ok(surface) => Some(surface),
++                Err(error) => {
++                    log::warn!("WebView composition unavailable: {error:#}");
++                    None
++                }
++            },
++            None => None,
++        };
+         #[cfg(target_os = "linux")]
+         let origin = Rc::new(Cell::new(gpui::Point::default()));
+         #[cfg(target_os = "linux")]
+         linux::forward_mouse_down(&webview, origin.clone(), window, cx);
+         #[cfg(target_os = "linux")]
+         linux::match_scale_factor(&webview, window.scale_factor(), 1.0);
+-        #[cfg(not(any(all(feature = "gpui-fast", target_os = "macos"), target_os = "linux")))]
++        #[cfg(not(any(
++            all(feature = "gpui-fast", target_os = "macos"),
++            all(feature = "gpui-fast", target_os = "windows"),
++            target_os = "linux"
++        )))]
+         let _ = window;
+ 
+         Self {
+@@ -121,13 +150,32 @@ impl WebView {
+             composition,
+             #[cfg(all(feature = "gpui-fast", target_os = "linux"))]
+             composition: None,
++            #[cfg(all(feature = "gpui-fast", target_os = "windows"))]
++            composition,
+             #[cfg(target_os = "linux")]
+             scale_factor: Cell::new(window.scale_factor()),
++            #[cfg(all(feature = "gpui-fast", target_os = "macos"))]
++            interface_zoom: Cell::new(1.0),
+             #[cfg(target_os = "linux")]
+             origin,
+         }
+     }
+ 
++    /// Require a WebView2 composition controller and attach it to GPUI Fast.
++    #[cfg(all(feature = "gpui-fast", target_os = "windows"))]
++    pub fn new_with_composition(
++        webview: wry::WebView,
++        window: &mut Window,
++        cx: &mut App,
++    ) -> anyhow::Result<Self> {
++        let this = Self::new(webview, window, cx);
++        anyhow::ensure!(
++            this.composition.is_some(),
++            "the WebView was not built with a composition controller"
++        );
++        Ok(this)
++    }
++
+     /// Build a webview as a child of `window`, performing the platform setup Wry requires.
+     ///
+     /// On Linux the window must run on X11 or XWayland: start the application with
+@@ -157,16 +205,29 @@ impl WebView {
+ 
+             builder.build_as_child(&parent)?
+         };
+-        #[cfg(not(target_os = "linux"))]
++        #[cfg(all(feature = "gpui-fast", target_os = "windows"))]
++        {
++            use wry::WebViewBuilderExtWindows as _;
++            let webview = builder
++                .with_composition_controller(true)
++                .build_as_child(&*window)?;
++            return Self::new_with_composition(webview, window, cx)
++                .map_err(|error| wry::Error::Io(std::io::Error::other(error)));
++        }
++        #[cfg(not(any(target_os = "linux", all(feature = "gpui-fast", target_os = "windows"))))]
+         let webview = builder.build_as_child(&*window)?;
+ 
++        #[cfg(not(all(feature = "gpui-fast", target_os = "windows")))]
+         Ok(Self::new(webview, window, cx))
+     }
+ 
+     /// Set window-relative bounds, including offscreen loading bounds.
+     /// With window composition, position the managed container and its child together.
+     pub fn set_bounds(&self, bounds: Rect) -> wry::Result<()> {
+-        #[cfg(all(feature = "gpui-fast", any(target_os = "macos", target_os = "linux")))]
++        #[cfg(all(
++            feature = "gpui-fast",
++            any(target_os = "macos", target_os = "linux", target_os = "windows")
++        ))]
+         if let Some(surface) = &self.composition {
+             return surface
+                 .set_bounds(&self.webview, bounds)
+@@ -187,7 +248,10 @@ impl WebView {
+         let visible = document.intersect(&clip);
+         if visible.is_empty() || !self.visible.get() {
+             self.set_native_visible(false)?;
+-            #[cfg(all(feature = "gpui-fast", any(target_os = "macos", target_os = "linux")))]
++            #[cfg(all(
++                feature = "gpui-fast",
++                any(target_os = "macos", target_os = "linux", target_os = "windows")
++            ))]
+             if let Some(surface) = &self.composition {
+                 // Hidden preparation still gives WebKit its real layout width.
+                 if self.visible.get() && !document.is_empty() {
+@@ -196,7 +260,10 @@ impl WebView {
+             }
+             return Ok(());
+         }
+-        #[cfg(all(feature = "gpui-fast", any(target_os = "macos", target_os = "linux")))]
++        #[cfg(all(
++            feature = "gpui-fast",
++            any(target_os = "macos", target_os = "linux", target_os = "windows")
++        ))]
+         if let Some(surface) = &self.composition {
+             surface.set_geometry(&self.webview, document, visible)?;
+             surface.set_visible(true)?;
+@@ -227,7 +294,10 @@ impl WebView {
+     // visibility preference, so prepaint can retry when the view becomes unclipped.
+     fn set_native_visible(&self, visible: bool) -> wry::Result<()> {
+         self.webview.set_visible(visible)?;
+-        #[cfg(all(feature = "gpui-fast", any(target_os = "macos", target_os = "linux")))]
++        #[cfg(all(
++            feature = "gpui-fast",
++            any(target_os = "macos", target_os = "linux", target_os = "windows")
++        ))]
+         if let Some(surface) = &self.composition {
+             surface
+                 .set_visible(visible)
+@@ -236,11 +306,58 @@ impl WebView {
+         Ok(())
+     }
+ 
++    /// Move the native view into `window`, the one being updated, keeping its page as it
++    /// is: nothing is reloaded. Only with GPUI Fast's window composition on macOS and Windows.
++    pub fn move_to_window(&mut self, window: &mut Window, cx: &mut App) -> anyhow::Result<()> {
++        #[cfg(all(feature = "gpui-fast", target_os = "macos"))]
++        {
++            let surface = self
++                .composition
++                .take()
++                .ok_or_else(|| anyhow::anyhow!("the WebView has no composition surface"))?;
++            self.composition = Some(surface.move_to(&self.webview, window, cx)?);
++            Ok(())
++        }
++        #[cfg(all(feature = "gpui-fast", target_os = "windows"))]
++        {
++            self.composition
++                .as_mut()
++                .ok_or_else(|| anyhow::anyhow!("the WebView has no composition surface"))?
++                .move_to(&self.webview, window, cx)
++        }
++        #[cfg(not(all(feature = "gpui-fast", any(target_os = "macos", target_os = "windows"))))]
++        {
++            let _ = (window, cx);
++            anyhow::bail!("moving a WebView between windows needs GPUI Fast on macOS or Windows")
++        }
++    }
++
++    /// Take the native view out of its window before that window closes, keeping its page;
++    /// [`WebView::move_to_window`] puts it in another. On macOS and Windows, the page is
++    /// detached from the closing window's composition surface.
++    pub fn leave_window(&self) {
++        #[cfg(all(feature = "gpui-fast", any(target_os = "macos", target_os = "windows")))]
++        if let Some(surface) = &self.composition {
++            surface.leave_window(&self.webview);
++        }
++    }
++
++    /// Give the keyboard back to the GPUI view of the window the page is in, which a
++    /// moved page has changed ([`WebView::move_to_window`]).
++    pub fn focus_parent(&self) -> wry::Result<()> {
++        #[cfg(all(feature = "gpui-fast", any(target_os = "macos", target_os = "windows")))]
++        if let Some(surface) = &self.composition {
++            surface.focus_parent(&self.webview);
++            return Ok(());
++        }
++        self.webview.focus_parent()
++    }
++
+     /// Set visibility and report native errors without discarding the loaded page.
+     pub fn set_visible(&self, visible: bool) -> wry::Result<()> {
+         // A focus error must not leave a closing native view covering the window.
+         let focus_result = if !visible && self.visible.get() {
+-            self.webview.focus_parent()
++            self.focus_parent()
+         } else {
+             Ok(())
+         };
+@@ -310,7 +427,9 @@ impl WebView {
+         // GTK's integer one, so the page zoom is applied on top of it.
+         #[cfg(target_os = "linux")]
+         linux::match_scale_factor(&self.webview, self.scale_factor.get(), zoom);
+-        #[cfg(not(target_os = "linux"))]
++        #[cfg(all(feature = "gpui-fast", target_os = "macos"))]
++        self.webview.zoom(zoom * self.interface_zoom.get())?;
++        #[cfg(not(any(target_os = "linux", all(feature = "gpui-fast", target_os = "macos"))))]
+         self.webview.zoom(zoom)?;
+         Ok(())
+     }
+@@ -374,7 +493,7 @@ impl Render for WebView {
+ /// A webview element can display a wry webview.
+ pub struct WebViewElement {
+     parent: Entity<WebView>,
+-    view: Rc<wry::WebView>,
++    _view: Rc<wry::WebView>,
+ }
+ 
+ impl WebViewElement {
+@@ -385,7 +504,10 @@ impl WebViewElement {
+         _window: &mut Window,
+         _cx: &mut App,
+     ) -> Self {
+-        Self { view, parent }
++        Self {
++            _view: view,
++            parent,
++        }
+     }
+ }
+ 
+@@ -445,6 +567,18 @@ impl Element for WebViewElement {
+         if let Some(surface) = &parent.composition {
+             surface.set_scale_factor(window.scale_factor());
+         }
++        #[cfg(all(feature = "gpui-fast", target_os = "windows"))]
++        if let Some(surface) = &parent.composition {
++            surface.set_scale_factor(window.scale_factor());
++        }
++        #[cfg(all(feature = "gpui-fast", target_os = "macos"))]
++        if let Some(surface) = &parent.composition {
++            let zoom = window.interface_zoom();
++            surface.set_interface_zoom(zoom);
++            if parent.interface_zoom.replace(f64::from(zoom)) != f64::from(zoom) {
++                let _ = parent.webview.zoom(parent.zoom.get() * f64::from(zoom));
++            }
++        }
+         #[cfg(target_os = "linux")]
+         if parent.scale_factor.replace(window.scale_factor()) != window.scale_factor() {
+             linux::match_scale_factor(&parent.webview, window.scale_factor(), parent.zoom.get());
+@@ -481,11 +615,13 @@ impl Element for WebViewElement {
+     ) {
+         let bounds = hitbox.clone().map(|h| h.bounds).unwrap_or(bounds);
+         window.with_content_mask(Some(ContentMask { bounds }), |window| {
+-            let webview = self.view.clone();
+-            window.on_mouse_event(move |event: &MouseDownEvent, _, _, _| {
+-                if !bounds.contains(&event.position) {
++            let parent = self.parent.downgrade();
++            window.on_mouse_event(move |event: &MouseDownEvent, _, _, cx| {
++                if !bounds.contains(&event.position)
++                    && let Some(parent) = parent.upgrade()
++                {
+                     // Click white space to blur the input focus
+-                    let _ = webview.focus_parent();
++                    let _ = parent.read(cx).focus_parent();
+                 }
+             });
+         });
+diff --git b/gpui-webview/src/windows_composition.rs b/gpui-webview/src/windows_composition.rs
+new file mode 100644
+index 0000000..03fb915
+--- /dev/null
++++ b/gpui-webview/src/windows_composition.rs
+@@ -0,0 +1,315 @@
++use std::{cell::Cell, rc::Rc};
++
++use self::input::{WebViewInput, attach_to_surface, rollback_move};
++use anyhow::{Context as _, Result};
++use gpui::{
++    AnyWindowHandle, AsyncApp, Bounds, DispatchEventResult, Pixels, Window,
++    WindowCompositionSurface, point, px, size,
++};
++use wry::WebViewExtWindows as _;
++
++#[path = "windows_input.rs"]
++mod input;
++use wry::raw_window_handle::{HasWindowHandle, RawWindowHandle};
++
++pub(super) struct NativeWebViewSurface {
++    surface: WindowCompositionSurface,
++    input: Rc<WebViewInput>,
++    window: AnyWindowHandle,
++    parent_window: Cell<isize>,
++    attached: Cell<bool>,
++    cx: AsyncApp,
++}
++
++impl NativeWebViewSurface {
++    pub(super) fn new(webview: &wry::WebView, window: &Window, cx: &gpui::App) -> Result<Self> {
++        let parent_window = native_window_handle(window)?;
++        let composition = window.enable_window_composition()?;
++        let surface = composition.create_native_surface()?;
++        let controller = webview
++            .composition_controller()
++            .context("Wry did not create a WebView2 composition controller")?;
++        let visual = visual_for_surface(&surface)?;
++        let input = Rc::new(WebViewInput {
++            composition: controller.clone(),
++            controller: webview.controller(),
++            bounds: Cell::new(Bounds::default()),
++            scale_factor: Cell::new(window.scale_factor()),
++        });
++
++        let result = unsafe { controller.SetRootVisualTarget(&visual) }
++            .map_err(anyhow::Error::from)
++            .and_then(|()| {
++                composition.on_input(surface.id(), {
++                    let input = input.clone();
++                    move |event| {
++                        if let Err(error) = input.send(event) {
++                            log::error!("sending input to composition WebView: {error:#}");
++                        }
++                        DispatchEventResult {
++                            propagate: false,
++                            default_prevented: false,
++                        }
++                    }
++                })
++            });
++        if let Err(error) = result {
++            if let Err(clear_error) = unsafe { controller.SetRootVisualTarget(None) } {
++                log::warn!("clearing a failed WebView composition target: {clear_error}");
++            }
++            if let Err(remove_error) = composition.remove_surface(surface.id()) {
++                log::warn!("removing a failed WebView composition surface: {remove_error:#}");
++            }
++            return Err(error.into());
++        }
++
++        Ok(Self {
++            surface,
++            input,
++            window: window.window_handle(),
++            parent_window: Cell::new(parent_window),
++            attached: Cell::new(true),
++            cx: cx.to_async(),
++        })
++    }
++
++    pub(super) fn move_to(
++        &mut self,
++        webview: &wry::WebView,
++        window: &Window,
++        cx: &mut gpui::App,
++    ) -> Result<()> {
++        let target_window = window.window_handle();
++        if self.window.window_id() == target_window.window_id() {
++            return self.reattach();
++        }
++
++        let parent_window = native_window_handle(window)?;
++        let old_visual = self
++            .attached
++            .get()
++            .then(|| visual_for_surface(&self.surface))
++            .transpose()?;
++        let composition = window.enable_window_composition()?;
++        let surface = composition.create_native_surface()?;
++        let visual = match visual_for_surface(&surface) {
++            Ok(visual) => visual,
++            Err(error) => {
++                if let Err(remove_error) = composition.remove_surface(surface.id()) {
++                    log::warn!("removing a failed WebView composition surface: {remove_error:#}");
++                }
++                return Err(error);
++            }
++        };
++        let input = Rc::new(WebViewInput {
++            composition: self.input.composition.clone(),
++            controller: webview.controller(),
++            bounds: Cell::new(Bounds::default()),
++            scale_factor: Cell::new(window.scale_factor()),
++        });
++        let old_parent_window = self.parent_window.get();
++        if let Err(error) = attach_to_surface(
++            webview,
++            &composition,
++            &surface,
++            &visual,
++            &input,
++            parent_window,
++            old_parent_window,
++        ) {
++            rollback_move(
++                webview,
++                &composition,
++                &surface,
++                &input,
++                old_visual.as_ref(),
++                parent_window,
++                old_parent_window,
++            );
++            return Err(error);
++        }
++
++        self.replace_surface(surface, input, target_window, parent_window, cx);
++        Ok(())
++    }
++
++    fn reattach(&self) -> Result<()> {
++        if !self.attached.get() {
++            let visual = visual_for_surface(&self.surface)?;
++            unsafe { self.input.composition.SetRootVisualTarget(&visual)? };
++            self.attached.set(true);
++        }
++        Ok(())
++    }
++
++    fn replace_surface(
++        &mut self,
++        surface: WindowCompositionSurface,
++        input: Rc<WebViewInput>,
++        target_window: AnyWindowHandle,
++        parent_window: isize,
++        cx: &mut gpui::App,
++    ) {
++        let old_window = self.window;
++        let old_surface_id = self.surface.id();
++        self.surface = surface;
++        self.input = input;
++        self.window = target_window;
++        self.parent_window.set(parent_window);
++        self.attached.set(true);
++        let cx = cx.to_async();
++        self.cx = cx.clone();
++        cx.spawn(async move |cx| {
++            let result = old_window.update(cx, |_, window, _| {
++                window
++                    .enable_window_composition()?
++                    .remove_surface(old_surface_id)
++            });
++            if let Ok(Err(error)) = result {
++                log::warn!("cannot release WebView composition surface: {error:#}");
++            }
++        })
++        .detach();
++    }
++
++    pub(super) fn set_scale_factor(&self, scale_factor: f32) {
++        self.input.scale_factor.set(scale_factor);
++    }
++
++    pub(super) fn set_bounds(&self, _: &wry::WebView, rect: wry::Rect) -> Result<()> {
++        let scale_factor = self.input.scale_factor.get();
++        let (position, extent) = logical_bounds(rect, scale_factor);
++        let bounds = Bounds::new(
++            point(px(position.x as f32), px(position.y as f32)),
++            size(px(extent.width as f32), px(extent.height as f32)),
++        )
++        .to_device_pixels(scale_factor);
++        self.surface.platform_surface()?.set_bounds(bounds)?;
++        self.input.bounds.set(bounds);
++        unsafe {
++            self.input
++                .controller
++                .SetBounds(windows::Win32::Foundation::RECT {
++                    left: 0,
++                    top: 0,
++                    right: bounds.size.width.0,
++                    bottom: bounds.size.height.0,
++                })?;
++        }
++        Ok(())
++    }
++
++    pub(super) fn set_geometry(
++        &self,
++        _: &wry::WebView,
++        document: Bounds<Pixels>,
++        visible: Bounds<Pixels>,
++    ) -> Result<()> {
++        let scale_factor = self.input.scale_factor.get();
++        let visible_device = visible.to_device_pixels(scale_factor);
++        let offset = document.origin - visible.origin;
++        let left = (f32::from(offset.x) * scale_factor).round() as i32;
++        let top = (f32::from(offset.y) * scale_factor).round() as i32;
++        let width = (f32::from(document.size.width) * scale_factor).round() as i32;
++        let height = (f32::from(document.size.height) * scale_factor).round() as i32;
++        self.surface
++            .platform_surface()?
++            .set_bounds(visible_device)?;
++        self.input
++            .bounds
++            .set(document.to_device_pixels(scale_factor));
++        unsafe {
++            self.input
++                .controller
++                .SetBounds(windows::Win32::Foundation::RECT {
++                    left,
++                    top,
++                    right: left + width,
++                    bottom: top + height,
++                })?;
++        }
++        Ok(())
++    }
++
++    pub(super) fn set_visible(&self, visible: bool) -> Result<()> {
++        self.surface.platform_surface()?.set_visible(visible)
++    }
++
++    pub(super) fn leave_window(&self, webview: &wry::WebView) {
++        if let Err(error) = unsafe { self.input.composition.SetRootVisualTarget(None) } {
++            log::warn!("detaching the WebView from its closing window: {error}");
++        }
++        if let Err(error) = self
++            .surface
++            .platform_surface()
++            .and_then(|surface| surface.set_visible(false))
++        {
++            log::warn!("hiding the WebView in its closing window: {error:#}");
++        }
++        if let Err(error) = webview.focus_parent() {
++            log::warn!("returning keyboard focus from the closing WebView: {error}");
++        }
++        self.attached.set(false);
++    }
++
++    pub(super) fn focus_parent(&self, webview: &wry::WebView) {
++        if let Err(error) = webview.focus_parent() {
++            log::warn!("returning keyboard focus to the GPUI window: {error}");
++        }
++    }
++
++    pub(super) fn release(self, webview: Rc<wry::WebView>) {
++        if let Err(error) = unsafe { self.input.composition.SetRootVisualTarget(None) } {
++            log::warn!("clearing the WebView composition target: {error}");
++        }
++        self.cx
++            .clone()
++            .spawn(async move |cx| {
++                let result = self.window.update(cx, |_, window, _| {
++                    window
++                        .enable_window_composition()?
++                        .remove_surface(self.surface.id())
++                });
++                if let Ok(Err(error)) = result {
++                    log::warn!("cannot release WebView composition surface: {error:#}");
++                }
++                drop(webview);
++            })
++            .detach();
++    }
++}
++
++fn logical_bounds(
++    rect: wry::Rect,
++    scale_factor: f32,
++) -> (wry::dpi::LogicalPosition<f64>, wry::dpi::LogicalSize<f64>) {
++    (
++        rect.position.to_logical(f64::from(scale_factor)),
++        rect.size.to_logical(f64::from(scale_factor)),
++    )
++}
++
++fn native_window_handle(window: &Window) -> Result<isize> {
++    let handle =
++        HasWindowHandle::window_handle(window).context("reading the native window handle")?;
++    match handle.as_raw() {
++        RawWindowHandle::Win32(handle) => Ok(handle.hwnd.get() as isize),
++        _ => anyhow::bail!("the GPUI window is not a Win32 window"),
++    }
++}
++
++fn visual_for_surface(surface: &WindowCompositionSurface) -> Result<windows::core::IUnknown> {
++    let platform_handle = surface.platform_surface()?.platform_handle()?;
++    let visual = *platform_handle
++        .downcast::<windows_062::core::IUnknown>()
++        .map_err(|_| anyhow::anyhow!("GPUI did not provide a DirectComposition visual"))?;
++    Ok(visual_for_wry(&visual))
++}
++
++fn visual_for_wry(visual: &windows_062::core::IUnknown) -> windows::core::IUnknown {
++    let retained = visual.clone();
++    let raw = <windows_062::core::IUnknown as windows_062::core::Interface>::as_raw(&retained);
++    std::mem::forget(retained);
++    // Both crate versions wrap the same COM ABI; transfer the cloned interface reference.
++    unsafe { <windows::core::IUnknown as windows::core::Interface>::from_raw(raw.cast()) }
++}
+diff --git b/gpui-webview/src/windows_input.rs b/gpui-webview/src/windows_input.rs
+new file mode 100644
+index 0000000..c13035b
+--- /dev/null
++++ b/gpui-webview/src/windows_input.rs
+@@ -0,0 +1,259 @@
++use std::cell::Cell;
++
++use anyhow::Result;
++use gpui::{
++    Bounds, DevicePixels, DispatchEventResult, Modifiers, MouseButton, NavigationDirection, Pixels,
++    PlatformInput, ScrollDelta, WindowCompositionSurface,
++};
++use webview2_com::Microsoft::Web::WebView2::Win32::*;
++use windows::Win32::{
++    Foundation::POINT,
++    UI::WindowsAndMessaging::{XBUTTON1, XBUTTON2},
++};
++use wry::WebViewExtWindows as _;
++
++pub(super) struct WebViewInput {
++    pub(super) composition: ICoreWebView2CompositionController,
++    pub(super) controller: ICoreWebView2Controller,
++    pub(super) bounds: Cell<Bounds<DevicePixels>>,
++    pub(super) scale_factor: Cell<f32>,
++}
++
++struct MouseInput {
++    kind: COREWEBVIEW2_MOUSE_EVENT_KIND,
++    button: Option<MouseButton>,
++    modifiers: Modifiers,
++    data: u32,
++    position: gpui::Point<Pixels>,
++}
++
++impl WebViewInput {
++    pub(super) fn send(&self, event: &PlatformInput) -> Result<()> {
++        match event {
++            PlatformInput::MouseDown(event) => {
++                unsafe {
++                    self.controller
++                        .MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC)?;
++                }
++                self.send_mouse(MouseInput {
++                    kind: mouse_button_kind(event.button, true),
++                    button: Some(event.button),
++                    modifiers: event.modifiers,
++                    data: navigation_button_data(event.button),
++                    position: event.position,
++                })?;
++            }
++            PlatformInput::MouseUp(event) => self.send_mouse(MouseInput {
++                kind: mouse_button_kind(event.button, false),
++                button: None,
++                modifiers: event.modifiers,
++                data: navigation_button_data(event.button),
++                position: event.position,
++            })?,
++            PlatformInput::MouseMove(event) => self.send_mouse(MouseInput {
++                kind: COREWEBVIEW2_MOUSE_EVENT_KIND_MOVE,
++                button: event.pressed_button,
++                modifiers: event.modifiers,
++                data: 0,
++                position: event.position,
++            })?,
++            PlatformInput::MouseExited(event) => self.send_mouse(MouseInput {
++                kind: COREWEBVIEW2_MOUSE_EVENT_KIND_LEAVE,
++                button: event.pressed_button,
++                modifiers: event.modifiers,
++                data: 0,
++                position: event.position,
++            })?,
++            PlatformInput::Scroll(event) => {
++                let delta = scroll_amount(event.delta);
++                for (kind, amount) in [
++                    (COREWEBVIEW2_MOUSE_EVENT_KIND_WHEEL, delta.y),
++                    (COREWEBVIEW2_MOUSE_EVENT_KIND_HORIZONTAL_WHEEL, -delta.x),
++                ] {
++                    if amount != 0. {
++                        self.send_mouse(MouseInput {
++                            kind,
++                            button: None,
++                            modifiers: event.modifiers,
++                            data: amount as i32 as u32,
++                            position: event.position,
++                        })?;
++                    }
++                }
++            }
++            _ => {}
++        }
++        Ok(())
++    }
++
++    fn send_mouse(&self, input: MouseInput) -> Result<()> {
++        let mut virtual_keys = COREWEBVIEW2_MOUSE_EVENT_VIRTUAL_KEYS_NONE;
++        if input.modifiers.control {
++            virtual_keys |= COREWEBVIEW2_MOUSE_EVENT_VIRTUAL_KEYS_CONTROL;
++        }
++        if input.modifiers.shift {
++            virtual_keys |= COREWEBVIEW2_MOUSE_EVENT_VIRTUAL_KEYS_SHIFT;
++        }
++        if let Some(button) = input.button {
++            virtual_keys |= mouse_button_key(button);
++        }
++        let point = if input.kind == COREWEBVIEW2_MOUSE_EVENT_KIND_LEAVE {
++            POINT::default()
++        } else {
++            mouse_point(input.position, self.bounds.get(), self.scale_factor.get())
++        };
++        unsafe {
++            self.composition
++                .SendMouseInput(input.kind, virtual_keys, input.data, point)?;
++        }
++        Ok(())
++    }
++}
++
++pub(super) fn attach_to_surface(
++    webview: &wry::WebView,
++    composition: &gpui::WindowComposition<'_>,
++    surface: &WindowCompositionSurface,
++    visual: &windows::core::IUnknown,
++    input: &std::rc::Rc<WebViewInput>,
++    parent_window: isize,
++    old_parent_window: isize,
++) -> Result<()> {
++    surface.platform_surface()?.set_visible(false)?;
++    if parent_window != old_parent_window {
++        webview.reparent(parent_window)?;
++    }
++    unsafe { input.composition.SetRootVisualTarget(visual)? };
++    composition.on_input(surface.id(), {
++        let input = input.clone();
++        move |event| {
++            if let Err(error) = input.send(event) {
++                log::error!("sending input to composition WebView: {error:#}");
++            }
++            DispatchEventResult {
++                propagate: false,
++                default_prevented: false,
++            }
++        }
++    })?;
++    Ok(())
++}
++
++pub(super) fn rollback_move(
++    webview: &wry::WebView,
++    composition: &gpui::WindowComposition<'_>,
++    surface: &WindowCompositionSurface,
++    input: &WebViewInput,
++    old_visual: Option<&windows::core::IUnknown>,
++    parent_window: isize,
++    old_parent_window: isize,
++) {
++    if let Err(error) = unsafe { input.composition.SetRootVisualTarget(old_visual) } {
++        log::warn!("restoring the previous WebView visual target: {error}");
++    }
++    if parent_window != old_parent_window
++        && let Err(error) = webview.reparent(old_parent_window)
++    {
++        log::warn!("restoring the previous WebView parent window: {error}");
++    }
++    if let Err(error) = composition.remove_surface(surface.id()) {
++        log::warn!("removing a failed WebView composition surface: {error:#}");
++    }
++}
++
++fn mouse_button_kind(button: MouseButton, down: bool) -> COREWEBVIEW2_MOUSE_EVENT_KIND {
++    match (button, down) {
++        (MouseButton::Left, true) => COREWEBVIEW2_MOUSE_EVENT_KIND_LEFT_BUTTON_DOWN,
++        (MouseButton::Left, false) => COREWEBVIEW2_MOUSE_EVENT_KIND_LEFT_BUTTON_UP,
++        (MouseButton::Right, true) => COREWEBVIEW2_MOUSE_EVENT_KIND_RIGHT_BUTTON_DOWN,
++        (MouseButton::Right, false) => COREWEBVIEW2_MOUSE_EVENT_KIND_RIGHT_BUTTON_UP,
++        (MouseButton::Middle, true) => COREWEBVIEW2_MOUSE_EVENT_KIND_MIDDLE_BUTTON_DOWN,
++        (MouseButton::Middle, false) => COREWEBVIEW2_MOUSE_EVENT_KIND_MIDDLE_BUTTON_UP,
++        (MouseButton::Navigate(_), true) => COREWEBVIEW2_MOUSE_EVENT_KIND_X_BUTTON_DOWN,
++        (MouseButton::Navigate(_), false) => COREWEBVIEW2_MOUSE_EVENT_KIND_X_BUTTON_UP,
++    }
++}
++
++fn mouse_button_key(button: MouseButton) -> COREWEBVIEW2_MOUSE_EVENT_VIRTUAL_KEYS {
++    match button {
++        MouseButton::Left => COREWEBVIEW2_MOUSE_EVENT_VIRTUAL_KEYS_LEFT_BUTTON,
++        MouseButton::Right => COREWEBVIEW2_MOUSE_EVENT_VIRTUAL_KEYS_RIGHT_BUTTON,
++        MouseButton::Middle => COREWEBVIEW2_MOUSE_EVENT_VIRTUAL_KEYS_MIDDLE_BUTTON,
++        MouseButton::Navigate(NavigationDirection::Back) => {
++            COREWEBVIEW2_MOUSE_EVENT_VIRTUAL_KEYS_X_BUTTON1
++        }
++        MouseButton::Navigate(NavigationDirection::Forward) => {
++            COREWEBVIEW2_MOUSE_EVENT_VIRTUAL_KEYS_X_BUTTON2
++        }
++    }
++}
++
++fn navigation_button_data(button: MouseButton) -> u32 {
++    match button {
++        MouseButton::Navigate(NavigationDirection::Back) => u32::from(XBUTTON1),
++        MouseButton::Navigate(NavigationDirection::Forward) => u32::from(XBUTTON2),
++        _ => 0,
++    }
++}
++
++fn mouse_point(
++    position: gpui::Point<Pixels>,
++    bounds: Bounds<DevicePixels>,
++    scale_factor: f32,
++) -> POINT {
++    POINT {
++        x: (f32::from(position.x) * scale_factor).round() as i32 - bounds.origin.x.0,
++        y: (f32::from(position.y) * scale_factor).round() as i32 - bounds.origin.y.0,
++    }
++}
++
++fn scroll_amount(delta: ScrollDelta) -> gpui::Point<f32> {
++    match delta {
++        ScrollDelta::Pixels(delta) => delta.map(f32::from),
++        ScrollDelta::Lines(delta) => delta * 120.,
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::{mouse_point, scroll_amount};
++    use gpui::{Bounds, DevicePixels, ScrollDelta, point, px, size};
++
++    #[test]
++    fn mouse_coordinates_are_relative_to_the_composition_surface() {
++        let point = mouse_point(
++            point(px(70.), px(55.)),
++            Bounds::new(
++                point(DevicePixels(100), DevicePixels(50)),
++                size(DevicePixels(400), DevicePixels(300)),
++            ),
++            2.,
++        );
++        assert_eq!((point.x, point.y), (40, 60));
++    }
++
++    #[test]
++    fn clipped_surface_mouse_coordinates_remain_relative_to_the_document() {
++        let point = mouse_point(
++            point(px(30.), px(40.)),
++            Bounds::new(
++                point(DevicePixels(20), DevicePixels(10)),
++                size(DevicePixels(600), DevicePixels(800)),
++            ),
++            2.,
++        );
++        assert_eq!((point.x, point.y), (40, 70));
++    }
++
++    #[test]
++    fn scroll_deltas_keep_pixel_and_wheel_units() {
++        assert_eq!(
++            scroll_amount(ScrollDelta::Pixels(point(px(2.), px(-3.)))),
++            point(2., -3.)
++        );
++        assert_eq!(
++            scroll_amount(ScrollDelta::Lines(point(0.5, -1.))),
++            point(60., -120.)
++        );
++    }
++}

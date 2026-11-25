@@ -1,6 +1,6 @@
 # Patched upstream crates
 
-Six crates the app builds on are vendored here, each with Lattice's changes, and swapped in through the workspace manifest's `[patch]` tables.
+Seven crates the app builds on are vendored here, each with Lattice's changes, and swapped in through the workspace manifest's `[patch]` tables.
 Each is upstream's source at an exact pin plus the diffs in this directory, nothing else; `script/check-patches` rebuilds them from upstream and fails on any difference (CI runs it), and `script/check-patches --write` rebuilds them after a diff is edited or a pin moves.
 
 `chemex-local.diff` is applied last. It records the branch's tooltip placement, dialog typography, Windows path normalization and profiler compatibility across `gpui`, `gpui-component` and `gpui-base`.
@@ -12,9 +12,10 @@ Each is upstream's source at an exact pin plus the diffs in this directory, noth
 | `gpui-fast/crates/gpui_macos` | the same repository's `crates/gpui_macos` | the same commit | Apache-2.0 | `gpui-fast-lab-occlusion.diff`, `gpui-fast-overlay-first-mouse.diff`, `gpui-fast-lab-assume-key.diff`, `gpui-fast-backdrop-blur.diff`, `gpui-fast-ime-bindings.diff`, `gpui-fast-native-cursor.diff`, `gpui-fast-held-keys.diff` |
 | `gpui-component` | [crates.io `gpui-component`](https://crates.io/crates/gpui-component) (GPUI Kit's components) | 0.9.1, crate SHA-256 `e155c4914bd809d966660610d596f7b57c5cd38979ca2c132215057a91f23f03` | Apache-2.0 | `gpui-component-overlays.diff`, `gpui-component-lattice-hooks.diff` |
 | `gpui-base` | [crates.io `gpui-base`](https://crates.io/crates/gpui-base) (GPUI Kit's foundation, which `gpui-component` builds on) | 0.9.1, crate SHA-256 `f3e9ae5237737cfd110d0ff513fcd9c20f97d98ebabd0a73164068177f0aca4f` | Apache-2.0 | `gpui-base-popover-exit.diff`, `gpui-base-max-length.diff`, `gpui-base-empty-folder.diff` |
-| `gpui-webview` | [crates.io `gpui-webview`](https://crates.io/crates/gpui-webview) (GPUI Kit's webview: the islands' native page) | 0.9.1, crate SHA-256 `6b355bcda56e128a7c2e27257653a6441ab792dcfbdae49c63ce329c846f4b5d` | Apache-2.0 | `gpui-webview-interface-zoom.diff`, `gpui-webview-move-window.diff` |
+| `gpui-webview` | [crates.io `gpui-webview`](https://crates.io/crates/gpui-webview) (GPUI Kit's webview: the islands' native page) | 0.9.1, crate SHA-256 `6b355bcda56e128a7c2e27257653a6441ab792dcfbdae49c63ce329c846f4b5d` | Apache-2.0 | `gpui-webview-interface-zoom.diff`, `gpui-webview-move-window.diff`, `gpui-webview-windows-composition.diff` |
+| `lb-wry` | [crates.io `lb-wry`](https://crates.io/crates/lb-wry) (Wry's platform WebView host) | 0.53.3, crate SHA-256 `d9cfe72bff8acf9af0d6d276569be5b9cb3f313f9882761ada5a50d3044214d4` | Apache-2.0 OR MIT | `lb-wry-webview2-composition.diff` |
 
-What is copied: each crate's sources, manifest, build script, README and license (a copy of the repository's, which upstream links), without examples, benches and docs, and for the crates.io crates without their packaging files (`Cargo.lock`, `Cargo.toml.orig`); `gpui-base` keeps the tests and benches its manifest names.
+What is copied: each crate's sources, manifest, build script, README and license (a copy of the repository's, which upstream links), without benches and docs, and for crates.io crates without their packaging files (`Cargo.lock`, `Cargo.toml.orig`). `lb-wry` keeps its explicitly-declared examples; `gpui-base` keeps the tests and benches its manifest names.
 The vendored copies cannot run their own tests where they sit (the gpui crate's tests read examples and fonts that are not copied), so the tests the diffs add run in a gpui-fast checkout at the pin with the diffs applied: the `gpui-patches` workflow does that on every change to this directory, and the command is under "Moving a pin" below. The whole gpui test suite passed against these diffs when they were written (852 tests).
 
 ## The diffs
@@ -96,8 +97,10 @@ The vendored copies cannot run their own tests where they sit (the gpui crate's 
 - **`gpui-webview-move-window.diff`**: a webview's page moved into another window, as it is (the Agent in a window of its own, #1202).
   `WebView::move_to_window` puts the WKWebView in a composition surface of the window being updated and removes the old one; WebKit keeps the page, so nothing is reloaded. `WebView::leave_window` takes it out of a window about to close, since a window torn down with the WKWebView still in it leaves the view pointing at views that are gone (the app crashed there). A page holding its window's keyboard hands it back to that window's GPUI view as it leaves.
   `WebView::focus_parent` gives the keyboard to the GPUI view of the window the page is in now: Wry's own names the view the page was built in.
-  This is macOS with `gpui-fast` only; elsewhere `move_to_window` returns an error and `leave_window` does nothing.
+  The move-without-reload behavior is macOS in this patch; the Windows composition path is added by `gpui-webview-windows-composition.diff`.
   The `agent_window` e2e module checks it.
+- **`gpui-webview-windows-composition.diff`**: host WebView2's composition visual on GPUI Fast's native surface and forward pointer/wheel input. Keep mouse coordinates relative to the full document when its visible surface is clipped; move the composition visual and keyboard parent together when an Island changes windows.
+- **`lb-wry-webview2-composition.diff`**: create WebView2 composition controllers and expose their controller handles to GPUI WebView. Reparenting updates both the hidden Wry host window and WebView2's `ParentWindow`, preserving the page while an Agent island moves between GPUI windows.
 - **`gpui-component-lattice-hooks.diff`**: seams for Lattice's design system.
   - *A host-drawn menu highlight*: with a `GlobalMenuHighlight` installed, a `PopupMenu`'s rows draw no hover or selection fill of their own; the menu records each row's bounds, section (rows between two separators or labels) and whether it can be highlighted as it is laid out, and hands them with its highlighted item to the host's `MenuHighlight::paint`, behind the rows.
     Lattice draws the fluid hover there (`lattice_ui::fluid_hover::KitMenuGlide`): one fill gliding between rows, as the Tauri app's menus have it.
