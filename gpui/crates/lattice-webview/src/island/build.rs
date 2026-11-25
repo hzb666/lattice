@@ -90,16 +90,13 @@ impl Island {
                 let raw = parent.build(builder);
                 this.update_in(cx, |this, window, cx| {
                     this.building = false;
-                    let built = raw
-                        .context("building the island's webview")
-                        .and_then(|raw| {
-                            let webview = WebView::new_with_composition(raw, window, cx)?;
-                            Ok(BuiltWebView {
-                                webview,
+                    let built =
+                        raw.context("building the island's webview")
+                            .map(|raw| BuiltWebView {
+                                webview: WebView::new(raw, window, cx),
                                 inbox,
                                 token,
-                            })
-                        });
+                            });
                     this.finish_build(built, window, cx);
                 })
                 .ok();
@@ -148,7 +145,6 @@ impl Island {
         #[cfg(target_os = "windows")]
         {
             builder = builder.with_https_scheme(true);
-            builder = builder.with_composition_controller(true);
         }
         builder = self.take_file_drops(builder, window, cx);
         if let Some(ground) = self.config.ground {
