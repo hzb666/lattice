@@ -131,7 +131,7 @@ fn variables(cx: &App) -> Value {
             "--bg": css(palette.window),
             "--window": css(palette.window),
             "--chrome-surface": css(palette.chrome),
-            "--side-panel": css(palette.side_panel),
+            "--side-panel": css(palette.panel),
             "--panel": css(palette.panel),
             "--panel-strong": css(palette.raised),
             "--editor-bg": css(palette.editor),

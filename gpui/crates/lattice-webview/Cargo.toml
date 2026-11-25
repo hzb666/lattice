@@ -32,6 +32,7 @@ objc2-foundation = { version = "0.3", features = ["NSGeometry", "NSRange", "NSSt
 raw-window-handle = "0.6"
 
 [dev-dependencies]
+lattice-theme.workspace = true
 tempfile = "3"
 
 [target.'cfg(target_os = "windows")'.dev-dependencies]
