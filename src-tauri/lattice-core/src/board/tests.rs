@@ -306,7 +306,9 @@ fn images_are_inlined_and_what_cannot_be_shown_becomes_a_labelled_box() {
 #[test]
 fn an_image_stored_beside_the_board_is_read_and_inlined() {
     let source = MULTI_PAGE.replace("https://example.com/figures/plot.png", "figures/plot.png");
-    let png = include_bytes!("../../../icons/32x32.png").to_vec();
+    let png =
+        include_bytes!("../../../templates/tutorial/figures/scaled-dot-product-attention.png")
+            .to_vec();
     let read = |path: &str| (path == "figures/plot.png").then(|| png.clone());
     let scene: Value =
         serde_json::from_str(&convert_tldr(&source, &read).unwrap().to_json()).unwrap();
