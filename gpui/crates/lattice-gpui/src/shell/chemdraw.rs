@@ -32,8 +32,7 @@ use lattice_ui::{
 };
 
 use super::preview_viewport::{
-    self, MAX_SCALE, MIN_SCALE, PREVIEW_PADDING, PreviewFit, RENDER_SCALE, fit_scale, pan_offset,
-    preview_size, zoom_step,
+    self, MAX_SCALE, MIN_SCALE, PREVIEW_PADDING, PreviewFit, fit_scale, preview_size, zoom_step,
 };
 use super::{
     Shell,
@@ -705,6 +704,7 @@ fn commands(context: &CommandContext, out: &mut Vec<Command>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::shell::preview_viewport::pan_offset;
 
     fn file(path: &str, kind: &str, children: Vec<FileNode>) -> FileNode {
         FileNode {

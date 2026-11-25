@@ -30,7 +30,9 @@ static CITATION: LazyLock<Regex> = LazyLock::new(|| {
     .expect("the citation pattern compiles")
 });
 static CHEMEX_REFERENCE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\\chemex\s*(?:\[[^\]]*\]\s*)?\{\s*([A-Za-z0-9._:-]{1,200})\s*\}")
+    Regex::new(
+        r"\\chemex\s*(?:\[[^\]]*\]\s*)?\{\s*((?:[A-Za-z0-9._:-]{1,200}(?:\|[A-Za-z0-9._:-]{1,200})?)(?:\s*,\s*[A-Za-z0-9._:-]{1,200}(?:\|[A-Za-z0-9._:-]{1,200})?)*)\s*\}",
+    )
         .expect("the Chemex reference pattern compiles")
 });
 static REFERENCE: LazyLock<Regex> = LazyLock::new(|| {
@@ -410,8 +412,13 @@ mod tests {
             assert_eq!(&text[target.range], key);
         }
         assert_eq!(chemex_target(text, 0), None);
-        let list = r"\chemex{amine,ester}";
-        assert_eq!(None, chemex_target(list, list.find("amine").unwrap()));
+        let list = r"\chemex{amine, parent|isomer-a}";
+        for key in ["amine", "parent|isomer-a"] {
+            let at = list.find(key).unwrap() + 1;
+            let target = chemex_target(list, at).unwrap();
+            assert_eq!(key, target.key);
+            assert_eq!(key, &list[target.range]);
+        }
     }
 
     #[test]

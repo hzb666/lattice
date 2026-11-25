@@ -6,14 +6,17 @@
 \newif\ifchemex@discovery
 \newif\ifchemex@numbering
 \newif\ifchemex@prepared
+\newif\ifchemex@verify
 \newcommand{\ChemexDiscoveryMode}{\chemex@discoverytrue}
 \newcommand{\ChemexNumberingMode}{\chemex@numberingtrue}
 \newcommand{\ChemexFinalMode}{\chemex@discoveryfalse\chemex@numberingfalse}
 \newcommand{\ChemexPreparedMode}{\chemex@preparedtrue}
+\newcommand{\ChemexVerifyMode}{\chemex@verifytrue}
 \InputIfFileExists{chemex-mode.tex}{}{}
 
 \graphicspath{{./}{\@currdir}}%
 \newcounter{chemex@drawing}
+\newcount\chemex@subcount
 \newbox\chemex@fieldbox
 \newbox\chemex@spectrumbox
 \newbox\chemex@formulabox
@@ -21,7 +24,13 @@
 \newdimen\chemex@overlayy
 \newdimen\chemex@overlaymax
 \newdimen\chemex@spectrumwidth
-\ifchemex@prepared\else
+\ifchemex@prepared
+  \ifchemex@verify
+    \newwrite\chemex@figures
+    \immediate\openout\chemex@figures=\jobname.chemex-figures.dat
+    \AtEndDocument{\immediate\closeout\chemex@figures}
+  \fi
+\else
 \newwrite\chemex@figures
 \immediate\openout\chemex@figures=chemex-figures.dat
 \AtEndDocument{\immediate\closeout\chemex@figures}
@@ -57,6 +66,14 @@
   \fi
 }
 \newcommand{\chemex@assignfield}[2]{%
+  \in@{|}{#2}%
+  \ifin@
+    \chemex@assignsubfield{#1}#2\chemex@subfieldstop
+  \else
+    \chemex@assignplainfield{#1}{#2}%
+  \fi
+}
+\newcommand{\chemex@assignplainfield}[2]{%
   \chemex@claim{#1}{#2}%
   \ifcsname chemex@label@#2\endcsname
     \chemex@checknumber{#2}%
@@ -68,6 +85,42 @@
     \fi
     \chemex@checknumber{#2}%
   \fi
+  \chemex@recordnumber{#2}%
+}
+\newcommand{\chemex@nextsubletter}[2]{%
+  \ifcsname chemex@subletter@#1|#2\endcsname
+    \edef\chemex@subletter{\csname chemex@subletter@#1|#2\endcsname}%
+  \else
+    \ifcsname chemex@subcount@#1\endcsname
+      \chemex@subcount=\csname chemex@subcount@#1\endcsname\relax
+    \else
+      \chemex@subcount=0\relax
+    \fi
+    \advance\chemex@subcount by 1\relax
+    \ifnum\chemex@subcount>26
+      \PackageError{chemex}{Too many subcompounds for `#1'}{A parent can have at most 26 lettered subcompounds.}%
+      \def\chemex@subletter{?}%
+    \else
+      \expandafter\xdef\csname chemex@subcount@#1\endcsname{\the\chemex@subcount}%
+      \expandafter\xdef\csname chemex@subletter@#1|#2\endcsname{\@alph\chemex@subcount}%
+      \edef\chemex@subletter{\csname chemex@subletter@#1|#2\endcsname}%
+    \fi
+  \fi
+}
+\def\chemex@assignsubfield#1#2|#3\chemex@subfieldstop{%
+  \chemex@assignplainfield{#1}{#2}%
+  \chemex@claim{#1}{#2|#3}%
+  \ifcsname chemex@label@#2|#3\endcsname
+    \chemex@checknumber{#2|#3}%
+  \else
+    \chemex@nextsubletter{#2}{#3}%
+    \expandafter\xdef\csname chemex@label@#2|#3\endcsname{\csname chemex@label@#2\endcsname\chemex@subletter}%
+    \ifchemex@numbering
+      \immediate\write\chemex@numbers{\string\chemex@number{#2|#3}{\csname chemex@label@#2|#3\endcsname}}%
+    \fi
+    \chemex@checknumber{#2|#3}%
+  \fi
+  \chemex@recordnumber{#2|#3}%
 }
 \newcommand{\chemex@assign}[2]{%
   \chemex@claim{#1}{#2}%
@@ -78,6 +131,25 @@
       \immediate\write\chemex@numbers{\string\chemex@number{#2}{\csname chemex@label@#2\endcsname}}%
     \else
       \chemex@checknumber{#2}%
+    \fi
+  \fi
+}
+\newcommand{\chemex@assignreference}[2]{%
+  \in@{|}{#2}%
+  \ifin@
+    \chemex@assignfield{#1}{#2}%
+  \else
+    \chemex@assign{#1}{#2}%
+  \fi
+}
+
+\newcommand{\chemex@recordnumber}[1]{%
+  \ifchemex@verify
+    \ifcsname chemex@expected@#1\endcsname
+      \ifcsname chemex@recorded@#1\endcsname\else
+        \global\expandafter\let\csname chemex@recorded@#1\endcsname\@empty
+        \immediate\write\chemex@numbers{\string\chemex@number{#1}{\csname chemex@label@#1\endcsname}}%
+      \fi
     \fi
   \fi
 }
@@ -99,8 +171,16 @@
 }
 
 \def\chemex@default{compound}
+\newcommand{\ChemexListSeparator}{, }
+\newcommand{\ChemexListPairSeparator}{ and~}
+\newcommand{\ChemexListFinalSeparator}{, and~}
 \DeclareRobustCommand{\chemex}{\@ifnextchar[{\chemex@reference}{\chemex@reference[compound]}}
 \def\chemex@reference[#1]#2{%
+  \ifchemex@discovery\else
+    \chemex@list{#1}{#2}%
+  \fi
+}
+\def\chemex@referenceone#1#2{%
   \ifchemex@discovery\else
     \edef\chemex@requestedcounter{#1}%
     \ifchemex@numbering
@@ -116,7 +196,7 @@
           \fi
         \fi
       \else
-        \chemex@assign{#1}{#2}%
+        \chemex@assignreference{#1}{#2}%
         \csname chemex@label@#2\endcsname%
       \fi
     \else
@@ -125,11 +205,12 @@
           \chemex@claim{#1}{#2}%
           \csname chemex@expected@#2\endcsname%
         \else
-          \chemex@assign{#1}{#2}%
+          \chemex@assignreference{#1}{#2}%
           \csname chemex@label@#2\endcsname%
         \fi
       \else
-        \chemex@assign{#1}{#2}%
+        \chemex@assignreference{#1}{#2}%
+        \chemex@recordnumber{#2}%
         \csname chemex@label@#2\endcsname%
       \fi
     \fi
@@ -139,6 +220,11 @@
 \ifchemex@numbering
   \newwrite\chemex@numbers
   \immediate\openout\chemex@numbers=chemex-numbers.dat
+  \AtEndDocument{\immediate\closeout\chemex@numbers}
+\fi
+\ifchemex@verify
+  \newwrite\chemex@numbers
+  \immediate\openout\chemex@numbers=\jobname.chemex-numbers.dat
   \AtEndDocument{\immediate\closeout\chemex@numbers}
 \fi
 
@@ -158,9 +244,11 @@
 \def\chemex@chemn[#1]#2{\chemex@withspectrumoptions{#1}{#2}}
 \def\chemex@drawing#1#2#3{%
   \stepcounter{chemex@drawing}%
-  \ifchemex@prepared\else
+  \ifchemex@verify
     \immediate\write\chemex@figures{\string\chemex@drawrequest{#1}{\unexpanded{#2}}}%
-  \fi
+  \else\ifchemex@prepared\else
+    \immediate\write\chemex@figures{\string\chemex@drawrequest{#1}{\unexpanded{#2}}}%
+  \fi\fi
   \ifchemex@discovery\else
     \edef\chemex@index{\arabic{chemex@drawing}}%
     \ifchemex@numbering
@@ -197,9 +285,11 @@
 }
 \def\chemex@spectrum#1#2#3#4#5#6#7{%
   \stepcounter{chemex@drawing}%
-  \ifchemex@prepared\else
+  \ifchemex@verify
     \immediate\write\chemex@figures{\string\chemex@spectrumrequest{#1}{#2}{#3}{#4}{#5}{\unexpanded{#6}}}%
-  \fi
+  \else\ifchemex@prepared\else
+    \immediate\write\chemex@figures{\string\chemex@spectrumrequest{#1}{#2}{#3}{#4}{#5}{\unexpanded{#6}}}%
+  \fi\fi
   \ifchemex@discovery\else
     \edef\chemex@index{\arabic{chemex@drawing}}%
     \ifchemex@numbering\else
@@ -282,6 +372,36 @@
 
 \let\chemex@originalgraphics\Ginclude@graphics
 \ExplSyntaxOn
+% shortcut: keys stay opaque, add range compression only with parent-child key semantics.
+\clist_new:N \l_chemex_list_keys_clist
+\int_new:N \l_chemex_list_count_int
+\cs_new_protected:Npn \chemex@list #1#2
+  {
+    \clist_set:Nn \l_chemex_list_keys_clist {#2}
+    \int_set:Nn \l_chemex_list_count_int {\clist_count:N \l_chemex_list_keys_clist}
+    \int_compare:nNnTF {\l_chemex_list_count_int} = {0}
+      {\PackageError{chemex}{Empty~compound~list}{Add~one~or~more~keys~to~the~\\chemex~argument.}}
+      {
+        \clist_map_indexed_inline:Nn \l_chemex_list_keys_clist
+          {
+            \tl_if_blank:nTF {##2}
+              {\PackageError{chemex}{Empty~compound~key~in~list}{Remove~extra~commas~from~the~\\chemex~argument.}}
+              {
+                \int_compare:nNnT {##1} > {1}
+                  {
+                    \int_compare:nNnTF {\l_chemex_list_count_int} = {2}
+                      {\ChemexListPairSeparator}
+                      {
+                        \int_compare:nNnTF {##1} = {\l_chemex_list_count_int}
+                          {\ChemexListFinalSeparator}
+                          {\ChemexListSeparator}
+                      }
+                  }
+                \chemex@referenceone{#1}{##2}
+              }
+          }
+      }
+  }
 \tl_new:N \l_chemex_spectrum_spec_tl
 \tl_new:N \l_chemex_spectrum_cmpd_tl
 \tl_new:N \l_chemex_spectrum_size_tl

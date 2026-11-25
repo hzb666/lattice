@@ -30,8 +30,8 @@ use lattice_ui::{
 };
 
 use super::preview_viewport::{
-    self, MAX_SCALE, MIN_SCALE, PREVIEW_PADDING, PreviewFit, RENDER_SCALE, fit_scale, pan_offset,
-    preview_size, zoom_step,
+    self, MAX_SCALE, MIN_SCALE, PREVIEW_PADDING, PreviewFit, RENDER_SCALE, fit_scale, preview_size,
+    zoom_step,
 };
 use super::{
     Shell,

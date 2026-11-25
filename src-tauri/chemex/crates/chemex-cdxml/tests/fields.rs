@@ -53,6 +53,25 @@ fn fields_may_use_xml_character_references_for_the_brackets() {
 }
 
 #[test]
+fn accepts_parent_child_keys_and_rejects_malformed_relationships() {
+    let document = DrawingDocument::parse(drawing("<s>[[@parent|child-a]]</s>")).unwrap();
+    assert_eq!("parent|child-a", document.fields()[0].compound_id);
+    for field in ["|child-a", "parent|", "parent|child-a|nested"] {
+        let document = DrawingDocument::parse(drawing(&format!("<s>[[@{field}]]</s>"))).unwrap();
+        assert!(
+            document.fields().is_empty(),
+            "accepted malformed field {field}"
+        );
+        assert!(
+            document
+                .diagnostics()
+                .iter()
+                .any(|issue| issue.code == "invalid_field")
+        );
+    }
+}
+
+#[test]
 fn retains_the_first_style_when_a_field_spans_different_styles() {
     let source = drawing("<s face='1'>before [[@x</s><s face='2'>]] after</s>");
     let expected = drawing("<s face='1'>before 3a</s><s face='2'> after</s>");

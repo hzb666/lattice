@@ -143,6 +143,93 @@ fn render_uses_tex_numbering_and_keeps_sources_unchanged() {
 }
 
 #[test]
+fn render_accepts_two_and_three_key_compound_lists() {
+    let Ok(latexmk) = std::env::var("CHEMEX_LATEXMK") else {
+        return;
+    };
+    if !PathBuf::from(latexmk).is_file() {
+        return;
+    }
+    let project = Project::new();
+    let manuscript = project.0.join("manuscript.tex");
+    let source = fs::read_to_string(&manuscript).unwrap();
+    let source = source
+        .replace(
+            "\\renewcommand{\\thecompound}{\\Roman{compound}}",
+            "\\renewcommand{\\thecompound}{\\Roman{compound}}\n\\renewcommand{\\ChemexListSeparator}{; }\n\\renewcommand{\\ChemexListPairSeparator}{ or }\n\\renewcommand{\\ChemexListFinalSeparator}{; or~}",
+        )
+        .replace(
+            "References: \\chemex{compound-001}, \\chemex{compound-002}.",
+            "References: \\chemex{compound-001, compound-002} and \\chemex{compound-001, compound-002, compound-001}.",
+        );
+    fs::write(manuscript, source).unwrap();
+
+    assert_success(project.run("render", "lists"));
+    assert!(project.0.join("lists/numbering.pdf").is_file());
+}
+
+#[test]
+fn render_child_fields_inherit_chapter_number_and_parent_letters() {
+    let Ok(latexmk) = std::env::var("CHEMEX_LATEXMK") else {
+        return;
+    };
+    if !PathBuf::from(latexmk).is_file() {
+        return;
+    }
+    let project = Project::new();
+    fs::write(
+        project.0.join("chapter-one.cdxml"),
+        "<CDXML><page><t id='1'><s>[[@parent-one]]</s></t><t id='2'><s>[[@parent-one|isomer-a]]</s></t><t id='3'><s>[[@parent-one|isomer-b]]</s></t></page></CDXML>",
+    )
+    .unwrap();
+    fs::write(
+        project.0.join("chapter-two.cdxml"),
+        "<CDXML><page><t id='1'><s>[[@parent-two|isomer-a]]</s></t></page></CDXML>",
+    )
+    .unwrap();
+    fs::write(
+        project.0.join("manuscript.tex"),
+        r"\documentclass{report}
+\usepackage{chemex}
+\newcounter{compound}[chapter]
+\renewcommand{\thecompound}{\thechapter-\arabic{compound}}
+\begin{document}
+\chapter{First}
+\chemex{parent-one|isomer-a, parent-one|isomer-b}
+\chemd[compound]{chapter-one.cdxml}
+\chapter{Second}
+\chemex{parent-two|isomer-a}
+\chemd[compound]{chapter-two.cdxml}
+\end{document}
+",
+    )
+    .unwrap();
+
+    assert_success(project.run("render", "subcompounds"));
+    for (drawing, expected) in [
+        ("drawing-001", ["1-1", "1-1a", "1-1b"].as_slice()),
+        ("drawing-002", ["2-1a"].as_slice()),
+    ] {
+        let path = project
+            .0
+            .join(format!("subcompounds/drawings/{drawing}/drawing.cdxml"));
+        let document =
+            chemex_cdxml::DrawingDocument::parse(fs::read_to_string(path).unwrap()).unwrap();
+        let texts: Vec<_> = document
+            .texts()
+            .iter()
+            .map(|text| text.text.as_str())
+            .collect();
+        for label in expected {
+            assert!(
+                texts.contains(&label),
+                "missing {label} in {drawing}: {texts:?}"
+            );
+        }
+    }
+}
+
+#[test]
 fn changing_tex_counter_style_changes_drawing_labels_without_json() {
     let Ok(latexmk) = std::env::var("CHEMEX_LATEXMK") else {
         return;

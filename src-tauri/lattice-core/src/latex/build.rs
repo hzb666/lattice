@@ -28,6 +28,7 @@ use std::time::{Instant, SystemTime};
 
 mod active;
 mod beside;
+mod chemex_output;
 #[cfg(windows)]
 mod isolated;
 mod unchanged;
@@ -240,6 +241,13 @@ fn missing_root(document: &str) -> String {
     format!("{document}, the main document, is missing. Right-click another .tex file in the Project panel and choose Set as main document.")
 }
 
+fn retry_chemex_preparation(retried: bool, success: bool, agrees: bool, log: &str) -> bool {
+    !retried
+        && (log.contains("changed between build passes")
+            || log.contains("registration is missing")
+            || (success && !agrees))
+}
+
 /// Build the project. `unattended`: Lattice started this build on its own
 /// (autosave, the project watcher), so a failing document nothing changed in
 /// is not typeset again (`unchanged`). `layout`: where the intermediate
@@ -437,20 +445,15 @@ fn run_latexmk_with(
     if !root_document.exists() {
         return Err(missing_root(&document));
     }
-    let chemistry = if super::chemex::enabled_project(root, &document)? {
-        Some(
-            super::chemex::Preparation {
-                root,
-                document: &document,
-                engine: &manifest.engine,
-                active,
-                steps,
-            }
-            .run()?,
-        )
-    } else {
-        None
-    };
+    let preparation =
+        super::chemex::enabled_project(root, &document)?.then_some(super::chemex::Preparation {
+            root,
+            document: &document,
+            engine: &manifest.engine,
+            active,
+            steps,
+        });
+    let mut chemistry = preparation.as_ref().map(|prep| prep.run(!force)).transpose()?;
     let prepared = if use_format && chemistry.is_none() {
         preamble_format::prepare(root, &manifest, &document, &root_document, active, steps)
     } else {
@@ -467,42 +470,78 @@ fn run_latexmk_with(
     let hidden_log = aux_files::folder(root, &document, AuxFiles::Hidden)
         .join(Path::new(&document).with_extension("log").file_name().unwrap_or_default());
     let before = (stamp(&pdf_path), stamp(&hidden_log));
-    let mut command = latexmk_into(root, layout, &document);
-    command.args(["-interaction=nonstopmode", "-synctex=1", "-file-line-error"]);
-    command.arg(error_mode(&manifest));
-    command.args(engine_args(root, &manifest));
-    if let Some(format) = &format {
-        command.arg(format.latexmk_arg());
-    }
-    if force {
-        command.arg("-g");
-    }
-    search_paths::search_project_folder(&mut command, &document);
-    if let Some(chemistry) = &chemistry {
-        chemistry.configure(&mut command)?;
-    }
-    command.arg(&document);
-    wide_event::record("engine", manifest.engine.as_str());
-    wide_event::add("latexmk_runs", 1);
-
-    let step = wide_event::step("latexmk");
-    let (output, cancelled) = run_tracked(
-        command,
-        active,
-        steps,
-        "Could not start latexmk. Install MacTeX or TeX Live. ",
-        "latexmk exited unexpectedly: ",
-    )?;
-    drop(step);
-    let log = commands::combined_output(&output);
-    if layout == AuxFiles::Hidden {
-        aux_files::stow_synctex(root, &document);
-    }
-    if cancelled {
-        if was_stalled(active) {
-            return Ok(build_stall::stalled_build(steps.started(), &log, &document));
+    let staging = preparation
+        .as_ref()
+        .map(|prep| chemex_output::Staging::new(root, &document, layout, prep))
+        .transpose()?;
+    let mut retried = false;
+    let (output, log) = loop {
+        let mut command = latexmk_into(root, layout, &document);
+        command.args(["-interaction=nonstopmode", "-synctex=1", "-file-line-error"]);
+        command.arg(error_mode(&manifest));
+        command.args(engine_args(root, &manifest));
+        if let Some(format) = &format {
+            command.arg(format.latexmk_arg());
         }
-        return Ok(cancelled_build(steps.started(), &log, &document));
+        if force || retried {
+            command.arg("-g");
+        }
+        search_paths::search_project_folder(&mut command, &document);
+        if let Some(chemistry) = &chemistry {
+            chemistry.inputs.configure(&mut command)?;
+        }
+        if let Some(staging) = &staging {
+            staging.configure(&mut command);
+        }
+        command.arg(&document);
+        wide_event::record("engine", manifest.engine.as_str());
+        wide_event::add("latexmk_runs", 1);
+
+        let step = wide_event::step("latexmk");
+        let (output, cancelled) = run_tracked(
+            command,
+            active,
+            steps,
+            "Could not start latexmk. Install MacTeX or TeX Live. ",
+            "latexmk exited unexpectedly: ",
+        )?;
+        drop(step);
+        let log = commands::combined_output(&output);
+        if cancelled {
+            if was_stalled(active) {
+                return Ok(build_stall::stalled_build(steps.started(), &log, &document));
+            }
+            return Ok(cancelled_build(steps.started(), &log, &document));
+        }
+        if let (Some(prep), Some(state), Some(staging)) = (&preparation, &chemistry, &staging) {
+            let agrees = staging.agrees(state, skipped_recompile(&log));
+            if retry_chemex_preparation(retried, output.status.success(), agrees, &log) {
+                wide_event::record("chemex_preparation", "retried");
+                chemistry = Some(prep.run(false)?);
+                retried = true;
+                continue;
+            }
+            if output.status.success() && agrees {
+                if !prep.still_current(state)? {
+                    return Err(
+                        "LaTeX or figure sources changed during the build; build again".into()
+                    );
+                }
+                staging.publish(root, &document, layout)?;
+                if let Some(state) = chemistry.take() {
+                    prep.accept(state)?;
+                }
+            } else if output.status.success() {
+                return Err(
+                    "Chemex figure references or numbers changed during final typesetting".into()
+                );
+            }
+            staging.copy_recorder(root, &document, layout)?;
+        }
+        break (output, log);
+    };
+    if staging.is_none() && layout == AuxFiles::Hidden {
+        aux_files::stow_synctex(root, &document);
     }
 
     let success = output.status.success();
@@ -526,7 +565,8 @@ fn run_latexmk_with(
     // folder it deletes only its own copy, so the one beside the document
     // stays, from an older build, while the map that went with it is gone:
     // a run that wrote TeX's log but no PDF goes the same way as beside.
-    if layout == AuxFiles::Hidden
+    if staging.is_none()
+        && layout == AuxFiles::Hidden
         && stamp(&hidden_log) != before.1
         && before.0.is_some()
         && stamp(&pdf_path) == before.0
@@ -546,7 +586,7 @@ fn run_latexmk_with(
     let (diagnostics, tex_log) = diagnose(root, &document, &log, format.as_ref(), pdf);
     Ok(BuildResult {
         success,
-        has_pdf: pdf_bytes.is_some(),
+        has_pdf: pdf_bytes.is_some() && (staging.is_none() || success),
         diagnostics,
         log: trim_log(&log),
         duration_ms: steps.started().elapsed().as_millis(),

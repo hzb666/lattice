@@ -27,6 +27,19 @@ fn every_latexmk_run_writes_its_log_unwrapped() {
 }
 
 #[test]
+fn stale_chemex_preparation_gets_one_full_retry() {
+    assert!(retry_chemex_preparation(false, true, false, ""));
+    assert!(retry_chemex_preparation(
+        false,
+        false,
+        false,
+        "Package chemex Error: Compound number changed between build passes.",
+    ));
+    assert!(!retry_chemex_preparation(true, true, false, ""));
+    assert!(!retry_chemex_preparation(false, false, false, "Undefined control sequence."));
+}
+
+#[test]
 #[ignore = "requires latexmk and a working pdfLaTeX installation"]
 fn asset_only_rc_builds_pdf_and_resolves_references() {
     let root = TempDir::new("latex");

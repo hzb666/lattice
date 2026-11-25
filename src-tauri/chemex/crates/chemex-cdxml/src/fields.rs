@@ -111,10 +111,16 @@ fn scan_fields(text: &str, object: usize) -> (Vec<DynamicField>, Vec<String>) {
 }
 
 pub(crate) fn validate_key(key: &str) -> Result<()> {
-    if key.is_empty()
-        || !key
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || b"._:-".contains(&byte))
+    let mut parts = key.split('|');
+    let valid_part = |part: &str| {
+        !part.is_empty()
+            && part
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || b"._:-".contains(&byte))
+    };
+    if !valid_part(parts.next().unwrap_or_default())
+        || parts.next().is_some_and(|part| !valid_part(part))
+        || parts.next().is_some()
     {
         return Err(Error::InvalidKey(key.into()));
     }

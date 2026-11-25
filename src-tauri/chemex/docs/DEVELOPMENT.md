@@ -29,6 +29,7 @@ Chemex 的 workspace 可独立验证；项目管理、桌面界面和论文编�
 
 - 字段为 `[[@key]]` 或 `[[@key_前缀^后缀]]`；装饰形式的 key 不得包含 `_`。前缀/后缀可为空或含空格，替换只改 key 所在位置，装饰及其样式保留。
 - 编号由论文中的 LaTeX counter、`\the<counter>` 格式命令和 `\setcounter` 控制。Chemex 在图稿引用位置收集字段，并把 TeX 展开的纯文本编号写入生成 CDXML。
+- CDXML 字段 `[[@parent|child]]` 表示单层子化合物；同一父 key 的子 key 按绘图字段首次出现顺序获得小写字母后缀。子字段继承父 counter 和章节前缀，不推进主 counter；每个父 key 最多 26 个子 key。
 - 默认 `compound` 在各图稿的 source-order registration 中首次遇到字段时推进，正文引用只读取 numbering pass 生成的映射、不抢先占号；prepared final pass 按相同映射重放，确保前插图稿后正文和图稿编号同步顺延。其他自定义 counter 保留由正文或图稿首次出现推进的行为。编号写入 ChemDraw 前必须展开为非空、无控制符和无 TeX 命令的纯文本。整篇论文或图稿变化后重新解析编号；图稿只有替换后的 CDXML 哈希改变才重导。
 - key 是全局化合物身份；多个年份或章节可使用多个 counter，但同一个 key 不能跨 counter 使用。重置同一 counter 不会改变已分配 key 的编号，新化合物应使用新 key。
 - 只替换已识别的普通文字对象；原子标签、未知对象中的文字和 ObjectTag 内的文字只读。

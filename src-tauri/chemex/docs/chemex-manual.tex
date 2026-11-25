@@ -1,0 +1,468 @@
+\documentclass[UTF8,12pt,a4paper]{ctexart}
+
+\usepackage[margin=25mm]{geometry}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{tabularx}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue,
+  urlcolor=blue,
+  pdftitle={Chemex 使用手册},
+  pdfauthor={Chemex},
+}
+
+\lstdefinestyle{chemexcode}{
+  basicstyle=\ttfamily\small,
+  columns=fullflexible,
+  keepspaces=true,
+  breaklines=true,
+  frame=single,
+  showstringspaces=false,
+  tabsize=2,
+}
+\lstset{style=chemexcode}
+\setlist{itemsep=2pt,topsep=4pt}
+\setcounter{tocdepth}{2}
+
+\title{Chemex 使用手册\\\large ChemDraw 与 LaTeX 的化学绘图桥接}
+\author{Chemex 项目}
+\date{版本 0.1.0；2026 年 11 月}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Chemex 将 ChemDraw 图稿中的动态化合物字段与 LaTeX 化合物编号连接起来，并为论文准备带编号的 CDXML、ChemDraw 矢量图和 MestReNova 谱图。原始 ChemDraw 文件仍由 ChemDraw 编辑；LaTeX 负责编号和论文排版；Lattice 可作为图稿浏览、项目管理与构建宿主。本手册说明当前 Chemex 的字段语法、编号规则、LaTeX 命令、命令行工作流、外部工具及适用边界。
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+\section{简介}
+
+\subsection{Chemex 做什么}
+
+Chemex 在 CDXML 普通文字对象中识别动态字段，例如 \verb|[[@compound-001]]|。构建时，字段会替换为 LaTeX 计数器生成的纯文本编号。
+
+LaTeX 正文用 \verb|\chemex{compound-001}| 引用同一化合物。改变计数器格式或插入图稿后，正文引用和 ChemDraw 图稿中的编号可由同一编号表更新。
+
+Chemex 不重绘分子，也不把部分解析后的模型写回原始图稿。字段替换、原生导出和缓存均使用生成副本；源 CDXML/CDX 不会因编号或导出被改写。
+
+\subsection{与 chemnum 的关系}
+
+Chemex 借鉴化合物命名宏包手册常见的组织方式，并提供列表、子化合物和按需引用等相似概念；它不是 \texttt{chemnum} 的兼容实现。
+
+\texttt{chemnum} 常见子标签写法是 \verb|\cmpd{main.sub}|，列表用逗号分隔。Chemex 的子字段写作 \verb!parent|child!；多个正文 key 可写在 \verb|\chemex{key1, key2}| 中。
+
+Chemex 的关键区别是编号来源：默认计数器按论文中的图稿字段顺序推进，而不是简单按正文中首次提到某个 key 的位置编号。父子关系在 CDXML 文本对象内首次出现时建立，无须在导言区登记每个子项。计数器本身仍按 LaTeX 习惯在导言区定义。
+
+\section{安装与准备}
+
+\subsection{当前发行形态}
+
+Chemex 目前作为 Lattice 仓库中的 CLI、LaTeX 宏包和共享核心提供；不是独立的 CTAN 安装包。独立命令由仓库的 \texttt{chemex-cli} crate 构建。运行论文构建时，Chemex 会为 LaTeX 提供对应版本的 \texttt{chemex.sty} 和准备文件，不需要用户把内部辅助宏复制进论文。
+
+在仓库根目录构建：
+
+\begin{lstlisting}
+cargo build --manifest-path src-tauri/chemex/Cargo.toml -p chemex-cli --locked
+\end{lstlisting}
+
+也可按下文使用 \texttt{cargo run} 直接执行命令。若通过 Lattice 使用 Chemex，通常从论文项目的 Build、Chemistry 或绘图预览界面操作，无须手动运行 CLI。
+
+\subsection{工具需求}
+
+\begin{itemize}
+  \item 仅检查 CDXML：Chemex CLI 即可；不需要启动 ChemDraw。
+  \item 生成带编号 CDXML：需要可用的 \texttt{latexmk} 和论文所需的 LaTeX 发行版。
+  \item 导出 ChemDraw 矢量图：需要 Windows、已安装并注册自动化接口的 ChemDraw，以及 Inkscape。Chemex 调用 ChemDraw 导出 SVG，再由 Inkscape 转为矢量 PDF。
+  \item 处理 Mnova 文件：需要 MestReNova。Windows 下可设置 \texttt{CHEMEX\_MESTRENOVA} 指向其可执行文件；未设置时按系统可用信息查找。
+  \item 运行 \texttt{structures}：需要 \texttt{uv}；首次执行会在隔离环境中取得 Python 3.13 和固定版本 RDKit 2026.9.2。可用 \texttt{CHEMEX\_UV} 指定 \texttt{uv} 路径。
+\end{itemize}
+
+外部程序可加入 \texttt{PATH}，或通过以下变量指定：
+
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+变量 & 用途 \\
+\midrule
+\texttt{CHEMEX\_LATEXMK} & \texttt{latexmk} 可执行文件 \\
+\texttt{CHEMEX\_INKSCAPE} & Inkscape 可执行文件 \\
+\texttt{CHEMEX\_MESTRENOVA} & MestReNova 可执行文件 \\
+\texttt{CHEMEX\_UV} & \texttt{uv} 可执行文件 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{快速开始}
+
+\subsection{在 ChemDraw 中建立字段}
+
+在 ChemDraw 中创建普通文字对象，并输入字段占位符：
+
+\begin{lstlisting}
+[[@product-001]]
+\end{lstlisting}
+
+将字段放在对应结构附近，保存为 CDXML。若希望 \texttt{structures} 将字段与结构关联，应把结构和其独立编号文字放在同一个 ChemDraw Group 中；关联规则见第~\ref{sec:groups}~节。
+
+\subsection{编写 LaTeX 文稿}
+
+\begin{lstlisting}
+\documentclass{article}
+\usepackage{chemex}
+\newcounter{compound}
+\renewcommand{\thecompound}{\arabic{compound}}
+
+\begin{document}
+Product \chemex{product-001} is shown below.
+\includegraphics[width=0.8\linewidth]{figures/reaction.cdxml}
+\end{document}
+\end{lstlisting}
+
+将字段 key 与 LaTeX 引用中的 key 完全一致。对于 Chemex 默认计数器，图稿字段按文稿中图稿的出现顺序编号；正文中的 \verb|\chemex| 引用读取相应编号，不会因为引用提早出现在图稿之前而抢占默认编号。
+
+\subsection{运行 CLI}
+
+将 \texttt{MANUSCRIPT.tex} 替换为论文路径；目标输出目录必须尚不存在，且其父目录必须已经存在。
+
+\begin{lstlisting}
+chemex render MANUSCRIPT.tex output/rendered
+\end{lstlisting}
+
+\texttt{render} 生成带编号的 CDXML 副本。需要同时导出图稿 PDF，使用 \texttt{export}；需要生成最终论文 PDF，使用 \texttt{build}：
+
+\begin{lstlisting}
+chemex export MANUSCRIPT.tex output/exported
+chemex build  MANUSCRIPT.tex output/paper
+\end{lstlisting}
+
+\section{LaTeX 命令}
+
+\subsection{化合物引用 \texttt{\textbackslash chemex}}
+
+基本语法如下：
+
+\begin{lstlisting}
+\chemex[<counter>]{<key-list>}
+\end{lstlisting}
+
+方括号可省略；省略时使用 \texttt{compound} 计数器。
+
+\begin{center}
+\begin{tabularx}{\linewidth}{lXl}
+\toprule
+写法 & 作用 & 要求 \\
+\midrule
+\texttt{\textbackslash chemex\{product-001\}} & 引用一个化合物 & key 已由对应流程编号 \\
+\texttt{\textbackslash chemex[scheme]\{product-001\}} & 使用自定义计数器 & 计数器须先定义 \\
+\texttt{\textbackslash chemex\{a, b, c\}} & 引用多个化合物 & key 之间用逗号分隔 \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+列表按输入顺序输出，不进行编号排序、连续范围压缩或重复项去重。key 不能含逗号；每个 key 由 Chemex 单独查找。默认两个条目以英语 \texttt{and} 连接，三个及以上以逗号分隔并在末项前加 \texttt{and}。可在导言区调整列表标点和连接词：
+
+\begin{lstlisting}
+\renewcommand{\ChemexListSeparator}{、}
+\renewcommand{\ChemexListPairSeparator}{和}
+\renewcommand{\ChemexListFinalSeparator}{和}
+\end{lstlisting}
+
+列表的排版分隔符设置在导言区；父子化合物的关系不需要在导言区预先声明。
+
+\subsection{ChemDraw 图稿 \texttt{\textbackslash chemd}}
+
+\begin{lstlisting}
+\chemd{figures/reaction.cdxml}
+\chemd[compound]{figures/reaction.cdxml}
+\includegraphics[width=0.8\linewidth]{figures/reaction.cdxml}
+\end{lstlisting}
+
+\verb|\chemd{file.cdxml}| 使用默认 \texttt{compound} 计数器；\verb|\chemd[counter]{file.cdxml}| 指定 LaTeX counter。\texttt{\textbackslash includegraphics} 也可直接引用 CDXML，并保留 \texttt{graphicx} 的常用图片选项，例如 \texttt{width}、\texttt{height} 和 \texttt{trim}。Chemex 会为编号和渲染准备私有副本，LaTeX 源文件继续引用原 CDXML 路径。
+
+\subsection{谱图 \texttt{\textbackslash chemn} 与 \texttt{\textbackslash chemd}}
+
+\verb|\chemn| 专用于 Mnova 文件；\verb|\chemd| 根据文件扩展名分派 CDXML 或 Mnova。默认选择 Mnova 文件中的第 1 张谱图。
+
+\begin{lstlisting}
+\chemn{figures/sample.mnova}
+\chemd{figures/sample.mnova}
+\chemn[2]{figures/sample.mnova}
+\chemd[2]{figures/sample.mnova}
+\chemn[spec=2]{figures/sample.mnova}
+\end{lstlisting}
+
+数字方括号形式 \verb|[2]| 是选择第 2 张谱图的旧式简写。推荐使用键值参数；可选参数如下：
+
+\begin{center}
+\begin{tabularx}{\linewidth}{lXl}
+\toprule
+参数 & 含义 & 默认值 \\
+\midrule
+\texttt{spec} & 谱图序号，从 1 开始 & \texttt{1} \\
+\texttt{cmpd} & ChemDraw 字段中的化合物 key，用于查找分子式 & 空 \\
+\texttt{x} & 分子式左上角相对谱图宽度的位置百分比 & \texttt{50} \\
+\texttt{y} & 分子式左上角相对谱图高度的位置百分比 & \texttt{15} \\
+\texttt{size} & 分子式字号；支持 \texttt{pt}、\texttt{bp}、\texttt{mm}、\texttt{cm}、\texttt{in} & \texttt{8pt} \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\texttt{x}、\texttt{y} 是 0--100 的整数百分比，坐标原点位于谱图左上角。分子式会缩放并限制在谱图图片范围内；叠加层不改变谱图在 LaTeX 中的图片盒尺寸。
+
+\begin{lstlisting}
+\chemn[spec=2,cmpd=product-17,x=78,y=12,size=8pt]{figures/sample.mnova}
+\end{lstlisting}
+
+\texttt{cmpd} 必须指向可关联到分子结构的有效 key；公式不可用或无法解析时，构建会报告错误，而不会猜测公式。
+
+\section{编号规则}
+
+\subsection{定义计数器与显示格式}
+
+\texttt{chemex.sty} 使用默认计数器 \texttt{compound}，但不会替用户创建该计数器。应在导言区先定义计数器，再设置 \verb|\thecompound| 的格式：
+
+\begin{lstlisting}
+\newcounter{compound}
+\renewcommand{\thecompound}{\arabic{compound}}
+\end{lstlisting}
+
+可使用 LaTeX 原生格式命令，例如 \verb|\arabic|、\verb|\roman|、\verb|\Roman|、\verb|\alph| 和 \verb|\Alph|。任意合法的 \texttt{\textbackslash the<counter>} 重定义也可使用，只要最终展开为 ChemDraw 可显示的普通文本。
+
+\subsection{按章节编号}
+
+在 \texttt{report} 或 \texttt{book} 文档中，将计数器设置为随章节重置，并把章节号放入显示格式：
+
+\begin{lstlisting}
+\documentclass{report}
+\usepackage{chemex}
+\newcounter{compound}[chapter]
+\renewcommand{\thecompound}{\thechapter-\arabic{compound}}
+\end{lstlisting}
+
+第 2 章第 1 个父化合物及其子项会显示为 \texttt{2-1}、\texttt{2-1a}、\texttt{2-1b}。子字母附加在完整父编号之后，因此章节前缀不会与子编号冲突。\texttt{article} 文档没有 \texttt{chapter} counter，可按节或其他自定义计数器组织编号。
+
+\subsection{默认与自定义 counter 的时序}
+
+默认 \texttt{compound} 编号以图稿字段的原文顺序为基准。第一次遇到某个父 key 时推进计数器；相同 key 再次出现复用原号。正文中的 \verb|\chemex{key}| 可出现在图稿之前，但不会让默认编号抢先分配。
+
+使用自定义计数器，如 \verb|\chemd[scheme]{...}| 或 \verb|\chemex[scheme]{key}|，该计数器按 LaTeX 执行顺序工作；首次正文引用或图稿字段出现时推进。counter 通过 \verb|\newcounter| 声明，重置使用 \verb|\setcounter|。某个 key 一旦绑定到一个 counter，就不能再以另一个 counter 使用。
+
+字段 key 是化合物身份，不是每次出现时临时生成的编号。重置 counter 不会清除同一 key 已绑定的编号；编号给新化合物时，应在 ChemDraw 中为它使用新 key。不同年份、章节或不同 counter 管理的化合物也应使用不同 key。
+
+\section{ChemDraw 动态字段}
+
+\subsection{普通字段语法}
+
+在 ChemDraw 的普通文字对象中输入占位符。生成图稿时，Chemex 将方括号和 key 替换为 LaTeX 计算出的编号：
+
+\begin{lstlisting}
+[[@compound-001]]
+\end{lstlisting}
+
+这是 Chemex 的构建期文本字段，不是 ChemDraw 自带的自动编号域；在 ChemDraw 编辑源文件时，标记保持原样。编号后的结果只写入 Chemex 生成的 CDXML 副本。
+
+普通 key 可含 ASCII 字母、数字、下划线、点、冒号和连字符。逗号用于 LaTeX 列表分隔，不能出现在 key 内。保留简单、稳定且便于检索的 key，例如 \texttt{substrate-01}、\texttt{product-17} 或 \texttt{paperA.chapter2.03}。
+
+\subsection{带前后缀的字段}
+
+若要把化合物编号嵌入较长文字，可将待替换 key 部分放在下划线之后的前缀和插入符号之前的后缀之间：
+
+\begin{lstlisting}
+[[@product-001_ Scheme ^ product ]]
+\end{lstlisting}
+
+编号替换后得到类似 \texttt{Scheme 3 product} 的文字。前缀和后缀可以为空，也可含空格；替换仅覆盖 key 所在位置，装饰和样式保留。使用这种装饰形式时，key 本身不能包含下划线。
+
+\subsection{父化合物与子化合物}
+
+Chemex 用一个竖线分隔父 key 和子 key：
+
+\begin{lstlisting}
+[[@compound-7]]
+[[@compound-7|isomer-a]]
+[[@compound-7|isomer-b]]
+\end{lstlisting}
+
+Chemex 无须在导言区声明父子关系。构建时按图稿字段首次出现的顺序为每个父项的子 key 分配 \texttt{a}、\texttt{b}、\ldots{}；重复的同一父子组合沿用原字母。父编号推进一次，子项不推进主 counter。
+
+只需要在图中显示子编号时，可以不放单独的父字段：首个 \verb!parent|child! 会自动建立父编号。若还需显示父编号，再添加 \verb|[[@parent]]|。正文引用子项使用同一复合 key：
+
+\begin{lstlisting}
+\chemex{compound-7|isomer-a} and \chemex{compound-7|isomer-b}
+\chemex{compound-7|isomer-a, compound-7|isomer-b}
+\end{lstlisting}
+
+完整父子 key 的唯一身份是 \texttt{parent|child} 组合；不同父项可各自使用相同的子 key。每个父 key 最多有 26 个不同子 key；当前只支持父项加一层子项。
+
+\subsection{字段识别范围与排版}
+
+Chemex 仅替换可识别的普通 CDXML 文字对象。原子标签、未知对象文字、属性、注释和 \texttt{ObjectTag} 元数据不是动态字段。字段可跨 ChemDraw 的多个文字样式片段；编号采用 key 起始处的样式，前后文字和其他样式片段保留。
+
+单独占满一个文字对象的字段被视为独立编号，生成副本会尝试以原文字框的水平中心居中，并保留基线。没有可靠位置/文字框或存在旋转时，Chemex 会给出对齐诊断并保留原排版，但仍可替换编号。句子中的内嵌字段不强制居中。
+
+\subsection{结构分组与分析}
+\label{sec:groups}
+
+若需要让 \texttt{structures} 把编号与结构联系起来，在 ChemDraw 中选中结构和对应的独立编号文字，使用 ChemDraw 的 Group 命令组成同一组。组内可有多个结构片段，例如盐的组分；Chemex 保留这些片段，不自动拆盐或判断化学等价性。
+
+一个组只能对应一个不同的化合物 key。同 key 的重复标签可以共存；不同 key 放在同组会报告歧义，Chemex 不猜测哪个字段代表结构。未分组字段仍可编号和替换，只是没有结构绑定。
+
+\section{命令行参考}
+
+\subsection{命令一览}
+
+\begin{center}
+\begin{tabularx}{\linewidth}{lX}
+\toprule
+命令 & 用途 \\
+\midrule
+\texttt{chemex inspect SOURCE.cdxml} & 检查 CDXML 对象、字段、分组与解析诊断，输出 JSON \\
+\texttt{chemex structures SOURCE.cdxml} & 分析已关联结构，输出分子信息与重复项报告 \\
+\texttt{chemex render MANUSCRIPT.tex NEW\_DIR} & 运行 TeX 编号流程并生成编号 CDXML 副本 \\
+\texttt{chemex export MANUSCRIPT.tex NEW\_DIR} & 准备编号图稿并导出 ChemDraw/Mnova PDF \\
+\texttt{chemex build MANUSCRIPT.tex NEW\_DIR} & 构建论文，最终目录只发布论文 PDF \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+不带参数或使用 \texttt{--help} 可查看命令摘要。当前命令不提供通用的覆盖输出选项；目标目录已存在时，命令会失败并要求换一个新目录。
+
+\subsection{检查 CDXML：\texttt{inspect}}
+
+\begin{lstlisting}
+chemex inspect figures/reaction.cdxml
+\end{lstlisting}
+
+输出 JSON 报告，包括对象清单、字段 key、文字对象索引、分组/片段关联以及解析诊断。对象索引只在当前文件中有效，不是永久 ChemDraw ID，也不应被当作化合物身份。
+
+\subsection{结构分析：\texttt{structures}}
+
+\begin{lstlisting}
+chemex structures figures/reaction.cdxml
+\end{lstlisting}
+
+该命令只分析已由字段和 ChemDraw Group 关联的结构。RDKit 解析后报告分子式、规范异构 SMILES 和在条件满足时的精确重复项。它不是完整 CDXML 渲染器，也不做盐拆分、质子化态归一、互变异构或未指定立体化学的猜测。查询结构、解析/映射不确定或分组歧义的条目不会自动判重。
+
+\subsection{编号副本：\texttt{render}}
+
+\begin{lstlisting}
+chemex render manuscript.tex .chem/render-01
+\end{lstlisting}
+
+Chemex 通过 TeX 读取论文 counter 和编号格式，输出替换字段后的 CDXML 及编号过程文件。此命令不发布最终论文 PDF。目标目录必须不存在；源 TeX 和 CDXML 不会被覆盖。
+
+\subsection{图稿导出：\texttt{export}}
+
+\begin{lstlisting}
+chemex export manuscript.tex .chem/export-01
+\end{lstlisting}
+
+除编号准备外，此命令还为 ChemDraw 图稿生成 SVG/PDF，为选定的 Mnova 谱图生成 PDF。ChemDraw 当前通过本机原生 SVG 导出，再由 Inkscape 转为矢量 PDF；不会用位图重绘结构。失败时保留诊断日志和必要中间产物，不把不完整结果作为成功输出发布。
+
+若希望之后自行运行 \texttt{latexmk}，可将导出目录放到 \texttt{TEXINPUTS} 搜索路径最前面。目录中包含准备好的 \texttt{chemex.sty}、注册表和图稿 PDF；LaTeX 源文件仍引用原来的 CDXML/Mnova 路径：
+
+\begin{lstlisting}
+$export = (Resolve-Path .\output\exported).Path
+$env:TEXINPUTS = "$export;$env:TEXINPUTS;"
+latexmk -pdf -interaction=nonstopmode manuscript.tex
+\end{lstlisting}
+
+末尾分号保留 TeX 发行版默认搜索路径。重新导出时使用一个新的目标目录，随后更新 \texttt{TEXINPUTS} 指向该目录。
+
+\subsection{完整论文：\texttt{build}}
+
+\begin{lstlisting}
+chemex build manuscript.tex .chem/paper-01
+\end{lstlisting}
+
+执行 Chemex 准备、图稿导出和 LaTeX 构建。成功目标目录只包含最终论文 PDF；中间文件由独立 CLI 管理。构建失败返回非零退出码，并保留诊断信息。CLI 的完整项目依赖发现范围有限，复杂多文件项目应使用 Lattice 原生 Build。
+
+\section{输入、缓存与安全}
+
+\subsection{输入和输出规则}
+
+\begin{itemize}
+  \item CDXML 输入须为 UTF-8，可带 BOM；CDX 二进制文件应先用 ChemDraw 另存为 CDXML。
+  \item 单个 CDXML 源文件最多 64 MiB，XML 节点最多 250{,}000 个。
+  \item CLI 会间隔 100 毫秒读取源文件两次并比较内容；检测到写入中的变化时拒绝继续。这是稳定读取检查，不是文件锁或持续监控。
+  \item 输出目标目录不得已存在，父目录须预先创建。重新运行时指定新的目标目录。
+  \item 字段解析与替换可以处理多页 CDXML；ChemDraw 原生图像导出目前拒绝未验证的多页/跨页画布布局。
+\end{itemize}
+
+\subsection{缓存}
+
+独立 CLI 在主 \texttt{.tex} 所在项目的 \texttt{.chem/cache/} 下保存可复用导出：ChemDraw 位于 \texttt{chemdraw/}，Mnova 位于 \texttt{mestrenova/}。缓存依据源文件、编号后图稿及渲染器信息判断是否仍有效；字段编号改变会改变生成 CDXML 和相应渲染内容。Lattice 的化学分析数据库位于项目 \texttt{.chem/molecules.sqlite}。
+
+缓存是派生产物，不是源稿。删除缓存会导致重算/重导；不要编辑缓存文件来修改权威图稿。应在 ChemDraw 源文件或 LaTeX 源文稿中修改内容。
+
+\subsection{原件保护}
+
+字段替换只对新字符串做局部补丁，并检查输出 XML 仍可解析。ChemDraw 导出脚本打开的是私有输入副本，只关闭自己打开的临时文档，不关闭用户已经打开的 ChemDraw 文档。外部阶段超时为 120 秒；超时时原生应用可能仍持有临时副本，应先查看日志和中间目录，再决定是否清理。
+
+\section{常见问题}
+
+\begin{description}[style=nextline]
+  \item[正文显示 \texttt{??}] 检查 key 拼写是否与 CDXML 字段完全一致、编号字段是否存在，以及当前构建是否运行 Chemex 准备流程。默认 counter 下，正文引用不会替代缺失的图稿字段自动编号。
+  \item[未知 LaTeX counter] 自定义编号通过 \verb|\chemex[counter]{key}| 或 \verb|\chemd[counter]{file.cdxml}| 指定。使用前先以 \verb|\newcounter{counter}| 定义 counter，并检查名称拼写。
+  \item[同一 key 使用多个 counter] 同一个化合物身份不能跨 counter 复用。为新计数体系中的化合物选择新 key。
+  \item[子编号错误或重复] 检查字段是否只含一个竖线、父 key 是否一致、子 key 是否误写，以及同父项是否超过 26 个不同子 key。重复出现相同的 \verb!parent|child! 是同一个子项，不会分配新字母。
+  \item[字段未被替换] 确认它位于普通文字对象，而非原子标签、ObjectTag、XML 属性或未知对象中；检查字段括号完整、CDXML 语法有效。
+  \item[结构没有关联] 在 ChemDraw 中将结构和编号文字分组；确认一个组内不存在多个不同 key。未关联不妨碍普通文本编号替换。
+  \item[ChemDraw 导出失败] 检查 ChemDraw COM 自动化是否可用、是否支持 SVG 导出，以及 Inkscape 路径是否正确。ChemDraw 多页导出目前不支持。
+  \item[谱图序号错误] Mnova 序号从 1 开始；确保文件含有所选谱图。检查 \texttt{CHEMEX\_MESTRENOVA} 或可执行文件发现路径。
+  \item[目标目录已存在] CLI 不覆盖已有结果。改用新的输出目录；不要删除或移动不确定来源的目录。
+\end{description}
+
+\section{限制与兼容性}
+
+当前应注意以下范围：
+
+\begin{itemize}
+  \item 父子化合物仅支持一层；每个父 key 最多 26 个子项。
+  \item ChemDraw 多页/跨页画布的矢量导出尚未验证；字段替换支持多页，但这不等于导出兼容性已验证。
+  \item Chemex 不替代 ChemDraw 的化学编辑或完整 CDXML 实现；RDKit 只负责有限的分子/反应分析。
+  \item \texttt{ObjectTag} 可读取，但 ChemDraw 编辑保存往返后自定义身份信息是否保留，需按目标 ChemDraw 版本实测。
+  \item \texttt{structures} 的精确重复判断要求结构可解析且立体化学信息明确；它不推断未知化学语义。
+  \item 独立 CLI 的 \texttt{build} 不接管复杂的多文件依赖、BibTeX 依赖发现或任意自定义构建脚本；Lattice 原生 Build 用于完整宿主工作流。
+\end{itemize}
+
+\appendix
+\section{语法速查}
+
+\begin{lstlisting}
+ChemDraw field:      [[@key]]
+Decorated field:     [[@key_prefix^suffix]]
+Child field:        [[@parent|child]]
+Single reference:    \chemex{key}
+Custom counter:      \chemex[counter]{key}
+Compound list:       \chemex{key1, key2, key3}
+CDXML drawing:       \chemd[counter]{drawing.cdxml}
+Mnova spectrum:      \chemn[spec=2]{sample.mnova}
+Spectrum + formula:  \chemn[spec=2,cmpd=key,x=78,y=12,size=8pt]{sample.mnova}
+\end{lstlisting}
+
+\section{命令速查}
+
+\begin{lstlisting}
+chemex --help
+chemex inspect SOURCE.cdxml
+chemex structures SOURCE.cdxml
+chemex render MANUSCRIPT.tex NEW_DIRECTORY
+chemex export MANUSCRIPT.tex NEW_DIRECTORY
+chemex build MANUSCRIPT.tex NEW_DIRECTORY
+\end{lstlisting}
+
+\section{项目与参考}
+
+Chemex 源码和独立示例位于 Lattice 仓库的 \texttt{src-tauri/chemex/}。项目 README 提供快速示例；\texttt{docs/DEVELOPMENT.md} 记录实现约束、字段契约和验证边界；\texttt{examples/} 提供 LaTeX 示例。
+
+本手册的章节组织参考常见 LaTeX 宏包用户手册；\texttt{chemnum} 官方项目及其手册可见：\url{https://github.com/cgnieder/chemnum}。Chemex 与其命令名、分隔符和编号时序并不兼容。
+
+\end{document}

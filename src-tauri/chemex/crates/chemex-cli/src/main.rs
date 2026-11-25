@@ -23,8 +23,10 @@ Chemex — CDXML inspection and compound fields (no UI)
   chemex export MANUSCRIPT.tex NEW_OUTPUT_DIRECTORY
   chemex build MANUSCRIPT.tex NEW_OUTPUT_DIRECTORY
 
-Fields: [[@compound-001]] or [[@compound-001_ Scheme ^ product ]]
-LaTeX:  \\includegraphics{drawing.cdxml}, \\chemn{sample.mnova}, or \\chemd{sample.mnova}
+Fields: [[@compound-001]], [[@parent|child]]
+Decorated fields: [[@compound-001_ Scheme ^ product ]]
+LaTeX refs: \\chemex{key}, \\chemex{parent|child}, or \\chemex{key1, key2}
+LaTeX figures: \\includegraphics{drawing.cdxml}, \\chemn{sample.mnova}, or \\chemd{sample.mnova}
 
 render creates numbered CDXML copies; export adds native vector PDFs and Mnova spectrum PDFs.
 build publishes only the manuscript PDF. SVG and PDF exports are cached per project.

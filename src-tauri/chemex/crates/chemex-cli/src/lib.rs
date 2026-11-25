@@ -156,7 +156,7 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 pub const PACKAGE: &str = include_str!("chemex.sty");
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub enum FigureRequest {
     ChemDraw {
         counter: String,
@@ -461,10 +461,16 @@ fn optional_key(value: &str) -> Result<Option<String>> {
 }
 
 fn validate_key(key: &str) -> Result<()> {
-    if key.is_empty()
-        || !key
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || b"._:-".contains(&byte))
+    let mut parts = key.split('|');
+    let valid_part = |part: &str| {
+        !part.is_empty()
+            && part
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || b"._:-".contains(&byte))
+    };
+    if !valid_part(parts.next().unwrap_or_default())
+        || parts.next().is_some_and(|part| !valid_part(part))
+        || parts.next().is_some()
     {
         return Err(format!("invalid TeX compound key {key:?}").into());
     }
@@ -576,6 +582,15 @@ fn unescape_tex_path(path: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn compound_keys_allow_one_parent_child_separator() {
+        assert!(validate_key("parent").is_ok());
+        assert!(validate_key("parent|child").is_ok());
+        for key in ["|child", "parent|", "parent|child|nested"] {
+            assert!(validate_key(key).is_err(), "accepted malformed key {key}");
+        }
+    }
 
     #[test]
     fn figure_declarations_must_match_across_tex_passes() {

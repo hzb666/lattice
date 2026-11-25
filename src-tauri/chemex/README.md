@@ -70,6 +70,38 @@ Mnova 由 MestReNova 脚本接口从私有文档副本导出所选谱图所在�
 
 默认 `compound` 按图稿在 LaTeX 原文中的引用顺序编号。每个 key 首次作为图稿字段出现时推进计数器，`\chemex{key}` 只查号，可以写在图稿之前。图稿中的重复 key 复用编号。其他计数器通过 `\chemex[counter]{key}` 指定，仍由正文或图稿中的首次出现推进。格式使用 `\Roman`、`\roman`、`\Alph`、`\alph` 或自定义 `\thecompound`，重置使用原生 `\setcounter`。
 
+一次引用多个化合物时，在 `\chemex` 参数中用逗号分隔 key；可选 counter 仍放在方括号中。默认两项用 `and` 连接，三项及以上使用逗号和末尾的 `and`：
+
+```latex
+\chemex{compound-001, compound-002} % 1 and 2
+\chemex[scheme]{compound-001, compound-002, compound-003} % 1, 2, and 3
+```
+
+key 本身不允许逗号。可在导言区重定义 `\ChemexListSeparator`、`\ChemexListPairSeparator` 和 `\ChemexListFinalSeparator` 来调整列表标点或本地化连接词，例如中文文稿可设置为 `、`、`和`、`和`。不同 key 仍是独立化合物身份，不会按编号相邻关系压缩成范围。
+
+父化合物和子化合物用动态字段直接表示，不需要在导言区预先声明。普通字段使用 `parent-key`；子化合物字段使用 `parent-key|child-key`。Chemex 在图稿中按子字段首次出现的顺序分配 `a`、`b` 等字母，并在生成的 ChemDraw 副本中渲染完整编号。
+
+把标记原样输入 ChemDraw 的普通文字对象即可；这是 Chemex 构建时替换的文本占位符，不是 ChemDraw 内置的自动编号域，原始 CDXML 不会被改写。只需子编号时可省略父字段，首个 `parent-key|child-key` 会隐式创建父编号；只有还要显示父号时才加 `[[@parent-key]]`：
+
+```latex
+% ChemDraw text objects
+[[@compound-7]]
+[[@compound-7|isomer-a]]
+[[@compound-7|isomer-b]]
+
+% LaTeX prose references
+\chemex{compound-7|isomer-a} and \chemex{compound-7|isomer-b}
+```
+
+章节编号与子编号组合使用 LaTeX counter 格式。`report` 或 `book` 文档可以按章重置 counter，并在 `\thecompound` 中加入章节号：
+
+```latex
+\newcounter{compound}[chapter]
+\renewcommand{\thecompound}{\thechapter-\arabic{compound}}
+```
+
+例如第 2 章的第 1 个父化合物及其两个子化合物会在生成的 ChemDraw 副本中显示为 `2-1`、`2-1a`、`2-1b`。章节前缀属于父编号，子字母附加在完整父编号之后，不冲突。父、子 key 均须唯一；父子关系只支持一层，每个父 key 最多 26 个子项。
+
 多个年份或章节可以使用多个 LaTeX counter；每个 ChemDraw 字段 key 仍代表同一个全局化合物身份，因此不同 counter 必须使用不同 key。默认 `compound` 按全部嵌套正文展开后的图稿顺序编号；自定义 counter 仍保留首次正文或图稿引用推进的行为。重复使用同一个 key 但指定另一个 counter 会让构建失败，避免生成含义不明确的编号：
 
 ```latex
