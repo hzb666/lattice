@@ -79,6 +79,7 @@ pub use build::{
 };
 #[cfg(windows)]
 pub(crate) use build::{isolated_project_build, project_build_target, stop_requested};
+pub use shown_pdf::built_pdf_digest;
 
 /// What [`build`] answers for a Typst root document: the native app compiles
 /// those itself (`lattice-typst`), and latexmk cannot.
