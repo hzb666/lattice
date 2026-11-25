@@ -133,6 +133,10 @@ pub fn init(scripted: bool, cx: &mut App) {
     // is drawn: appearance, tint, accent, code theme, editor type, keymap,
     // language.
     crate::settings::init(scripted, cx);
+    // Again in the writer's tint, accent and installed theme: the observer
+    // below that rebuilds them on a change is not attached yet, and GPUI
+    // drops the notification settings init just sent.
+    load_code_themes(cx);
     crate::interface_zoom::init(cx);
     if std::env::var_os("LATTICE_GPUI_VIM").is_some() {
         crate::settings::use_vim_for_this_run(cx);
@@ -186,11 +190,11 @@ pub fn init(scripted: bool, cx: &mut App) {
 }
 
 /// Register the Lattice code themes with Zed's theme registry, in the current
-/// tint and accent.
+/// tint, accent and installed theme.
 fn load_code_themes(cx: &mut App) {
     let palette = cx.lattice().palette.clone();
     let registry = theme::ThemeRegistry::global(cx);
-    for family in editor_theme::zed_theme_families(palette.tint, palette.accent_preset) {
+    for family in editor_theme::zed_theme_families(&palette) {
         if let Err(error) = theme_settings::load_user_theme(&registry, &family) {
             log::error!("could not load a Lattice code theme: {error:#}");
         }
