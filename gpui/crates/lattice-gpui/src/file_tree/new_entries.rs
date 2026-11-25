@@ -236,8 +236,14 @@ mod tests {
         let latex = NewEntry::Latex.making().unwrap();
         assert_eq!(latex.named("untitled.tex"), "untitled.tex");
         assert_eq!(latex.named("notes"), "notes.tex");
-        assert_eq!(NewEntry::Board.making().unwrap().named("map"), "map.excalidraw");
-        assert_eq!(NewEntry::Typst.making().unwrap().named("notes"), "notes.typ");
+        assert_eq!(
+            NewEntry::Board.making().unwrap().named("map"),
+            "map.excalidraw"
+        );
+        assert_eq!(
+            NewEntry::Typst.making().unwrap().named("notes"),
+            "notes.typ"
+        );
         assert!(NewEntry::Import.making().is_none());
         assert!(NewEntry::Manuscript.making().is_none());
         assert!(NewEntry::Presentation.making().unwrap().deck);

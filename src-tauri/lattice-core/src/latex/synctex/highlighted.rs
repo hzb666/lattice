@@ -7,7 +7,7 @@
 //! generated file, and nothing the writer can edit: TeX recorded no line of
 //! the block itself. The block is found again by its text instead.
 
-use super::{input_names, records, Inputs};
+use super::{Inputs, input_names, records};
 use crate::util;
 use std::collections::HashSet;
 use std::fs;

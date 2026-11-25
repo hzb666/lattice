@@ -10,7 +10,7 @@
 //! are written (another app, a sync) fails the add, and what it wrote goes
 //! again, with the folders it made.
 
-use super::{create, paths, templates, Venue};
+use super::{Venue, create, paths, templates};
 use crate::util::err;
 use std::collections::BTreeSet;
 use std::fs;

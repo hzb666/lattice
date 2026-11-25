@@ -201,7 +201,12 @@ fn read_in_order(files: &[(&str, &str)]) -> Vec<(String, u32)> {
 fn reads_sources_where_they_are_included_once_each_time() {
     let block = "\\begin{minted}{python}\ndef f(x):\n    return x + 1\n\\end{minted}\n";
     let order = read_in_order(&[
-        ("project/main.tex", &format!("{block}\\input{{ch.v2}}\n\\input{{ch.v2}} % twice\n\\input{{../outside}}\n\\input{{main}}\n{block}")),
+        (
+            "project/main.tex",
+            &format!(
+                "{block}\\input{{ch.v2}}\n\\input{{ch.v2}} % twice\n\\input{{../outside}}\n\\input{{main}}\n{block}"
+            ),
+        ),
         // `ch.v2` is `ch.v2.tex`, never `ch.tex`; a file inputting itself ends.
         ("project/ch.v2.tex", &format!("\\input{{ch.v2}}\n{block}")),
         ("project/ch.tex", block),
