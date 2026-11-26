@@ -6,12 +6,33 @@
 | --- | --- |
 | 同步方向 | `upstream/main`（`leo1oel/lattice`）→ 本地 `chemex` |
 | 共同祖先 | `2cce98b71370fcff4b0db9aa20439d88650302cd` |
-| 最近逐笔审阅范围 | `650b134fb6d5968f2b27e34750059e5df83cb3ef` 之后，共 13 笔 |
-| 已审阅至 | `210afc9869dddd1e661fa71fd2b752921ba5bfd7`，原生项目进入与 PDF digest 后续 (#1277) |
-| 本地同步结果 | `d5312661`、`cbd192b9`、`1a042264`、`682c0fac`、`177486f7`；构建复用仍待适配 |
-| 最近确认 | 2026-11-26，`git fetch upstream main` 后仍指向 `210afc98` |
+| 最近逐笔审阅范围 | `210afc9869dddd1e661fa71fd2b752921ba5bfd7` 之后，共 13 笔 |
+| 已审阅至 | `3a74fffe8f525ceed41f1ce078ca8311de2a1622`，live preview tile 后续 (#1292) |
+| 本地同步结果 | `98c832fb`、`b0c2ac16`、`d26cd61b`、`b1f11932`、`35d9fd8e`、`f6171cbd`、`e37049fd`、`23512f0c` |
+| 最近确认 | 2026-11-26，`git fetch upstream main` 后指向 `3a74fffe` |
 
 早期记录曾审阅至 `032f99db969bbaac2ca4760cc3fda191f583d692`。`032f99db..9d43d560ad` 中已确认的回移和待办列在下文。`9d43d560..650b134f` 的 56 笔已逐笔核对；本轮继续逐笔审阅 `650b134f..819fc55e`，六笔纳入，一笔因本地发行架构与宿主已分叉而跳过。
+
+## 2026-11-26 继续同步
+
+逐笔审阅 `210afc98..3a74fffe` 的 13 笔。先提交本地 LaTeX 诊断/通知修复 `98c832fb`，然后按当前 GPUI/ChemEx 架构摘取适用提交；不恢复独立 Tauri 宿主、发行管线或上游共享构建缓存。
+
+| 上游提交 | 本地取舍 |
+| --- | --- |
+| `da21fcc9` | 已由本地 `7bf3b3c1` cherry-pick 并适配；不重复。 |
+| `8353b10d`、`bde61ab9` | 跳过上游 CI gate/nightly 机制；依赖其 macOS runner、共享构建树及锁流程，与本仓库本机验证约束不一致。 |
+| `5095ce36` | 跳过 Linux release archive 中打包 Synara/Open Slide runtime；属于上游发行方案，本地没有相同 archive pipeline。 |
+| `d282f748` | `b0c2ac16`：GPUI Papers 空态的“Add your first paper”直接打开 Add papers，并补 E2E。 |
+| `178760f4` | `d26cd61b`：entry-format 测试仅在 TeX Live 缺少 `mylatexformat` 时跳过，并在上游 CI 安装该包。 |
+| `52b2f730` | `b1f11932`：修正 Windows WebView overlay cutout 在 fractional scale 下相对取整窗口原点的坐标与边界，并补纯函数测试；保留 patch 栈和项目适配。 |
+| `66818267`、`3a74fffe` | `35d9fd8e`、`f6171cbd`：高缩放 PDF 页 live layer 按 full-size tile 绘制，并防止旧透明 tile 下的过期图像重现。`paint.rs` 冲突通过删除移入 `exact.rs`/`matrix.rs` 的重复定义解决，保留本地 painter。 |
+| `881a0c9a` | 跳过 Linux Xvfb e2e 执行器及其大范围平台输入/捕获扩展；本轮不引入 Linux 支持范围和依赖。 |
+| `035a5363` | `e37049fd`：Windows Node zip 固定使用系统 `System32/tar.exe`，不受 Git Bash PATH 顺序影响；含测试。 |
+| `f408a631` | `23512f0c`：复用 Synara web build 时校验 web/client 内容和 server bundle 新鲜度，含回归测试。冲突保留 ChemEx Windows 无 web 缓存 key 时强制重建的路径，统一用 freshness helper 代替重复校验。 |
+| `f42c658b` | 跳过：静默处理未构建 PDF 的改动位于已删除的 Tauri IPC 调用方；当前 GPUI 行为需按其调用链单独评估。 |
+| `3ffe708d` | 跳过：标题栏和 PDF 超时文案只改旧 Tauri React UI。 |
+
+本轮 `git diff --check` 通过；`pnpm vitest run scripts/lib/node-runtime.test.mjs scripts/lib/synara-build-output.test.mjs` 通过（7 项）。`bash gpui/script/check-patches` 未能启动，Windows 返回系统错误 `0x80070422`；已对 overlay patch、生成源码和 README 做静态 diff 核对。未运行 Cargo/GPUI 编译或运行时 E2E。
 
 ## 待整合
 
