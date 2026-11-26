@@ -11,8 +11,8 @@
 //! background does not take TexLab from the file being written. A diagnostic's range is clamped into the
 //! buffer, an empty one underlines up to 12 characters, and a box warning
 //! TexLab pins to the very start of the root document (it comes from a
-//! generated file) is not drawn there. As in the Tauri app, whose lint
-//! gutter is gone, nothing is drawn in the gutter.
+//! generated file) is not drawn there. Errors also leave a red mark beside
+//! their line and a red wash across it.
 
 use std::{cell::RefCell, ops::Range, rc::Rc, time::Duration};
 
@@ -20,14 +20,15 @@ use gpui::{
     App, AppContext as _, Context, Entity, Hsla, IntoElement, ParentElement as _, RenderOnce,
     Styled as _, Subscription, Task, WeakEntity, Window, div, px, relative, rgb,
 };
-use language::{Anchor, BufferEvent, BufferSnapshot, ToOffset as _};
+use language::{Anchor, BufferEvent, BufferSnapshot, ToOffset as _, ToPoint as _};
 use lattice_core::models::Diagnostic;
 use lattice_ui::{ActiveLattice as _, Elevation};
 use theme::ActiveTheme as _;
 
 use crate::{
     LatticeEditor, TexlabService,
-    decorations::{Mark, MarkStyle},
+    decorations::{Highlight, Mark, MarkStyle},
+    gutter::{GutterMark, GutterShape},
     hover::{HoverProvider, HoverTarget},
     texlab::TexlabEvent,
 };
@@ -179,6 +180,22 @@ pub fn locate(diagnostics: &[Diagnostic], path: &str, text: &str) -> Vec<Located
                 severity: Severity::of(&diagnostic.level),
                 message: diagnostic.message.clone(),
             })
+        })
+        .collect()
+}
+
+/// The whole source line containing each error, for the line's red wash.
+pub fn error_lines(located: &[Located], text: &str) -> Vec<Range<usize>> {
+    located
+        .iter()
+        .filter(|diagnostic| diagnostic.severity == Severity::Error)
+        .filter_map(|diagnostic| {
+            let offset = diagnostic.range.start.min(text.len());
+            let start = text[..offset].rfind('\n').map_or(0, |at| at + 1);
+            let end = text[offset..]
+                .find('\n')
+                .map_or(text.len(), |at| offset + at);
+            (end > start).then_some(start..end)
         })
         .collect()
 }
@@ -368,7 +385,28 @@ impl TexlabDiagnostics {
                 style: MarkStyle::squiggle(located.severity.underline()),
             })
             .collect();
-        editor.update(cx, |editor, cx| editor.set_marks(LAYER, marks, cx));
+        let gutter = located
+            .iter()
+            .filter(|located| located.severity == Severity::Error)
+            .map(|located| GutterMark {
+                line: text.offset_to_point(located.range.start).row,
+                color: located.severity.underline(),
+                shape: GutterShape::Dot,
+                hover: None,
+            })
+            .collect();
+        let highlights = error_lines(&located, &text.text())
+            .into_iter()
+            .map(|range| Highlight {
+                range,
+                color: cx.palette().danger.opacity(0.22),
+            })
+            .collect();
+        editor.update(cx, |editor, cx| {
+            editor.set_marks(LAYER, marks, cx);
+            editor.set_highlights(LAYER, highlights, cx);
+            editor.set_gutter_marks(LAYER, gutter, cx);
+        });
     }
 }
 
@@ -634,5 +672,24 @@ mod tests {
         assert_eq!(empty.message, "Empty");
         assert_eq!(&text[empty.range.clone()], "\\ref{x} and ");
         assert!(located.iter().all(|l| l.range.end <= text.len()));
+    }
+
+    #[test]
+    fn error_lines_cover_the_whole_line_and_skip_warnings() {
+        let text = "valid line\n\\unknowncommand\nlast line";
+        let located = [
+            Located {
+                range: 13..20,
+                severity: Severity::Error,
+                message: "Undefined control sequence".into(),
+            },
+            Located {
+                range: 0..5,
+                severity: Severity::Warning,
+                message: "Warning".into(),
+            },
+        ];
+
+        assert_eq!(error_lines(&located, text), vec![11..26]);
     }
 }

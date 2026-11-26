@@ -293,6 +293,8 @@ impl RenderOnce for Toast {
             .pl(px(12.))
             .pr(px(10.))
             .py(px(10.))
+            .max_h(window.viewport_size().height * 0.7)
+            .overflow_y_scroll()
             .opacity(self.content_opacity)
             .child(
                 div()

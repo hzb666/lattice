@@ -24,7 +24,7 @@ use anyhow::{Context as _, Result};
 use gpui::{AsyncApp, Bounds, Entity, Pixels, px};
 use serde_json::json;
 
-use super::{Fixture, Steps};
+use super::Steps;
 use crate::{
     confirm::{self, Confirm},
     editor_panel::EditorPanel,
@@ -117,7 +117,7 @@ impl Run {
         let island = cx.update(|cx| preview.read(cx).island().clone());
         let loaded = self
             .wait_for(cx, Duration::from_secs(20), |_, cx| {
-                preview.read(cx).is_loaded() && island.read(cx).native_visible(cx)
+                island.read(cx).is_ready() && island.read(cx).native_visible(cx)
             })
             .await;
         self.pause(cx, Duration::from_millis(600)).await;

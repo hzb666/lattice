@@ -104,8 +104,9 @@ diff --git a/gpui-fast/crates/gpui/src/fast/mod.rs b/gpui-fast/crates/gpui/src/f
 index a50582bde..db3ffe86e 100644
 --- a/gpui-fast/crates/gpui/src/fast/mod.rs
 +++ b/gpui-fast/crates/gpui/src/fast/mod.rs
-@@ -24,5 +24,6 @@ pub(crate) mod em_metrics;
+@@ -24,6 +24,7 @@ pub(crate) mod em_metrics;
  pub(crate) mod global_id;
+ pub(crate) mod glyph_outline;
  pub(crate) mod glyphs;
 +pub(crate) mod ime_bindings;
  pub(crate) mod interactive_text;

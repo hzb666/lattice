@@ -11,12 +11,13 @@
 use std::{cell::RefCell, rc::Rc};
 
 use gpui::{App, AppContext as _, Context, Entity, Subscription, WeakEntity};
-use language::BufferEvent;
+use language::{BufferEvent, ToPoint as _};
 
 use super::diagnostics::{Anchored, DiagnosticCards, Located, Severity};
 use crate::{
     LatticeEditor,
-    decorations::{Mark, MarkStyle},
+    decorations::{Highlight, Mark, MarkStyle},
+    gutter::{GutterMark, GutterShape},
 };
 
 /// The adapter layer the build's marks are in.
@@ -134,6 +135,16 @@ impl BuildDiagnostics {
         }
         self.drawn = current;
         let located = compiled.map_or_else(Vec::new, |text| whole_lines(&self.marks, text));
+        let gutter = located
+            .iter()
+            .filter(|located| located.severity == Severity::Error)
+            .map(|located| GutterMark {
+                line: snapshot.offset_to_point(located.range.start).row,
+                color: located.severity.underline(),
+                shape: GutterShape::Dot,
+                hover: None,
+            })
+            .collect();
         *self.shown.borrow_mut() = located
             .iter()
             .map(|located| Anchored {
@@ -150,7 +161,18 @@ impl BuildDiagnostics {
                 style: MarkStyle::squiggle(located.severity.underline()),
             })
             .collect();
-        editor.update(cx, |editor, cx| editor.set_marks(LAYER, marks, cx));
+        let highlights = super::diagnostics::error_lines(&located, snapshot.text())
+            .into_iter()
+            .map(|range| Highlight {
+                range,
+                color: cx.palette().danger.opacity(0.22),
+            })
+            .collect();
+        editor.update(cx, |editor, cx| {
+            editor.set_marks(LAYER, marks, cx);
+            editor.set_highlights(LAYER, highlights, cx);
+            editor.set_gutter_marks(LAYER, gutter, cx);
+        });
     }
 }
 

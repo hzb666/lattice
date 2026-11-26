@@ -171,9 +171,11 @@ impl Run {
         let copy = error.and_then(|card| card.copy.clone());
         let error_height = error.map(|card| card.natural);
         steps.check(
-            "the error card grows to wrap long paths on each log line",
-            error_height.is_some_and(|height| height > 256.),
-            json!({ "height": error_height }),
+            "the error card wraps long paths but stays within 70% of the window",
+            error_height.is_some_and(|height| {
+                height > 256. && height <= f32::from(viewport.height) * 0.7 + 0.5
+            }),
+            json!({ "height": error_height, "viewport": viewport.height }),
         );
         let progress = cards
             .iter()
